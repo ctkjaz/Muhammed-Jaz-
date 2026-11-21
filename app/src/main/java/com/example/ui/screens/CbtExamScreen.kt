@@ -156,33 +156,35 @@ fun CbtExamScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val timerBg = when {
-                            session.remainingSeconds <= 60 -> RoseWrong
-                            session.remainingSeconds <= 300 -> AmberHighlight
-                            else -> Color(0xFF0F172A)
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = timerBg,
-                            modifier = Modifier.testTag("cbt_timer_badge")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        if (session.hasCountdown) {
+                            val timerBg = when {
+                                session.remainingSeconds <= 60 -> RoseWrong
+                                session.remainingSeconds <= 300 -> AmberHighlight
+                                else -> Color(0xFF0F172A)
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = timerBg,
+                                modifier = Modifier.testTag("cbt_timer_badge")
                             ) {
-                                Icon(
-                                    Icons.Filled.Timer,
-                                    contentDescription = "Remaining time",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Text(
-                                    text = formatTimer(session.remainingSeconds),
-                                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Timer,
+                                        contentDescription = "Remaining time",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = formatTimer(session.remainingSeconds),
+                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
 
@@ -456,7 +458,15 @@ fun CbtExamScreen(
         AlertDialog(
             onDismissRequest = { showQuitConfirm = false },
             title = { Text("Quit CBT Exam?") },
-            text = { Text("Your active exam timer will stop and unsaved progress will be lost.") },
+            text = {
+                Text(
+                    if (session.hasCountdown) {
+                        "Your active exam timer will stop and unsaved progress will be lost."
+                    } else {
+                        "Unsaved progress in this CBT session will be lost."
+                    }
+                )
+            },
             confirmButton = {
                 Button(
                     onClick = {

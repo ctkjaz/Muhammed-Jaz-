@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.data.local.SettingsPreferences
 import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectCatalog
 import com.example.ui.theme.EmeraldCorrect
@@ -44,8 +45,10 @@ import java.util.Locale
 @Composable
 fun CbtHubScreen(
     state: DashboardDerivedState,
-    onStartStandardMock: (Int, Int, String) -> Unit,
-    onStartCustomCbt: (List<QuestionItem>, String, Int) -> Unit,
+    useTimeLimit: Boolean,
+    secondsPerQuestion: Int,
+    onStartStandardMock: (Int, Int?, String, Boolean) -> Unit,
+    onStartCustomCbt: (List<QuestionItem>, String, Int?) -> Unit,
     onOpenTimedPracticeConfig: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -53,6 +56,9 @@ fun CbtHubScreen(
     val nurPool = all.filter { SubjectCatalog.isNursing(it.question) }
     val nonPool = all.filter { !SubjectCatalog.isNursing(it.question) }
     val primaryColor = MaterialTheme.colorScheme.primary
+    val mini30Mins = SettingsPreferences.calculateSuggestedMinutes(30, secondsPerQuestion)
+    val nur50Mins = SettingsPreferences.calculateSuggestedMinutes(50, secondsPerQuestion)
+    val non30Mins = SettingsPreferences.calculateSuggestedMinutes(30, secondsPerQuestion)
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val columns = if (maxWidth >= 640.dp) 2 else 1
@@ -122,40 +128,40 @@ fun CbtHubScreen(
                     btnLabel = "Start Full Mock (100 Qs)",
                     isPrimary = true,
                     tag = "cbt_100q_btn",
-                    onClick = { onStartStandardMock(100, 90, "Full Official 100Q CBT Mock") }
+                    onClick = { onStartStandardMock(100, 90, "Full Official 100Q CBT Mock", true) }
                 ),
                 CbtOptionData(
                     badge = "Express Drill",
-                    durationLabel = "27 Minutes",
+                    durationLabel = if (useTimeLimit) "$mini30Mins Minutes" else "Untimed",
                     title = "Mini 30-Question CBT Mock",
-                    desc = "Exact 70:30 ratio (21 Nursing + 9 Non-Tech/CA). Ideal for quick daily timed practice.",
+                    desc = "Exact 70:30 ratio (21 Nursing + 9 Non-Tech/CA). Ideal for quick daily practice.",
                     badgeColor = EmeraldCorrect,
                     btnLabel = "Start Mini Mock (30 Qs)",
                     isPrimary = false,
                     tag = "cbt_30q_btn",
-                    onClick = { onStartStandardMock(30, 27, "Mini 30Q CBT Mock") }
+                    onClick = { onStartStandardMock(30, null, "Mini 30Q CBT Mock", false) }
                 ),
                 CbtOptionData(
                     badge = "Clinical Speed",
-                    durationLabel = "45 Minutes",
+                    durationLabel = if (useTimeLimit) "$nur50Mins Minutes" else "Untimed",
                     title = "50Q Nursing-Only Speed CBT",
                     desc = "Focused 50-question CBT covering all 9 clinical nursing subjects.",
                     badgeColor = Color(0xFFE11D48),
                     btnLabel = "Start 50Q Nursing CBT",
                     isPrimary = false,
                     tag = "cbt_50q_nur_btn",
-                    onClick = { onStartCustomCbt(nurPool.shuffled().take(50), "50Q Nursing CBT", 45) }
+                    onClick = { onStartCustomCbt(nurPool.shuffled().take(50), "50Q Nursing CBT", null) }
                 ),
                 CbtOptionData(
                     badge = "Non-Tech + CA",
-                    durationLabel = "27 Minutes",
+                    durationLabel = if (useTimeLimit) "$non30Mins Minutes" else "Untimed",
                     title = "30Q Non-Tech & CA CBT",
                     desc = "2025–26 Current Affairs, Static GK, Science, Arithmetic & Reasoning.",
                     badgeColor = Color(0xFF0891B2),
                     btnLabel = "Start 30Q Non-Tech CBT",
                     isPrimary = false,
                     tag = "cbt_30q_gen_btn",
-                    onClick = { onStartCustomCbt(nonPool.shuffled().take(30), "30Q Non-Tech CBT", 27) }
+                    onClick = { onStartCustomCbt(nonPool.shuffled().take(30), "30Q Non-Tech CBT", null) }
                 )
             )
 

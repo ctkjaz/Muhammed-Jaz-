@@ -7,6 +7,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.export.PdfWorksheetWriter
 import com.example.data.local.AppDatabase
+import com.example.data.local.SettingsPreferences
+import com.example.data.local.ThemePreference
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
@@ -489,5 +491,35 @@ class RrbNursingLogicTest {
             migratedDb.close()
             context.deleteDatabase(dbName)
         }
+    }
+
+    @Test
+    fun `suggested minutes helper calculates ceiling minutes for timer settings`() {
+        assertEquals(27, SettingsPreferences.calculateSuggestedMinutes(30, 54))
+        assertEquals(90, SettingsPreferences.calculateSuggestedMinutes(100, 54))
+        assertEquals(14, SettingsPreferences.calculateSuggestedMinutes(15, 54))
+        assertEquals(0, SettingsPreferences.calculateSuggestedMinutes(0, 54))
+        assertEquals(30, SettingsPreferences.calculateSuggestedMinutes(30, 60))
+    }
+
+    @Test
+    fun `settings preferences persist across restarts and enforce profile name limit`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val first = SettingsPreferences(context)
+        val longName = "A".repeat(60)
+        first.setProfileName(longName)
+        first.setThemePreference(ThemePreference.DARK)
+        first.setUseTimeLimit(false)
+        first.setSecondsPerQuestion(60)
+        first.setNegativeMarking(false)
+        first.setKeepScreenOn(true)
+
+        val reloaded = SettingsPreferences(context)
+        assertEquals(40, reloaded.profileName.value.length)
+        assertEquals(ThemePreference.DARK, reloaded.themePreference.value)
+        assertEquals(false, reloaded.useTimeLimit.value)
+        assertEquals(60, reloaded.secondsPerQuestion.value)
+        assertEquals(false, reloaded.negativeMarking.value)
+        assertEquals(true, reloaded.keepScreenOn.value)
     }
 }

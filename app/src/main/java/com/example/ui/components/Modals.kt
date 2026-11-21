@@ -77,6 +77,7 @@ import com.example.ui.viewmodel.TimedPracticeConfigState
 fun TimedPracticeConfigDialog(
     state: TimedPracticeConfigState,
     allQuestions: List<QuestionItem>,
+    useTimeLimit: Boolean,
     negativeMarking: Boolean,
     onToggleNegativeMarking: () -> Unit,
     onSelectSource: (String) -> Unit,
@@ -169,10 +170,22 @@ fun TimedPracticeConfigDialog(
                 ) {
                     Text("Timer Duration", style = MaterialTheme.typography.labelLarge)
                     Text(
-                        text = "${state.durationMinutes} mins",
+                        text = if (useTimeLimit) "${state.durationMinutes} mins" else "Off (Settings)",
                         style = MaterialTheme.typography.titleSmall.copy(fontFamily = MonoFontFamily),
-                        color = MaterialTheme.colorScheme.primary,
+                        color = if (useTimeLimit) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                         fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (!useTimeLimit) {
+                    Text(
+                        text = "Time limit is turned off in Settings. This practice drill will run without a countdown.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
@@ -183,6 +196,7 @@ fun TimedPracticeConfigDialog(
                 ) {
                     IconButton(
                         onClick = { onSelectMinutes(state.durationMinutes - 5) },
+                        enabled = useTimeLimit,
                         modifier = Modifier.testTag("timed_minus_5")
                     ) {
                         Icon(Icons.Filled.Remove, contentDescription = "Decrease 5 minutes")
@@ -191,10 +205,12 @@ fun TimedPracticeConfigDialog(
                         value = state.durationMinutes.toFloat(),
                         onValueChange = { onSelectMinutes(it.toInt()) },
                         valueRange = 5f..120f,
+                        enabled = useTimeLimit,
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(
                         onClick = { onSelectMinutes(state.durationMinutes + 5) },
+                        enabled = useTimeLimit,
                         modifier = Modifier.testTag("timed_plus_5")
                     ) {
                         Icon(Icons.Filled.Add, contentDescription = "Increase 5 minutes")
@@ -207,7 +223,8 @@ fun TimedPracticeConfigDialog(
                 ) {
                     listOf(15, 30, 45, 60, 90).forEach { m ->
                         FilterChip(
-                            selected = state.durationMinutes == m,
+                            selected = useTimeLimit && state.durationMinutes == m,
+                            enabled = useTimeLimit,
                             onClick = { onSelectMinutes(m) },
                             label = { Text("${m}m", style = MaterialTheme.typography.labelSmall) }
                         )
@@ -241,7 +258,13 @@ fun TimedPracticeConfigDialog(
                 enabled = effectiveCount > 0,
                 modifier = Modifier.testTag("start_timed_practice_button")
             ) {
-                Text("Start ($effectiveCount Qs • ${state.durationMinutes}m)")
+                Text(
+                    if (useTimeLimit) {
+                        "Start ($effectiveCount Qs • ${state.durationMinutes}m)"
+                    } else {
+                        "Start ($effectiveCount Qs • Untimed)"
+                    }
+                )
             }
         },
         dismissButton = {

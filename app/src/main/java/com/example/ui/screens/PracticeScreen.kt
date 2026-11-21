@@ -172,7 +172,7 @@ fun PracticeScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (session.timedMode) {
+                        if (session.timedMode && session.hasCountdown) {
                             val timerBg = when {
                                 session.remainingSeconds <= 60 -> RoseWrong
                                 session.remainingSeconds <= 300 -> AmberHighlight
@@ -202,7 +202,7 @@ fun PracticeScreen(
                                     )
                                 }
                             }
-                        } else {
+                        } else if (!session.timedMode) {
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
                                 color = if (negativeMarking) {
@@ -537,11 +537,15 @@ fun PracticeScreen(
         val remainingQs = session.questions.size - session.selectedAnswers.size
         AlertDialog(
             onDismissRequest = onDismissSubmitPrompt,
-            title = { Text("Submit Timed Practice?") },
+            title = { Text(if (session.hasCountdown) "Submit Timed Practice?" else "Submit Practice Drill?") },
             text = {
                 Text(
                     if (remainingQs == 0) {
-                        "You have answered all ${session.questions.size} questions with ${formatTimer(session.remainingSeconds)} remaining. Submit now to view your detailed report?"
+                        if (session.hasCountdown) {
+                            "You have answered all ${session.questions.size} questions with ${formatTimer(session.remainingSeconds)} remaining. Submit now to view your detailed report?"
+                        } else {
+                            "You have answered all ${session.questions.size} questions. Submit now to view your detailed report?"
+                        }
                     } else {
                         "You have answered ${session.selectedAnswers.size}/${session.questions.size} questions ($remainingQs unanswered). Submit now?"
                     }
@@ -567,8 +571,16 @@ fun PracticeScreen(
     if (showExitConfirm) {
         AlertDialog(
             onDismissRequest = { showExitConfirm = false },
-            title = { Text("Exit Timed Practice?") },
-            text = { Text("Your active countdown timer will stop. Do you want to submit first or exit?") },
+            title = { Text(if (session.hasCountdown) "Exit Timed Practice?" else "Exit Practice Drill?") },
+            text = {
+                Text(
+                    if (session.hasCountdown) {
+                        "Your active countdown timer will stop. Do you want to submit first or exit?"
+                    } else {
+                        "Leave this practice drill? Your answered questions are already saved."
+                    }
+                )
+            },
             confirmButton = {
                 Button(onClick = {
                     showExitConfirm = false

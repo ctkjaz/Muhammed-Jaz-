@@ -1,6 +1,10 @@
 package com.example.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
+import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -24,12 +28,11 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Quiz
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Home
@@ -52,6 +55,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -75,6 +79,7 @@ import com.example.ui.screens.CbtExamScreen
 import com.example.ui.screens.CbtHubScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.PracticeScreen
+import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.StatsScreen
 import com.example.ui.screens.SubjectsHubScreen
 import com.example.ui.theme.CobaltPrimary
@@ -100,6 +105,7 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
     RrbNursingTheme(darkTheme = isDark) {
         val state by vm.mainState.collectAsStateWithLifecycle()
         val selectedTab by vm.selectedTab.collectAsStateWithLifecycle()
+        val isSettingsOpen by vm.isSettingsOpen.collectAsStateWithLifecycle()
         val subjectSection by vm.subjectHubSection.collectAsStateWithLifecycle()
         val difficultyFilter by vm.difficultyFilter.collectAsStateWithLifecycle()
         val practiceSession by vm.practiceSession.collectAsStateWithLifecycle()
@@ -108,6 +114,10 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
         val importerState by vm.importerState.collectAsStateWithLifecycle()
         val pdfExportConfig by vm.pdfExportConfig.collectAsStateWithLifecycle()
         val negMarking by vm.negativeMarking.collectAsStateWithLifecycle()
+        val profileName by vm.profileName.collectAsStateWithLifecycle()
+        val useTimeLimit by vm.useTimeLimit.collectAsStateWithLifecycle()
+        val secondsPerQuestion by vm.secondsPerQuestion.collectAsStateWithLifecycle()
+        val keepScreenOn by vm.keepScreenOn.collectAsStateWithLifecycle()
         val snackbarMessage by vm.snackbarMessage.collectAsStateWithLifecycle()
 
         val snackbarHostState = remember { SnackbarHostState() }
@@ -171,6 +181,19 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
         }
 
         val inActiveSession = practiceSession != null || cbtSession != null
+        val shouldKeepScreenOn = keepScreenOn && inActiveSession
+
+        DisposableEffect(context, shouldKeepScreenOn) {
+            val window = context.findActivity()?.window
+            if (shouldKeepScreenOn) {
+                window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+            onDispose {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val useRail = maxWidth >= 720.dp
@@ -179,7 +202,7 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                 contentWindowInsets = WindowInsets.safeDrawing,
                 snackbarHost = { SnackbarHost(snackbarHostState) },
                 topBar = {
-                    if (!inActiveSession) {
+                    if (!inActiveSession && !isSettingsOpen) {
                         TopAppBar(
                             colors = TopAppBarDefaults.topAppBarColors(
                                 containerColor = MaterialTheme.colorScheme.surface
@@ -243,12 +266,12 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                                     }
                                 }
                                 IconButton(
-                                    onClick = { vm.toggleTheme(isDark) },
-                                    modifier = Modifier.testTag("top_theme_btn")
+                                    onClick = vm::openSettings,
+                                    modifier = Modifier.testTag("top_settings_btn")
                                 ) {
                                     Icon(
-                                        imageVector = if (isDark) Icons.Filled.LightMode else Icons.Filled.DarkMode,
-                                        contentDescription = "Toggle theme"
+                                        imageVector = Icons.Filled.Settings,
+                                        contentDescription = "Settings"
                                     )
                                 }
                             }
@@ -259,7 +282,7 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                     if (!inActiveSession && !useRail) {
                         NavigationBar {
                             MainTab.entries.forEach { tab ->
-                                val selected = tab == selectedTab
+                                val selected = !isSettingsOpen && tab == selectedTab
                                 NavigationBarItem(
                                     selected = selected,
                                     onClick = { vm.selectTab(tab) },
@@ -281,7 +304,7 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                         NavigationRail {
                             Spacer(modifier = Modifier.weight(0.1f))
                             MainTab.entries.forEach { tab ->
-                                val selected = tab == selectedTab
+                                val selected = !isSettingsOpen && tab == selectedTab
                                 NavigationRailItem(
                                     selected = selected,
                                     onClick = { vm.selectTab(tab) },
@@ -329,13 +352,41 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                                 )
                             }
 
+                            isSettingsOpen -> {
+                                SettingsScreen(
+                                    profileName = profileName,
+                                    themePreference = themePref,
+                                    useTimeLimit = useTimeLimit,
+                                    secondsPerQuestion = secondsPerQuestion,
+                                    negativeMarking = negMarking,
+                                    keepScreenOn = keepScreenOn,
+                                    onProfileNameChange = vm::setProfileName,
+                                    onThemePreferenceChange = vm::setThemePreference,
+                                    onUseTimeLimitChange = vm::setUseTimeLimit,
+                                    onSecondsPerQuestionChange = vm::setSecondsPerQuestion,
+                                    onNegativeMarkingChange = vm::setNegativeMarking,
+                                    onKeepScreenOnChange = vm::setKeepScreenOn,
+                                    onOpenImporter = vm::openImporter,
+                                    onOpenPdfExport = { vm.openPdfExport() },
+                                    onResetStatistics = vm::clearAllStatistics,
+                                    onBack = vm::closeSettings
+                                )
+                            }
+
                             else -> {
                                 when (selectedTab) {
                                     MainTab.DASHBOARD -> DashboardScreen(
                                         state = state,
                                         difficultyFilter = difficultyFilter,
                                         onSelectDifficulty = vm::selectDifficultyFilter,
-                                        onLaunchFullMock = { vm.startCbtStandardMock(100, 90, "Full Official 100Q CBT Mock") },
+                                        onLaunchFullMock = {
+                                            vm.startCbtStandardMock(
+                                                totalQuestions = 100,
+                                                durationMinutes = 90,
+                                                title = "Full Official 100Q CBT Mock",
+                                                isOfficialFullMock = true
+                                            )
+                                        },
                                         onOpenTimedPractice = { vm.openTimedPracticeConfig() },
                                         onOpenSubjectSection = vm::openSubjectHub,
                                         onSelectTab = vm::selectTab,
@@ -358,6 +409,8 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
 
                                     MainTab.CBT -> CbtHubScreen(
                                         state = state,
+                                        useTimeLimit = useTimeLimit,
+                                        secondsPerQuestion = secondsPerQuestion,
                                         onStartStandardMock = vm::startCbtStandardMock,
                                         onStartCustomCbt = { list, title, mins -> vm.startCbtCustom(list, title, mins) },
                                         onOpenTimedPracticeConfig = { vm.openTimedPracticeConfig() }
@@ -388,6 +441,7 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
             TimedPracticeConfigDialog(
                 state = timedConfig,
                 allQuestions = state.questions,
+                useTimeLimit = useTimeLimit,
                 negativeMarking = negMarking,
                 onToggleNegativeMarking = vm::toggleNegativeMarking,
                 onSelectSource = vm::updateTimedConfigSource,
@@ -450,4 +504,10 @@ private fun NavTabIcon(tab: MainTab, selected: Boolean) {
         MainTab.DECK -> if (selected) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder
     }
     Icon(imageVector = icon, contentDescription = tab.label)
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

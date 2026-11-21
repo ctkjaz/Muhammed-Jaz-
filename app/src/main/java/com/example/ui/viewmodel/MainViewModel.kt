@@ -65,6 +65,7 @@ data class PracticeSessionState(
     val currentIndex: Int = 0,
     val selectedAnswers: Map<String, Int> = emptyMap(),
     val timedMode: Boolean = false,
+    val hasCountdown: Boolean = false,
     val totalSeconds: Int = 0,
     val remainingSeconds: Int = 0,
     val showCompletionPrompt: Boolean = false,
@@ -79,6 +80,7 @@ data class CbtSessionState(
     val currentIndex: Int = 0,
     val selectedAnswers: Map<Int, Int> = emptyMap(),
     val paletteStatuses: Map<Int, CbtPaletteStatus> = emptyMap(),
+    val hasCountdown: Boolean = true,
     val totalSeconds: Int = 0,
     val remainingSeconds: Int = 0,
     val isSubmitted: Boolean = false,
@@ -151,6 +153,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val themePreference: StateFlow<ThemePreference> = settings.themePreference
     val negativeMarking: StateFlow<Boolean> = settings.negativeMarking
+    val profileName: StateFlow<String> = settings.profileName
+    val useTimeLimit: StateFlow<Boolean> = settings.useTimeLimit
+    val secondsPerQuestion: StateFlow<Int> = settings.secondsPerQuestion
+    val keepScreenOn: StateFlow<Boolean> = settings.keepScreenOn
 
     private val _flashcards = MutableStateFlow<List<Flashcard>>(emptyList())
     private val _isSeeded = MutableStateFlow(false)
@@ -199,6 +205,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedTab = MutableStateFlow(MainTab.DASHBOARD)
     val selectedTab: StateFlow<MainTab> = _selectedTab.asStateFlow()
 
+    private val _isSettingsOpen = MutableStateFlow(false)
+    val isSettingsOpen: StateFlow<Boolean> = _isSettingsOpen.asStateFlow()
+
     private val _subjectHubSection = MutableStateFlow(SubjectHubSection.NURSING)
     val subjectHubSection: StateFlow<SubjectHubSection> = _subjectHubSection.asStateFlow()
 
@@ -239,7 +248,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         stopActiveTimer()
         _practiceSession.value = null
         _cbtSession.value = null
+        _isSettingsOpen.value = false
         _selectedTab.value = tab
+    }
+
+    fun openSettings() {
+        _isSettingsOpen.value = true
+    }
+
+    fun closeSettings() {
+        _isSettingsOpen.value = false
     }
 
     fun selectSubjectSection(section: SubjectHubSection) {
@@ -254,12 +272,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         stopActiveTimer()
         _practiceSession.value = null
         _cbtSession.value = null
+        _isSettingsOpen.value = false
         _subjectHubSection.value = section
         _selectedTab.value = MainTab.SUBJECTS
     }
 
     fun toggleTheme(currentlyDark: Boolean) {
         settings.cycleTheme(currentlyDark)
+    }
+
+    fun setThemePreference(preference: ThemePreference) {
+        settings.setThemePreference(preference)
+    }
+
+    fun setProfileName(name: String) {
+        settings.setProfileName(name)
+    }
+
+    fun setUseTimeLimit(enabled: Boolean) {
+        settings.setUseTimeLimit(enabled)
+    }
+
+    fun setSecondsPerQuestion(seconds: Int) {
+        settings.setSecondsPerQuestion(seconds)
+    }
+
+    fun setKeepScreenOn(enabled: Boolean) {
+        settings.setKeepScreenOn(enabled)
+    }
+
+    fun setNegativeMarking(enabled: Boolean) {
+        settings.setNegativeMarking(enabled)
     }
 
     fun toggleNegativeMarking() {
@@ -281,7 +324,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         items: List<QuestionItem>,
         title: String,
         timedMode: Boolean = false,
-        durationMinutes: Int = 30
+        durationMinutes: Int = 30,
+        hasCountdown: Boolean = timedMode
     ) {
         if (items.isEmpty()) {
             showMessage("No questions found in this selection yet.")
@@ -289,17 +333,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         stopActiveTimer()
         _cbtSession.value = null
-        val totalSec = if (timedMode) durationMinutes.coerceAtLeast(1) * 60 else 0
+        val actualCountdown = timedMode && hasCountdown && durationMinutes > 0
+        val totalSec = if (actualCountdown) durationMinutes.coerceAtLeast(1) * 60 else 0
         _practiceSession.value = PracticeSessionState(
             title = title,
             questions = items,
             currentIndex = 0,
             selectedAnswers = emptyMap(),
             timedMode = timedMode,
+            hasCountdown = actualCountdown,
             totalSeconds = totalSec,
             remainingSeconds = totalSec
         )
-        if (timedMode) {
+        if (actualCountdown) {
             startPracticeTimer()
         }
     }
@@ -310,7 +356,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             while (true) {
                 delay(1000L)
                 val current = _practiceSession.value ?: break
-                if (!current.timedMode || current.isSubmittedSummary || current.showTimeoutDialog) break
+                if (!current.timedMode || !current.hasCountdown || current.isSubmittedSummary || current.showTimeoutDialog) break
                 val nextSec = (current.remainingSeconds - 1).coerceAtLeast(0)
                 if (nextSec == 0) {
                     _practiceSession.update {
@@ -381,17 +427,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ------------------------------------------------------------------------
     // TIMED PRACTICE CONFIGURATOR
     // ------------------------------------------------------------------------
+    private fun suggestedTimedPracticeMinutes(
+        questionCount: Int,
+        sourceKey: String,
+        difficultyFilter: DifficultyFilter
+    ): Int {
+        val effectiveCount = if (questionCount <= 0) {
+            filteredQuestionsForSource(sourceKey, mainState.value.questions, difficultyFilter).size
+        } else {
+            questionCount
+        }
+        val rawMinutes = SettingsPreferences.calculateSuggestedMinutes(
+            questionCount = effectiveCount,
+            secondsPerQuestion = settings.secondsPerQuestion.value
+        )
+        return if (rawMinutes <= 0) 5 else rawMinutes.coerceIn(5, 120)
+    }
+
     fun openTimedPracticeConfig(
         defaultSource: String = "MIXED",
         defaultCount: Int = 30,
         defaultDifficulty: DifficultyFilter = _difficultyFilter.value
     ) {
-        val defaultMins = when (defaultCount) {
-            15 -> 15
-            30 -> 30
-            50 -> 45
-            else -> 30
-        }
+        val defaultMins = suggestedTimedPracticeMinutes(defaultCount, defaultSource, defaultDifficulty)
         _timedConfig.value = TimedPracticeConfigState(
             isVisible = true,
             sourceKey = defaultSource,
@@ -406,21 +464,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateTimedConfigSource(sourceKey: String) {
-        _timedConfig.update { it.copy(sourceKey = sourceKey) }
+        _timedConfig.update { cfg ->
+            val updatedMins = if (cfg.questionCount <= 0) {
+                suggestedTimedPracticeMinutes(cfg.questionCount, sourceKey, cfg.difficultyFilter)
+            } else {
+                cfg.durationMinutes
+            }
+            cfg.copy(sourceKey = sourceKey, durationMinutes = updatedMins)
+        }
     }
 
     fun updateTimedConfigDifficulty(filter: DifficultyFilter) {
-        _timedConfig.update { it.copy(difficultyFilter = filter) }
+        _timedConfig.update { cfg ->
+            val updatedMins = if (cfg.questionCount <= 0) {
+                suggestedTimedPracticeMinutes(cfg.questionCount, cfg.sourceKey, filter)
+            } else {
+                cfg.durationMinutes
+            }
+            cfg.copy(difficultyFilter = filter, durationMinutes = updatedMins)
+        }
     }
 
     fun updateTimedConfigCount(count: Int) {
-        val suggestedMinutes = when (count) {
-            15 -> 15
-            30 -> 30
-            50 -> 45
-            else -> 60
+        _timedConfig.update { cfg ->
+            val suggestedMinutes = suggestedTimedPracticeMinutes(count, cfg.sourceKey, cfg.difficultyFilter)
+            cfg.copy(questionCount = count, durationMinutes = suggestedMinutes)
         }
-        _timedConfig.update { it.copy(questionCount = count, durationMinutes = suggestedMinutes) }
     }
 
     fun updateTimedConfigMinutes(minutes: Int) {
@@ -465,19 +534,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             else -> SubjectCatalog.displayNameFor(cfg.sourceKey)
         }
         val diffSuffix = cfg.difficultyFilter.difficulty?.let { " • ${it.label}" } ?: ""
+        val useLimit = settings.useTimeLimit.value
+        val titlePrefix = if (useLimit) "Timed" else "Drill"
         _timedConfig.update { it.copy(isVisible = false) }
         startPractice(
             items = picked,
-            title = "Timed: $sourceLabel$diffSuffix (${picked.size}Q)",
+            title = "$titlePrefix: $sourceLabel$diffSuffix (${picked.size}Q)",
             timedMode = true,
-            durationMinutes = cfg.durationMinutes
+            durationMinutes = if (useLimit) cfg.durationMinutes else 0,
+            hasCountdown = useLimit
         )
     }
 
     // ------------------------------------------------------------------------
     // CBT MOCK SIMULATOR
     // ------------------------------------------------------------------------
-    fun startCbtStandardMock(totalQuestions: Int, durationMinutes: Int, title: String) {
+    fun startCbtStandardMock(
+        totalQuestions: Int,
+        durationMinutes: Int?,
+        title: String,
+        isOfficialFullMock: Boolean = false
+    ) {
         val all = mainState.value.questions
         if (all.isEmpty()) return
         val nursingCount = (totalQuestions * 0.7).toInt()
@@ -489,31 +566,56 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val usedIds = selected.map { it.id }.toSet()
             selected += all.filter { it.id !in usedIds }.shuffled().take(totalQuestions - selected.size)
         }
-        startCbtCustom(selected, title, durationMinutes)
+        startCbtCustom(
+            items = selected,
+            title = title,
+            durationMinutes = durationMinutes,
+            isOfficialFullMock = isOfficialFullMock
+        )
     }
 
-    fun startCbtCustom(items: List<QuestionItem>, title: String, durationMinutes: Int? = null) {
+    fun startCbtCustom(
+        items: List<QuestionItem>,
+        title: String,
+        durationMinutes: Int? = null,
+        isOfficialFullMock: Boolean = false
+    ) {
         if (items.isEmpty()) {
             showMessage("No questions available for this CBT test.")
             return
         }
         stopActiveTimer()
         _practiceSession.value = null
-        val mins = durationMinutes ?: maxOf(10, (items.size * 0.9).toInt())
+        val hasCountdown = isOfficialFullMock || settings.useTimeLimit.value
+        val totalSec = if (hasCountdown) {
+            val mins = if (isOfficialFullMock) {
+                90
+            } else {
+                durationMinutes ?: SettingsPreferences.calculateSuggestedMinutes(
+                    questionCount = items.size,
+                    secondsPerQuestion = settings.secondsPerQuestion.value
+                ).coerceAtLeast(1)
+            }
+            mins * 60
+        } else {
+            0
+        }
         val initialStatuses = items.indices.associateWith { i ->
             if (i == 0) CbtPaletteStatus.NOT_ANSWERED else CbtPaletteStatus.NOT_VISITED
         }
-        val totalSec = mins * 60
         _cbtSession.value = CbtSessionState(
             title = title,
             questions = items,
             currentIndex = 0,
             selectedAnswers = emptyMap(),
             paletteStatuses = initialStatuses,
+            hasCountdown = hasCountdown,
             totalSeconds = totalSec,
             remainingSeconds = totalSec
         )
-        startCbtTimer()
+        if (hasCountdown) {
+            startCbtTimer()
+        }
     }
 
     private fun startCbtTimer() {
@@ -522,7 +624,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             while (true) {
                 delay(1000L)
                 val current = _cbtSession.value ?: break
-                if (current.isSubmitted || current.showTimeoutDialog) break
+                if (!current.hasCountdown || current.isSubmitted || current.showTimeoutDialog) break
                 val nextSec = (current.remainingSeconds - 1).coerceAtLeast(0)
                 if (nextSec == 0) {
                     _cbtSession.update { it?.copy(remainingSeconds = 0, showTimeoutDialog = true) }
