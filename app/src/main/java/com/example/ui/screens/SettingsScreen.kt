@@ -163,7 +163,7 @@ fun SettingsScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Stored on this phone only")
+                                Text("Shown on your profile")
                                 Text(
                                     text = "${profileName.length}/${SettingsPreferences.MAX_PROFILE_NAME_LENGTH}",
                                     fontFamily = MonoFontFamily
@@ -186,9 +186,9 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.selectableGroup()) {
                         val themeOptions = listOf(
-                            Triple(ThemePreference.SYSTEM, "Match my phone", "settings_theme_system"),
-                            Triple(ThemePreference.LIGHT, "Light", "settings_theme_light"),
-                            Triple(ThemePreference.DARK, "Dark", "settings_theme_dark")
+                            Triple(ThemePreference.LIGHT, "Light (Default)", "settings_theme_light"),
+                            Triple(ThemePreference.DARK, "Dark", "settings_theme_dark"),
+                            Triple(ThemePreference.SYSTEM, "Match my phone", "settings_theme_system")
                         )
                         themeOptions.forEach { (pref, label, tag) ->
                             val selected = themePreference == pref

@@ -97,10 +97,7 @@ fun DashboardScreen(
         state.lowestAccuracyQuestions.filter { it.question.difficulty == d }
     } ?: state.lowestAccuracyQuestions
     val diffLabelSuffix = difficultyFilter.difficulty?.let { " • ${it.label}" } ?: ""
-    val pyqItems = all.filter { it.question.isPyqTagged }
-    val pyqCount = pyqItems.size
-    val pyqVerified = pyqItems.count { it.question.isVerifiedSource }
-    val pyqUnverified = pyqCount - pyqVerified
+    val pyqCount = all.count { it.question.isPyqTagged }
     val nurCount = all.count { SubjectCatalog.isNursing(it.question) }
     val caCount = all.count { SubjectCatalog.isCa(it.question) }
     val genCount = all.count { SubjectCatalog.isGen(it.question) }
@@ -171,7 +168,7 @@ fun DashboardScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "70:30 Exam Weightage • +1 / -0.33 Negative Marking • 100% Offline",
+                                    text = "70:30 Exam Pattern • +1 / -0.33 Marking • Study Anytime",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = EditorialBannerSubtext
                                 )
@@ -222,7 +219,7 @@ fun DashboardScreen(
                                 MetricTile(
                                     label = "Attempted",
                                     value = "${state.overall.attemptedUnique}",
-                                    subValue = "/ ${state.overall.totalQuestions}",
+                                    subValue = "practised",
                                     valueColor = EditorialBannerTitle,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -272,7 +269,7 @@ fun DashboardScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Quick Focus Drills", style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    "Filter by difficulty (${diffFiltered.size} Qs) & target weak areas or rapid mixed sets",
+                                    "Filter by difficulty & target weak areas or rapid mixed sets",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -343,10 +340,10 @@ fun DashboardScreen(
 
             val moduleCards = listOf(
                 ModuleCardData(
-                    badge = "Verified: $pyqVerified • Unverified: $pyqUnverified",
+                    badge = "Memory-Based & PYQ",
                     countLabel = "$pyqCount Qs",
-                    title = "PYQ-Tagged Questions",
-                    desc = "Shift-tagged practice sets (2015–2026). Tags remain unverified until matched to official papers.",
+                    title = "Previous Year Papers",
+                    desc = "Shift-wise exam practice sets (2015–2026) organized by year and shift.",
                     badgeColor = editorial.warningText,
                     icon = Icons.Filled.History,
                     tag = "module_pyq",
@@ -386,7 +383,7 @@ fun DashboardScreen(
                     badge = "Configurable Timer",
                     countLabel = "15 / 30 / 50 Qs",
                     title = "Timed Practice & CBT",
-                    desc = "Select any subject or mixed set with custom minutes, or full TCS iON CBT.",
+                    desc = "Select any subject or mixed set with custom minutes, or full-length CBT mock.",
                     badgeColor = editorial.correctText,
                     icon = Icons.Filled.Quiz,
                     tag = "module_cbt",

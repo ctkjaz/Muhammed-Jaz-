@@ -42,11 +42,13 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Quiz
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
@@ -57,11 +59,13 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,20 +79,23 @@ import com.example.data.local.ThemePreference
 import com.example.ui.components.ExamPickerModalSheet
 import com.example.ui.components.ImporterModalSheet
 import com.example.ui.components.PdfExportModalSheet
+import com.example.ui.components.ProfileAvatarCircle
 import com.example.ui.components.TimedPracticeConfigDialog
+import com.example.ui.components.formatApproxQuestionCount
 import com.example.ui.screens.BookmarksScreen
 import com.example.ui.screens.CbtExamScreen
 import com.example.ui.screens.CbtHubScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.PracticeScreen
+import com.example.ui.screens.ProfileDrawerContent
+import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.StatsScreen
 import com.example.ui.screens.SubjectsHubScreen
-import com.example.ui.theme.BurgundyPrimary
 import com.example.ui.theme.RrbNursingTheme
-import com.example.ui.theme.WarmWhite
 import com.example.ui.viewmodel.MainTab
 import com.example.ui.viewmodel.MainViewModel
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -108,6 +115,7 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
         val state by vm.mainState.collectAsStateWithLifecycle()
         val selectedTab by vm.selectedTab.collectAsStateWithLifecycle()
         val isSettingsOpen by vm.isSettingsOpen.collectAsStateWithLifecycle()
+        val isProfileOpen by vm.isProfileOpen.collectAsStateWithLifecycle()
         val isExamPickerOpen by vm.isExamPickerOpen.collectAsStateWithLifecycle()
         val activeExamId by vm.activeExamId.collectAsStateWithLifecycle()
         val subjectSection by vm.subjectHubSection.collectAsStateWithLifecycle()
@@ -119,12 +127,17 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
         val pdfExportConfig by vm.pdfExportConfig.collectAsStateWithLifecycle()
         val negMarking by vm.negativeMarking.collectAsStateWithLifecycle()
         val profileName by vm.profileName.collectAsStateWithLifecycle()
+        val profileRole by vm.profileRole.collectAsStateWithLifecycle()
+        val targetYear by vm.targetYear.collectAsStateWithLifecycle()
+        val focusSubject by vm.focusSubject.collectAsStateWithLifecycle()
         val useTimeLimit by vm.useTimeLimit.collectAsStateWithLifecycle()
         val secondsPerQuestion by vm.secondsPerQuestion.collectAsStateWithLifecycle()
         val keepScreenOn by vm.keepScreenOn.collectAsStateWithLifecycle()
         val snackbarMessage by vm.snackbarMessage.collectAsStateWithLifecycle()
 
         val snackbarHostState = remember { SnackbarHostState() }
+        val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+        val scope = rememberCoroutineScope()
         val context = LocalContext.current
 
         LaunchedEffect(snackbarMessage) {
@@ -199,45 +212,86 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
             }
         }
 
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val useRail = maxWidth >= 720.dp
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            gesturesEnabled = !inActiveSession && !isSettingsOpen && !isProfileOpen,
+            drawerContent = {
+                ProfileDrawerContent(
+                    profileName = profileName,
+                    profileRole = profileRole,
+                    targetYear = targetYear,
+                    focusSubject = focusSubject,
+                    state = state,
+                    onOpenFullProfile = {
+                        scope.launch {
+                            drawerState.close()
+                            vm.openProfile()
+                        }
+                    },
+                    onOpenExamPicker = {
+                        scope.launch {
+                            drawerState.close()
+                            vm.openExamPicker()
+                        }
+                    },
+                    onOpenSubjectSection = { section ->
+                        scope.launch {
+                            drawerState.close()
+                            vm.openSubjectHub(section)
+                        }
+                    },
+                    onOpenSettings = {
+                        scope.launch {
+                            drawerState.close()
+                            vm.openSettings()
+                        }
+                    },
+                    onOpenImporter = {
+                        scope.launch {
+                            drawerState.close()
+                            vm.openImporter()
+                        }
+                    }
+                )
+            }
+        ) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val useRail = maxWidth >= 720.dp
 
-            Scaffold(
-                contentWindowInsets = WindowInsets.safeDrawing,
-                snackbarHost = { SnackbarHost(snackbarHostState) },
-                topBar = {
-                    if (!inActiveSession && !isSettingsOpen) {
-                        TopAppBar(
-                            colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            ),
-                            title = {
-                                val activeExamShort = state.activeExam?.shortName ?: "RRB Nursing"
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .heightIn(min = 48.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .clickable(onClick = vm::openExamPicker)
-                                        .padding(end = 6.dp)
-                                        .testTag("top_exam_picker_btn")
-                                ) {
-                                    Box(
+                Scaffold(
+                    contentWindowInsets = WindowInsets.safeDrawing,
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
+                    topBar = {
+                        if (!inActiveSession && !isSettingsOpen && !isProfileOpen) {
+                            TopAppBar(
+                                colors = TopAppBarDefaults.topAppBarColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                ),
+                                navigationIcon = {
+                                    IconButton(
+                                        onClick = { scope.launch { drawerState.open() } },
                                         modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(BurgundyPrimary),
-                                        contentAlignment = Alignment.Center
+                                            .padding(start = 4.dp)
+                                            .testTag("top_profile_avatar_btn")
                                     ) {
-                                        Icon(
-                                            Icons.Filled.MonitorHeart,
-                                            contentDescription = null,
-                                            tint = WarmWhite,
-                                            modifier = Modifier.size(20.dp)
+                                        ProfileAvatarCircle(
+                                            name = profileName,
+                                            size = 36.dp
                                         )
                                     }
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column {
+                                },
+                                title = {
+                                    val activeExamShort = state.activeExam?.shortName ?: "RRB Nursing"
+                                    val approxCount = formatApproxQuestionCount(state.overall.totalQuestions)
+                                    Column(
+                                        modifier = Modifier
+                                            .heightIn(min = 48.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable(onClick = vm::openExamPicker)
+                                            .padding(horizontal = 4.dp, vertical = 4.dp)
+                                            .testTag("top_exam_picker_btn"),
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
                                         Text(
                                             text = "ClinEdge",
                                             style = MaterialTheme.typography.titleMedium,
@@ -245,7 +299,7 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                                         )
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
-                                                text = "$activeExamShort • ${state.overall.totalQuestions} MCQs",
+                                                text = "$activeExamShort • $approxCount",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.primary,
                                                 fontWeight = FontWeight.SemiBold,
@@ -259,8 +313,7 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                                             )
                                         }
                                     }
-                                }
-                            },
+                                },
                             actions = {
                                 IconButton(
                                     onClick = { vm.openPdfExport() },
@@ -305,7 +358,7 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                     if (!inActiveSession && !useRail) {
                         NavigationBar {
                             MainTab.entries.forEach { tab ->
-                                val selected = !isSettingsOpen && tab == selectedTab
+                                val selected = !isSettingsOpen && !isProfileOpen && tab == selectedTab
                                 NavigationBarItem(
                                     selected = selected,
                                     onClick = { vm.selectTab(tab) },
@@ -327,7 +380,7 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                         NavigationRail {
                             Spacer(modifier = Modifier.weight(0.1f))
                             MainTab.entries.forEach { tab ->
-                                val selected = !isSettingsOpen && tab == selectedTab
+                                val selected = !isSettingsOpen && !isProfileOpen && tab == selectedTab
                                 NavigationRailItem(
                                     selected = selected,
                                     onClick = { vm.selectTab(tab) },
@@ -393,6 +446,27 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                                     onOpenPdfExport = { vm.openPdfExport() },
                                     onResetStatistics = vm::clearAllStatistics,
                                     onBack = vm::closeSettings
+                                )
+                            }
+
+                            isProfileOpen -> {
+                                ProfileScreen(
+                                    profileName = profileName,
+                                    profileRole = profileRole,
+                                    targetYear = targetYear,
+                                    focusSubject = focusSubject,
+                                    state = state,
+                                    onProfileNameChange = vm::setProfileName,
+                                    onProfileRoleChange = vm::setProfileRole,
+                                    onTargetYearChange = vm::setTargetYear,
+                                    onFocusSubjectChange = vm::setFocusSubject,
+                                    onOpenExamPicker = vm::openExamPicker,
+                                    onPracticeSubject = { list, title ->
+                                        vm.closeProfile()
+                                        vm.startPractice(list, title)
+                                    },
+                                    onOpenSettings = vm::openSettings,
+                                    onBack = vm::closeProfile
                                 )
                             }
 
@@ -526,6 +600,7 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                 },
                 onDismiss = vm::closePdfExport
             )
+            }
         }
     }
 }

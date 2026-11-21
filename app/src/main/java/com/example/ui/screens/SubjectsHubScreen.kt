@@ -271,57 +271,61 @@ private fun PyqShiftList(
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("PYQ-Tagged Practice Sets", style = MaterialTheme.typography.titleLarge)
+                Text("Previous Year Papers", style = MaterialTheme.typography.titleLarge)
                 Text(
-                    "Questions tagged by exam year and shift. Unverified tags have not yet been verified against official RRB question papers or answer keys.",
+                    "Shift-wise exam sets (2015–2026). Memory-based papers are clearly marked alongside official papers.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 val editorial = MaterialTheme.editorialColors
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = editorial.correctText.copy(alpha = 0.14f),
-                        border = BorderStroke(1.dp, editorial.correctText.copy(alpha = 0.4f)),
-                        modifier = Modifier.testTag("pyq_verified_count")
-                    ) {
-                        Text(
-                            text = "Verified: $verifiedPyqCount",
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                            color = editorial.correctText,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = editorial.warningText.copy(alpha = 0.16f),
-                        border = BorderStroke(1.dp, editorial.warningText.copy(alpha = 0.45f)),
-                        modifier = Modifier.testTag("pyq_unverified_count")
-                    ) {
-                        Text(
-                            text = "Unverified: $unverifiedPyqCount",
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                            color = editorial.warningText,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
+                if (verifiedPyqCount > 0) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = editorial.correctText.copy(alpha = 0.14f),
+                            border = BorderStroke(1.dp, editorial.correctText.copy(alpha = 0.4f)),
+                            modifier = Modifier.testTag("pyq_verified_count")
+                        ) {
+                            Text(
+                                text = "Official PYQ: $verifiedPyqCount",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                color = editorial.correctText,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                        if (unverifiedPyqCount > 0) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = editorial.warningText.copy(alpha = 0.14f),
+                                border = BorderStroke(1.dp, editorial.warningText.copy(alpha = 0.35f)),
+                                modifier = Modifier.testTag("pyq_unverified_count")
+                            ) {
+                                Text(
+                                    text = "Memory-Based: $unverifiedPyqCount",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                    color = editorial.warningText,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
-                        onClick = { onStartPractice(allPyqs, "All PYQ-Tagged Sets$diffSuffix") },
+                        onClick = { onStartPractice(allPyqs, "Previous Year Papers$diffSuffix") },
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.testTag("practice_all_pyqs")
                     ) {
-                        Text("Practice All Tagged (${allPyqs.size})")
+                        Text("Practice All Papers")
                     }
                     OutlinedButton(
                         onClick = onOpenImporter,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.testTag("pyq_add_pdf_btn")
                     ) {
-                        Text("+ Add Shift PDF")
+                        Text("+ Add Paper")
                     }
                 }
             }
@@ -340,9 +344,9 @@ private fun PyqShiftList(
                     val shiftUnverified = list.size - shiftVerified
                     val allVerified = list.isNotEmpty() && shiftUnverified == 0
                     val editorial = MaterialTheme.editorialColors
-                    val shiftBadgeText = if (allVerified) "Verified PYQ • $sh" else "Unverified PYQ tag"
+                    val shiftBadgeText = if (allVerified) "Official PYQ" else "Memory-Based"
                     val shiftBadgeColor = if (allVerified) editorial.correctText else editorial.warningText
-                    val title = SubjectCatalog.SHIFT_NAMES[sh] ?: "Tagged Set $sh"
+                    val title = SubjectCatalog.SHIFT_NAMES[sh] ?: "Exam Set $sh"
                     Card(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
@@ -377,8 +381,8 @@ private fun PyqShiftList(
                                     }
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = shiftBadgeColor.copy(alpha = 0.15f),
-                                        border = BorderStroke(1.dp, shiftBadgeColor.copy(alpha = 0.45f)),
+                                        color = shiftBadgeColor.copy(alpha = 0.14f),
+                                        border = BorderStroke(1.dp, shiftBadgeColor.copy(alpha = 0.35f)),
                                         modifier = Modifier.testTag("shift_badge_$sh")
                                     ) {
                                         Text(
@@ -397,11 +401,6 @@ private fun PyqShiftList(
                                 )
                             }
                             Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                            Text(
-                                text = "Verified: $shiftVerified • Unverified: $shiftUnverified",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(
                                     onClick = { onStartPractice(list, "$title$diffSuffix") },

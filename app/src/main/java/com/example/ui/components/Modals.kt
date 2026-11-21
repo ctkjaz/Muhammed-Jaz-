@@ -320,9 +320,9 @@ fun ImporterModalSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Expand Offline Question Bank", style = MaterialTheme.typography.titleLarge)
+                    Text("Add & Manage Questions", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        "Paste raw text from Shift PDFs or JSON arrays",
+                        "Import shift PDFs, JSON sets, or back up your progress",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -331,7 +331,7 @@ fun ImporterModalSheet(
                         color = MaterialTheme.colorScheme.primaryContainer
                     ) {
                         Text(
-                            text = "Linking to: $activeExamShortName",
+                            text = "Active Exam: $activeExamShortName",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -444,7 +444,7 @@ private fun PdfTextImportPane(
         }
         if (state.sourceType == QuestionSourceType.OFFICIAL_PYQ && state.sourceNote.isBlank()) {
             Text(
-                text = "Official PYQ requires a non-empty Source Note and Verified toggle below; otherwise saved honestly as Memory-Based PYQ.",
+                text = "Add a source note below to mark as Official PYQ; otherwise saved as Memory-Based PYQ.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.editorialColors.warningText
             )
@@ -1039,7 +1039,7 @@ fun ExamPickerModalSheet(
                     Column {
                         Text("Active Exam Track", style = MaterialTheme.typography.titleLarge)
                         Text(
-                            "ClinEdge multi-exam architecture • shared progress",
+                            "Choose your exam track",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1112,7 +1112,7 @@ fun ExamPickerModalSheet(
                                             }
                                         )
                                         Text(
-                                            text = "$qCount MCQs  •  ${exam.defaultMockQuestions}Q / ${exam.defaultMockMinutes}m  •  -${exam.negativeMarks}",
+                                            text = "${formatApproxQuestionCount(qCount)}  •  ${exam.defaultMockQuestions}Q / ${exam.defaultMockMinutes}m  •  -${exam.negativeMarks}",
                                             style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                                             color = if (isSelected) {
                                                 MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
@@ -1142,7 +1142,7 @@ fun ExamPickerModalSheet(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
             ) {
                 Text(
-                    text = "ClinEdge is ready for multiple healthcare exams (such as AIIMS NORCET, ESIC, DSSSB, and Pharmacy). Shared questions keep one unified progress and bookmark record across exams.",
+                    text = "More healthcare exams are coming soon. Your progress and bookmarks stay synced across exams.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(14.dp)

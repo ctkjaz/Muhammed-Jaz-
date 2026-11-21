@@ -81,7 +81,7 @@ fun CbtHubScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("$examShort CBT & Timed Practice Hub", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        "TCS iON-style palette, countdown timer, +1 / -$negMark negative marking & configurable timed drills",
+                        "Exam-style question palette, countdown timer, +1 / -$negMark marking & custom timed drills",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

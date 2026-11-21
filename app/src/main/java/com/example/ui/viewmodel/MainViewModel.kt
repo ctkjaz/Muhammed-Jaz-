@@ -172,6 +172,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val themePreference: StateFlow<ThemePreference> = settings.themePreference
     val negativeMarking: StateFlow<Boolean> = settings.negativeMarking
     val profileName: StateFlow<String> = settings.profileName
+    val profileRole: StateFlow<String> = settings.profileRole
+    val targetYear: StateFlow<String> = settings.targetYear
+    val focusSubject: StateFlow<String> = settings.focusSubject
     val useTimeLimit: StateFlow<Boolean> = settings.useTimeLimit
     val secondsPerQuestion: StateFlow<Int> = settings.secondsPerQuestion
     val keepScreenOn: StateFlow<Boolean> = settings.keepScreenOn
@@ -181,6 +184,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isSeeded = MutableStateFlow(false)
     private val _isExamPickerOpen = MutableStateFlow(false)
     val isExamPickerOpen: StateFlow<Boolean> = _isExamPickerOpen.asStateFlow()
+    private val _isProfileOpen = MutableStateFlow(false)
+    val isProfileOpen: StateFlow<Boolean> = _isProfileOpen.asStateFlow()
 
     private val allPlatformQuestions: StateFlow<List<QuestionItem>> = repository.allQuestions.stateIn(
         scope = viewModelScope,
@@ -333,15 +338,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _practiceSession.value = null
         _cbtSession.value = null
         _isSettingsOpen.value = false
+        _isProfileOpen.value = false
         _selectedTab.value = tab
     }
 
     fun openSettings() {
+        _isProfileOpen.value = false
         _isSettingsOpen.value = true
     }
 
     fun closeSettings() {
         _isSettingsOpen.value = false
+    }
+
+    fun openProfile() {
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = true
+    }
+
+    fun closeProfile() {
+        _isProfileOpen.value = false
     }
 
     fun openExamPicker() {
@@ -370,6 +386,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _practiceSession.value = null
         _cbtSession.value = null
         _isSettingsOpen.value = false
+        _isProfileOpen.value = false
         _subjectHubSection.value = section
         _selectedTab.value = MainTab.SUBJECTS
     }
@@ -384,6 +401,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setProfileName(name: String) {
         settings.setProfileName(name)
+    }
+
+    fun setProfileRole(role: String) {
+        settings.setProfileRole(role)
+    }
+
+    fun setTargetYear(year: String) {
+        settings.setTargetYear(year)
+    }
+
+    fun setFocusSubject(subjectCode: String) {
+        settings.setFocusSubject(subjectCode)
     }
 
     fun setUseTimeLimit(enabled: Boolean) {

@@ -28,6 +28,22 @@ class SettingsPreferences(context: Context) {
     )
     val profileName: StateFlow<String> = _profileName.asStateFlow()
 
+    private val _profileRole = MutableStateFlow(
+        (prefs.getString(KEY_PROFILE_ROLE, "") ?: "").take(MAX_PROFILE_ROLE_LENGTH)
+    )
+    val profileRole: StateFlow<String> = _profileRole.asStateFlow()
+
+    private val _targetYear = MutableStateFlow(
+        (prefs.getString(KEY_TARGET_YEAR, DEFAULT_TARGET_YEAR) ?: DEFAULT_TARGET_YEAR)
+            .take(MAX_TARGET_YEAR_LENGTH)
+    )
+    val targetYear: StateFlow<String> = _targetYear.asStateFlow()
+
+    private val _focusSubject = MutableStateFlow(
+        prefs.getString(KEY_FOCUS_SUBJECT, "") ?: ""
+    )
+    val focusSubject: StateFlow<String> = _focusSubject.asStateFlow()
+
     private val _useTimeLimit = MutableStateFlow(prefs.getBoolean(KEY_USE_TIME_LIMIT, true))
     val useTimeLimit: StateFlow<Boolean> = _useTimeLimit.asStateFlow()
 
@@ -48,8 +64,8 @@ class SettingsPreferences(context: Context) {
     val activeExamId: StateFlow<String> = _activeExamId.asStateFlow()
 
     private fun readTheme(): ThemePreference {
-        val raw = prefs.getString(KEY_THEME, ThemePreference.SYSTEM.name)
-        return runCatching { ThemePreference.valueOf(raw ?: "") }.getOrDefault(ThemePreference.SYSTEM)
+        val raw = prefs.getString(KEY_THEME, ThemePreference.LIGHT.name)
+        return runCatching { ThemePreference.valueOf(raw ?: "") }.getOrDefault(ThemePreference.LIGHT)
     }
 
     fun setThemePreference(preference: ThemePreference) {
@@ -71,6 +87,24 @@ class SettingsPreferences(context: Context) {
         val clamped = name.take(MAX_PROFILE_NAME_LENGTH)
         prefs.edit().putString(KEY_PROFILE_NAME, clamped).apply()
         _profileName.value = clamped
+    }
+
+    fun setProfileRole(role: String) {
+        val clamped = role.take(MAX_PROFILE_ROLE_LENGTH)
+        prefs.edit().putString(KEY_PROFILE_ROLE, clamped).apply()
+        _profileRole.value = clamped
+    }
+
+    fun setTargetYear(year: String) {
+        val clamped = year.trim().take(MAX_TARGET_YEAR_LENGTH)
+        prefs.edit().putString(KEY_TARGET_YEAR, clamped).apply()
+        _targetYear.value = clamped
+    }
+
+    fun setFocusSubject(subjectCode: String) {
+        val clean = subjectCode.trim()
+        prefs.edit().putString(KEY_FOCUS_SUBJECT, clean).apply()
+        _focusSubject.value = clean
     }
 
     fun setUseTimeLimit(enabled: Boolean) {
@@ -103,6 +137,9 @@ class SettingsPreferences(context: Context) {
 
     companion object {
         const val MAX_PROFILE_NAME_LENGTH = 40
+        const val MAX_PROFILE_ROLE_LENGTH = 40
+        const val MAX_TARGET_YEAR_LENGTH = 10
+        const val DEFAULT_TARGET_YEAR = "2026"
         const val MIN_SECONDS_PER_QUESTION = 20
         const val MAX_SECONDS_PER_QUESTION = 120
         const val SECONDS_PER_QUESTION_STEP = 5
@@ -112,6 +149,9 @@ class SettingsPreferences(context: Context) {
         private const val KEY_NEG_MARKING = "negative_marking"
         private const val KEY_SEEDED_VERSION = "builtin_seed_version"
         private const val KEY_PROFILE_NAME = "profile_name"
+        private const val KEY_PROFILE_ROLE = "profile_role"
+        private const val KEY_TARGET_YEAR = "target_year"
+        private const val KEY_FOCUS_SUBJECT = "focus_subject"
         private const val KEY_USE_TIME_LIMIT = "use_time_limit"
         private const val KEY_SECONDS_PER_QUESTION = "seconds_per_question"
         private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"

@@ -20,6 +20,7 @@ import com.example.data.model.QuestionProgress
 import com.example.data.model.QuestionSourceType
 import com.example.data.parser.BulkQuestionParser
 import com.example.data.repository.NursingPrepRepository
+import com.example.ui.components.formatApproxQuestionCount
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -854,5 +855,32 @@ class RrbNursingLogicTest {
         assertFalse(restored.progressList.isEmpty())
         assertTrue(restored.progressList.first().isBookmarked)
     }
+
+    @Test
+    fun `default theme is light profile fields persist and approx count hides exact total`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.getSharedPreferences("rrb_nursing_settings", Context.MODE_PRIVATE).edit().clear().commit()
+
+        val fresh = SettingsPreferences(context)
+        assertEquals(ThemePreference.LIGHT, fresh.themePreference.value)
+        assertEquals("2026", fresh.targetYear.value)
+
+        fresh.setProfileName("Jaz")
+        fresh.setProfileRole("B.Sc. Nursing")
+        fresh.setTargetYear("2027")
+        fresh.setFocusSubject("MSN")
+
+        val reloaded = SettingsPreferences(context)
+        assertEquals("Jaz", reloaded.profileName.value)
+        assertEquals("B.Sc. Nursing", reloaded.profileRole.value)
+        assertEquals("2027", reloaded.targetYear.value)
+        assertEquals("MSN", reloaded.focusSubject.value)
+
+        assertEquals("1,000+ Qs", formatApproxQuestionCount(1223))
+        assertEquals("1,000+ questions", formatApproxQuestionCount(1223, verbose = true))
+        assertEquals("2,000+ Qs", formatApproxQuestionCount(2450))
+        assertEquals("500+ Qs", formatApproxQuestionCount(707))
+    }
 }
+
 

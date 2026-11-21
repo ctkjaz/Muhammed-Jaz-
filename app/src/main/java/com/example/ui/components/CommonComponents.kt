@@ -18,8 +18,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.border
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -40,7 +42,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
@@ -49,12 +53,71 @@ import com.example.data.model.Flashcard
 import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
+import com.example.ui.theme.BurgundyPrimary
+import com.example.ui.theme.DustyRoseSecondary
 import com.example.ui.theme.EditorialBannerMuted
 import com.example.ui.theme.EditorialBannerSubtext
 import com.example.ui.theme.EditorialBannerTitle
 import com.example.ui.theme.MonoFontFamily
+import com.example.ui.theme.WarmWhite
 import com.example.ui.theme.editorialColors
+import java.text.NumberFormat
 import java.util.Locale
+
+fun formatApproxQuestionCount(total: Int, verbose: Boolean = false): String {
+    val suffix = if (verbose) "questions" else "Qs"
+    val formatter = NumberFormat.getIntegerInstance(Locale.US)
+    return when {
+        total >= 1000 -> "${formatter.format((total / 1000) * 1000)}+ $suffix"
+        total >= 500 -> "500+ $suffix"
+        total >= 100 -> "${(total / 100) * 100}+ $suffix"
+        else -> "$total $suffix"
+    }
+}
+
+@Composable
+fun ProfileAvatarCircle(
+    name: String,
+    size: Dp = 40.dp,
+    modifier: Modifier = Modifier
+) {
+    val initials = name.trim()
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+        .take(2)
+        .mapNotNull { it.firstOrNull()?.uppercaseChar() }
+        .joinToString("")
+
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(BurgundyPrimary)
+            .border(
+                width = if (size >= 56.dp) 2.5.dp else 1.5.dp,
+                color = DustyRoseSecondary.copy(alpha = 0.85f),
+                shape = CircleShape
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (initials.isNotEmpty()) {
+            Text(
+                text = initials,
+                color = WarmWhite,
+                fontWeight = FontWeight.Bold,
+                fontSize = (size.value * 0.36f).sp,
+                maxLines = 1
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Filled.Person,
+                contentDescription = null,
+                tint = WarmWhite,
+                modifier = Modifier.size(size * 0.54f)
+            )
+        }
+    }
+}
 
 @Composable
 fun DifficultyBadge(
@@ -87,12 +150,19 @@ fun PyqSourceBadge(
     question: Question,
     modifier: Modifier = Modifier
 ) {
-    val badgeText = question.pyqBadgeText() ?: return
+    if (!question.isPyqTagged) return
     val isVerified = question.isVerifiedSource
+    val shift = question.effectiveShiftYear
+    val badgeText = when {
+        isVerified && shift.isNotBlank() -> "Official PYQ • $shift"
+        isVerified -> "Official PYQ"
+        shift.isNotBlank() -> "Memory-Based • $shift"
+        else -> "Memory-Based PYQ"
+    }
     val editorial = MaterialTheme.editorialColors
     val fgColor = if (isVerified) editorial.correctText else editorial.warningText
-    val bgColor = fgColor.copy(alpha = if (isVerified) 0.14f else 0.16f)
-    val borderColor = fgColor.copy(alpha = if (isVerified) 0.4f else 0.45f)
+    val bgColor = fgColor.copy(alpha = if (isVerified) 0.14f else 0.14f)
+    val borderColor = fgColor.copy(alpha = if (isVerified) 0.4f else 0.35f)
     Surface(
         modifier = modifier.testTag("pyq_source_badge"),
         shape = RoundedCornerShape(8.dp),
