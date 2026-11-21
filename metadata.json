@@ -1,5 +1,5 @@
 {
-  "name": "RRB Nursing",
+  "name": "ClinEdge",
   "description": "Offline-capable RRB Nursing Superintendent & Staff Nurse CBT Exam simulator with 280+ PYQs, 70:30 subject practice, flashcards, and bulk importer.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

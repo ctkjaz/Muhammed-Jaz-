@@ -65,9 +65,11 @@ import com.example.data.model.DifficultyFilter
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectCatalog
-import com.example.ui.theme.EmeraldCorrect
+import com.example.ui.theme.CalmSageFill
 import com.example.ui.theme.MonoFontFamily
-import com.example.ui.theme.RoseWrong
+import com.example.ui.theme.MutedCrimsonFill
+import com.example.ui.theme.WarmWhite
+import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.ImporterUiState
 import com.example.ui.viewmodel.PdfExportConfigState
 import com.example.ui.viewmodel.TimedPracticeConfigState
@@ -368,7 +370,10 @@ fun ImporterModalSheet(
                         confirmClear = false
                         onClearCustom()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = RoseWrong)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MutedCrimsonFill,
+                        contentColor = WarmWhite
+                    )
                 ) {
                     Text("Delete Custom")
                 }
@@ -540,10 +545,11 @@ private fun PdfTextImportPane(
     }
 
     if (state.hasPreviewed) {
+        val editorial = MaterialTheme.editorialColors
         if (state.previewQuestions.isEmpty()) {
             Text(
                 "Could not detect questions. Format as 'Q.1 Question' followed by '1. Opt' and 'Ans: 1'.",
-                color = RoseWrong,
+                color = editorial.wrongText,
                 style = MaterialTheme.typography.bodySmall
             )
         } else {
@@ -554,13 +560,16 @@ private fun PdfTextImportPane(
             ) {
                 Text(
                     "Parsed ${state.previewQuestions.size} valid MCQ(s)",
-                    color = EmeraldCorrect,
+                    color = editorial.correctText,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold
                 )
                 Button(
                     onClick = onCommitPdf,
-                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldCorrect),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CalmSageFill,
+                        contentColor = WarmWhite
+                    ),
                     modifier = Modifier.testTag("save_imported_button")
                 ) {
                     Text("Save Permanently")
@@ -586,7 +595,7 @@ private fun PdfTextImportPane(
                             Text(
                                 "Ans: ${'A' + q.correctIndex} • ${q.options.getOrElse(q.correctIndex) { "" }}",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = EmeraldCorrect
+                                color = editorial.correctText
                             )
                         }
                     }
@@ -682,7 +691,7 @@ private fun JsonBackupPane(
     ) {
         TextButton(
             onClick = onRequestClearCustom,
-            colors = ButtonDefaults.textButtonColors(contentColor = RoseWrong)
+            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.editorialColors.wrongText)
         ) {
             Text("Reset Custom Questions")
         }
@@ -870,7 +879,11 @@ fun PdfExportModalSheet(
                         },
                         style = MaterialTheme.typography.titleSmall,
                         fontFamily = MonoFontFamily,
-                        color = if (matchingCount > 0) EmeraldCorrect else RoseWrong
+                        color = if (matchingCount > 0) {
+                            MaterialTheme.editorialColors.correctText
+                        } else {
+                            MaterialTheme.editorialColors.wrongText
+                        }
                     )
                     Text(
                         text = "File: $suggestedFileName",

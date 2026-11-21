@@ -149,28 +149,28 @@ data class CategoryStat(
 
 object SubjectCatalog {
     val NURSING_SUBJS = listOf(
-        SubjectMeta("MSN", "Medical-Surgical", Color(0xFFE11D48), SubjectGroup.NURSING),
-        SubjectMeta("Pharm", "Pharmacology", Color(0xFF7C3AED), SubjectGroup.NURSING),
-        SubjectMeta("OBG", "OBG & Midwifery", Color(0xFFDB2777), SubjectGroup.NURSING),
-        SubjectMeta("Peds", "Child Health (Peds)", Color(0xFFD97706), SubjectGroup.NURSING),
-        SubjectMeta("CHN", "Community Health", Color(0xFF059669), SubjectGroup.NURSING),
-        SubjectMeta("Psych", "Mental Health", Color(0xFF4F46E5), SubjectGroup.NURSING),
-        SubjectMeta("FON", "Fundamentals (FON)", Color(0xFF0284C7), SubjectGroup.NURSING),
-        SubjectMeta("Anat", "Anatomy & Physio", Color(0xFF0D9488), SubjectGroup.NURSING),
-        SubjectMeta("Admin", "Admin & Research", Color(0xFF475569), SubjectGroup.NURSING)
+        SubjectMeta("MSN", "Medical-Surgical", Color(0xFF8E4456), SubjectGroup.NURSING),
+        SubjectMeta("Pharm", "Pharmacology", Color(0xFF756091), SubjectGroup.NURSING),
+        SubjectMeta("OBG", "OBG & Midwifery", Color(0xFFB78B79), SubjectGroup.NURSING),
+        SubjectMeta("Peds", "Child Health (Peds)", Color(0xFFA67942), SubjectGroup.NURSING),
+        SubjectMeta("CHN", "Community Health", Color(0xFF478271), SubjectGroup.NURSING),
+        SubjectMeta("Psych", "Mental Health", Color(0xFF666B8A), SubjectGroup.NURSING),
+        SubjectMeta("FON", "Fundamentals (FON)", Color(0xFF537B8A), SubjectGroup.NURSING),
+        SubjectMeta("Anat", "Anatomy & Physio", Color(0xFF5B8078), SubjectGroup.NURSING),
+        SubjectMeta("Admin", "Admin & Research", Color(0xFF726D70), SubjectGroup.NURSING)
     )
 
     val CA_SUBJS = listOf(
-        SubjectMeta("CA-2026", "2025–26 National & Global", Color(0xFF2563EB), SubjectGroup.CA_GK),
-        SubjectMeta("Railways", "Indian Railways & Budget", Color(0xFF4338CA), SubjectGroup.CA_GK),
-        SubjectMeta("Health-Prog", "Health Drives & UIP", Color(0xFF059669), SubjectGroup.CA_GK),
-        SubjectMeta("Static-GK", "Static GK & Polity", Color(0xFFD97706), SubjectGroup.CA_GK)
+        SubjectMeta("CA-2026", "2025–26 National & Global", Color(0xFF7D5360), SubjectGroup.CA_GK),
+        SubjectMeta("Railways", "Indian Railways & Budget", Color(0xFF6A637D), SubjectGroup.CA_GK),
+        SubjectMeta("Health-Prog", "Health Drives & UIP", Color(0xFF4E8570), SubjectGroup.CA_GK),
+        SubjectMeta("Static-GK", "Static GK & Polity", Color(0xFF9F7A4D), SubjectGroup.CA_GK)
     )
 
     val GEN_SUBJS = listOf(
-        SubjectMeta("Science", "General Science (NCERT)", Color(0xFF0891B2), SubjectGroup.NON_TECH),
-        SubjectMeta("Math", "Arithmetic & Dosage", Color(0xFFEA580C), SubjectGroup.NON_TECH),
-        SubjectMeta("Reasoning", "Logical Reasoning", Color(0xFF9333EA), SubjectGroup.NON_TECH)
+        SubjectMeta("Science", "General Science (NCERT)", Color(0xFF527D86), SubjectGroup.NON_TECH),
+        SubjectMeta("Math", "Arithmetic & Dosage", Color(0xFFA96D54), SubjectGroup.NON_TECH),
+        SubjectMeta("Reasoning", "Logical Reasoning", Color(0xFF7E6189), SubjectGroup.NON_TECH)
     )
 
     val ALL_SUBJS = NURSING_SUBJS + CA_SUBJS + GEN_SUBJS

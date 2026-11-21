@@ -49,10 +49,11 @@ import com.example.data.model.Flashcard
 import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
-import com.example.ui.theme.AmberHighlight
-import com.example.ui.theme.EmeraldCorrect
+import com.example.ui.theme.EditorialBannerMuted
+import com.example.ui.theme.EditorialBannerSubtext
+import com.example.ui.theme.EditorialBannerTitle
 import com.example.ui.theme.MonoFontFamily
-import com.example.ui.theme.RoseWrong
+import com.example.ui.theme.editorialColors
 import java.util.Locale
 
 @Composable
@@ -60,10 +61,11 @@ fun DifficultyBadge(
     difficulty: QuestionDifficulty,
     modifier: Modifier = Modifier
 ) {
+    val editorial = MaterialTheme.editorialColors
     val badgeColor = when (difficulty) {
-        QuestionDifficulty.EASY -> EmeraldCorrect
-        QuestionDifficulty.MEDIUM -> AmberHighlight
-        QuestionDifficulty.HARD -> RoseWrong
+        QuestionDifficulty.EASY -> editorial.correctText
+        QuestionDifficulty.MEDIUM -> editorial.warningText
+        QuestionDifficulty.HARD -> editorial.wrongText
     }
     Surface(
         modifier = modifier,
@@ -87,17 +89,10 @@ fun PyqSourceBadge(
 ) {
     val badgeText = question.pyqBadgeText() ?: return
     val isVerified = question.isVerifiedSource
-    val bgColor = if (isVerified) {
-        EmeraldCorrect.copy(alpha = 0.14f)
-    } else {
-        AmberHighlight.copy(alpha = 0.16f)
-    }
-    val fgColor = if (isVerified) EmeraldCorrect else AmberHighlight
-    val borderColor = if (isVerified) {
-        EmeraldCorrect.copy(alpha = 0.4f)
-    } else {
-        AmberHighlight.copy(alpha = 0.45f)
-    }
+    val editorial = MaterialTheme.editorialColors
+    val fgColor = if (isVerified) editorial.correctText else editorial.warningText
+    val bgColor = fgColor.copy(alpha = if (isVerified) 0.14f else 0.16f)
+    val borderColor = fgColor.copy(alpha = if (isVerified) 0.4f else 0.45f)
     Surface(
         modifier = modifier.testTag("pyq_source_badge"),
         shape = RoundedCornerShape(8.dp),
@@ -155,19 +150,19 @@ fun MetricTile(
     label: String,
     value: String,
     subValue: String? = null,
-    valueColor: Color = Color.White,
+    valueColor: Color = EditorialBannerTitle,
     modifier: Modifier = Modifier
 ) {
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(14.dp),
-        color = Color.White.copy(alpha = 0.11f)
+        color = EditorialBannerTitle.copy(alpha = 0.10f)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFFCBD5E1),
+                color = EditorialBannerSubtext,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -184,7 +179,7 @@ fun MetricTile(
                     Text(
                         text = subValue,
                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                        color = Color(0xFF94A3B8),
+                        color = EditorialBannerMuted,
                         modifier = Modifier.padding(bottom = 2.dp)
                     )
                 }
@@ -397,7 +392,7 @@ fun QuestionSummaryCard(
                     Icon(
                         imageVector = if (item.isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
                         contentDescription = if (item.isBookmarked) "Remove bookmark" else "Save bookmark",
-                        tint = if (item.isBookmarked) AmberHighlight else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (item.isBookmarked) MaterialTheme.editorialColors.warningText else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -412,7 +407,7 @@ fun QuestionSummaryCard(
             Text(
                 text = "Ans: ${'A' + q.correctIndex}. $ansText",
                 style = MaterialTheme.typography.labelMedium,
-                color = EmeraldCorrect,
+                color = MaterialTheme.editorialColors.correctText,
                 fontWeight = FontWeight.Bold
             )
 
@@ -425,10 +420,11 @@ fun QuestionSummaryCard(
             }
 
             if (item.attemptsCount > 0) {
+                val editorial = MaterialTheme.editorialColors
                 val accColor = when {
-                    item.accuracyPercent >= 75 -> EmeraldCorrect
-                    item.accuracyPercent >= 40 -> AmberHighlight
-                    else -> RoseWrong
+                    item.accuracyPercent >= 75 -> editorial.correctText
+                    item.accuracyPercent >= 40 -> editorial.warningText
+                    else -> editorial.wrongText
                 }
                 Text(
                     text = "History: ${item.correctCount}/${item.attemptsCount} correct (${item.accuracyPercent}% accuracy)",

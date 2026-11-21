@@ -48,10 +48,17 @@ import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectStat
 import com.example.ui.components.MetricTile
 import com.example.ui.components.QuestionSummaryCard
-import com.example.ui.theme.AmberHighlight
-import com.example.ui.theme.EmeraldCorrect
+import com.example.ui.theme.EditorialBannerKpiAccent
+import com.example.ui.theme.EditorialBannerKpiDanger
+import com.example.ui.theme.EditorialBannerKpiHighlight
+import com.example.ui.theme.EditorialBannerKpiSuccess
+import com.example.ui.theme.EditorialBannerSubtext
+import com.example.ui.theme.EditorialBannerSurface
+import com.example.ui.theme.EditorialBannerTitle
 import com.example.ui.theme.MonoFontFamily
-import com.example.ui.theme.RoseWrong
+import com.example.ui.theme.MutedCrimsonFill
+import com.example.ui.theme.WarmWhite
+import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.DashboardDerivedState
 import java.util.Locale
 
@@ -81,7 +88,8 @@ fun StatsScreen(
             item {
                 Card(
                     shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A))
+                    colors = CardDefaults.cardColors(containerColor = EditorialBannerSurface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
                 ) {
                     Column(
                         modifier = Modifier.padding(18.dp),
@@ -96,13 +104,13 @@ fun StatsScreen(
                                 Text(
                                     "Detailed Performance Analytics",
                                     style = MaterialTheme.typography.titleLarge,
-                                    color = Color.White,
+                                    color = EditorialBannerTitle,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     "Lifetime accuracy per subject, category & weak-question tracker",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFFCBD5E1)
+                                    color = EditorialBannerSubtext
                                 )
                             }
                             IconButton(
@@ -112,7 +120,7 @@ fun StatsScreen(
                                 Icon(
                                     Icons.Filled.DeleteSweep,
                                     contentDescription = "Reset statistics",
-                                    tint = Color(0xFFFCA5A5)
+                                    tint = EditorialBannerKpiDanger
                                 )
                             }
                         }
@@ -124,13 +132,14 @@ fun StatsScreen(
                             MetricTile(
                                 label = "Overall Accuracy",
                                 value = "${state.overall.accuracyPercent}%",
-                                valueColor = Color(0xFF6EE7B7),
+                                valueColor = EditorialBannerKpiSuccess,
                                 modifier = Modifier.weight(1f)
                             )
                             MetricTile(
                                 label = "Total Attempts",
                                 value = "${state.overall.totalAttempts}",
                                 subValue = "(${state.overall.attemptedUnique} Qs)",
+                                valueColor = EditorialBannerTitle,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -142,13 +151,13 @@ fun StatsScreen(
                                 label = "Correct / Wrong",
                                 value = "${state.overall.totalCorrect}",
                                 subValue = "/ ${state.overall.totalWrong} err",
-                                valueColor = Color(0xFF7DD3FC),
+                                valueColor = EditorialBannerKpiAccent,
                                 modifier = Modifier.weight(1f)
                             )
                             MetricTile(
                                 label = "Net Latest Score",
                                 value = String.format(Locale.US, "%.2f", state.overall.netPracticeScore),
-                                valueColor = Color(0xFFFCD34D),
+                                valueColor = EditorialBannerKpiHighlight,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -205,12 +214,13 @@ fun StatsScreen(
 
             // Lowest Accuracy Questions Highlighted for Review
             item {
+                val editorial = MaterialTheme.editorialColors
                 Card(
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f)
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
                     ),
-                    border = BorderStroke(1.dp, RoseWrong.copy(alpha = 0.35f)),
+                    border = BorderStroke(1.dp, editorial.wrongText.copy(alpha = 0.35f)),
                     modifier = Modifier.padding(top = 6.dp)
                 ) {
                     Row(
@@ -225,7 +235,7 @@ fun StatsScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.TrendingDown, contentDescription = null, tint = RoseWrong)
+                            Icon(Icons.AutoMirrored.Filled.TrendingDown, contentDescription = null, tint = editorial.wrongText)
                             Column {
                                 Text(
                                     "Lowest Accuracy Questions (${lowest.size})",
@@ -242,7 +252,10 @@ fun StatsScreen(
                         if (lowest.isNotEmpty()) {
                             Button(
                                 onClick = { onPracticeLowestAccuracy(lowest.take(25)) },
-                                colors = ButtonDefaults.buttonColors(containerColor = RoseWrong),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MutedCrimsonFill,
+                                    contentColor = WarmWhite
+                                ),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.testTag("review_lowest_accuracy_btn")
                             ) {
@@ -276,8 +289,9 @@ fun StatsScreen(
                 }
             } else {
                 itemsIndexed(lowest.take(30), key = { _, item -> item.id }) { idx, item ->
+                    val editorial = MaterialTheme.editorialColors
                     val acc = item.accuracyPercent
-                    val badgeColor = if (acc < 50) RoseWrong else AmberHighlight
+                    val badgeColor = if (acc < 50) editorial.wrongText else editorial.warningText
                     QuestionSummaryCard(
                         item = item,
                         indexLabel = "#${idx + 1}",
@@ -301,7 +315,10 @@ fun StatsScreen(
                         confirmReset = false
                         onClearStats()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = RoseWrong)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MutedCrimsonFill,
+                        contentColor = WarmWhite
+                    )
                 ) {
                     Text("Clear Stats")
                 }
@@ -332,12 +349,12 @@ private fun CategoryStatCard(cat: CategoryStat, modifier: Modifier = Modifier) {
                 Text(cat.label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = cat.accentColor.copy(alpha = 0.14f)
+                    color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Text(
                         text = if (cat.totalAttempts > 0) "$pct%" else "—",
                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                        color = cat.accentColor,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                     )
@@ -373,12 +390,13 @@ private fun CategoryStatCard(cat: CategoryStat, modifier: Modifier = Modifier) {
 
 @Composable
 private fun SubjectStatCard(sub: SubjectStat, modifier: Modifier = Modifier) {
+    val editorial = MaterialTheme.editorialColors
     val pct = sub.accuracyPercent
     val accColor = when {
         sub.totalAttempts == 0 -> MaterialTheme.colorScheme.onSurfaceVariant
-        pct >= 75 -> EmeraldCorrect
-        pct >= 45 -> AmberHighlight
-        else -> RoseWrong
+        pct >= 75 -> editorial.correctText
+        pct >= 45 -> editorial.warningText
+        else -> editorial.wrongText
     }
     val progress = if (sub.totalAttempts > 0) pct / 100f else 0f
 

@@ -45,7 +45,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -59,12 +58,16 @@ import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectCatalog
 import com.example.ui.components.DifficultyFilterBar
 import com.example.ui.components.MetricTile
-import com.example.ui.theme.AmberHighlight
-import com.example.ui.theme.CobaltLight
-import com.example.ui.theme.EmeraldCorrect
+import com.example.ui.theme.DustyRoseSecondary
+import com.example.ui.theme.EditorialBannerKpiAccent
+import com.example.ui.theme.EditorialBannerKpiHighlight
+import com.example.ui.theme.EditorialBannerKpiSuccess
+import com.example.ui.theme.EditorialBannerSubtext
+import com.example.ui.theme.EditorialBannerSurface
+import com.example.ui.theme.EditorialBannerTitle
 import com.example.ui.theme.MonoFontFamily
-import com.example.ui.theme.RoseWrong
-import com.example.ui.theme.TealSecondary
+import com.example.ui.theme.OnDustyRoseLight
+import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.DashboardDerivedState
 import com.example.ui.viewmodel.MainTab
 import com.example.ui.viewmodel.SubjectHubSection
@@ -109,6 +112,10 @@ fun DashboardScreen(
             else -> 1
         }
 
+        val editorial = MaterialTheme.editorialColors
+        val primaryTone = MaterialTheme.colorScheme.primary
+        val tertiaryTone = MaterialTheme.colorScheme.tertiary
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -121,7 +128,8 @@ fun DashboardScreen(
             item {
                 Card(
                     shape = RoundedCornerShape(24.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Box(modifier = Modifier.fillMaxWidth()) {
@@ -134,15 +142,7 @@ fun DashboardScreen(
                         Box(
                             modifier = Modifier
                                 .matchParentSize()
-                                .background(
-                                    Brush.horizontalGradient(
-                                        colors = listOf(
-                                            Color(0xF0090D16),
-                                            Color(0xDB0F172A),
-                                            Color(0xB31E3A8A)
-                                        )
-                                    )
-                                )
+                                .background(EditorialBannerSurface.copy(alpha = 0.94f))
                         )
                         Column(
                             modifier = Modifier
@@ -152,13 +152,13 @@ fun DashboardScreen(
                         ) {
                             Surface(
                                 shape = RoundedCornerShape(50.dp),
-                                color = Color(0xFF3B82F6).copy(alpha = 0.25f),
-                                border = BorderStroke(1.dp, Color(0xFF60A5FA).copy(alpha = 0.45f))
+                                color = DustyRoseSecondary.copy(alpha = 0.22f),
+                                border = BorderStroke(1.dp, DustyRoseSecondary.copy(alpha = 0.55f))
                             ) {
                                 Text(
                                     text = "RRB Nursing Superintendent & Staff Nurse",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFFBFDBFE),
+                                    color = EditorialBannerTitle,
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
                                 )
                             }
@@ -167,13 +167,13 @@ fun DashboardScreen(
                                 Text(
                                     text = "Personal CBT Mastery Hub",
                                     style = MaterialTheme.typography.headlineMedium,
-                                    color = Color.White,
+                                    color = EditorialBannerTitle,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     text = "70:30 Exam Weightage • +1 / -0.33 Negative Marking • 100% Offline",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFFCBD5E1)
+                                    color = EditorialBannerSubtext
                                 )
                             }
 
@@ -184,7 +184,10 @@ fun DashboardScreen(
                                 Button(
                                     onClick = onLaunchFullMock,
                                     shape = RoundedCornerShape(14.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = DustyRoseSecondary,
+                                        contentColor = OnDustyRoseLight
+                                    ),
                                     modifier = Modifier
                                         .weight(1f)
                                         .testTag("launch_100q_mock_btn")
@@ -200,8 +203,8 @@ fun DashboardScreen(
                                 OutlinedButton(
                                     onClick = onOpenTimedPractice,
                                     shape = RoundedCornerShape(14.dp),
-                                    border = BorderStroke(1.dp, Color(0xFF60A5FA)),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                    border = BorderStroke(1.dp, DustyRoseSecondary.copy(alpha = 0.8f)),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = EditorialBannerTitle),
                                     modifier = Modifier.testTag("open_timed_practice_btn")
                                 ) {
                                     Icon(Icons.Filled.Timer, contentDescription = null, modifier = Modifier.height(16.dp))
@@ -220,12 +223,13 @@ fun DashboardScreen(
                                     label = "Attempted",
                                     value = "${state.overall.attemptedUnique}",
                                     subValue = "/ ${state.overall.totalQuestions}",
+                                    valueColor = EditorialBannerTitle,
                                     modifier = Modifier.weight(1f)
                                 )
                                 MetricTile(
                                     label = "Accuracy",
                                     value = "${state.overall.accuracyPercent}%",
-                                    valueColor = Color(0xFF6EE7B7),
+                                    valueColor = EditorialBannerKpiSuccess,
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -236,14 +240,14 @@ fun DashboardScreen(
                                 MetricTile(
                                     label = "Net Score",
                                     value = netFormatted,
-                                    valueColor = Color(0xFF7DD3FC),
+                                    valueColor = EditorialBannerKpiAccent,
                                     modifier = Modifier.weight(1f)
                                 )
                                 MetricTile(
                                     label = "Revision Deck",
                                     value = "${state.overall.bookmarkCount}",
                                     subValue = "saved",
-                                    valueColor = Color(0xFFFCD34D),
+                                    valueColor = EditorialBannerKpiHighlight,
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -343,7 +347,7 @@ fun DashboardScreen(
                     countLabel = "$pyqCount Qs",
                     title = "PYQ-Tagged Questions",
                     desc = "Shift-tagged practice sets (2015–2026). Tags remain unverified until matched to official papers.",
-                    badgeColor = AmberHighlight,
+                    badgeColor = editorial.warningText,
                     icon = Icons.Filled.History,
                     tag = "module_pyq",
                     onClick = { onOpenSubjectSection(SubjectHubSection.PYQ) }
@@ -353,7 +357,7 @@ fun DashboardScreen(
                     countLabel = "$nurCount Qs",
                     title = "Subject-Wise Nursing",
                     desc = "MSN, Pharmacology, OBG, Peds, CHN, Psychiatry, FON, Anatomy & Admin.",
-                    badgeColor = RoseWrong,
+                    badgeColor = primaryTone,
                     icon = Icons.Filled.Favorite,
                     tag = "module_nursing",
                     onClick = { onOpenSubjectSection(SubjectHubSection.NURSING) }
@@ -363,7 +367,7 @@ fun DashboardScreen(
                     countLabel = "$caCount Qs + ${state.flashcards.size}",
                     title = "Current Affairs & Static GK",
                     desc = "Union Budget 2026–27, Kavach 4.0, HPV Drive, Padma/Nobel/Sports & Polity.",
-                    badgeColor = CobaltLight,
+                    badgeColor = editorial.accentDustyRoseText,
                     icon = Icons.Filled.Public,
                     tag = "module_ca",
                     onClick = { onOpenSubjectSection(SubjectHubSection.CA_GK) }
@@ -373,7 +377,7 @@ fun DashboardScreen(
                     countLabel = "$genCount Qs",
                     title = "Science, Math & Reasoning",
                     desc = "NCERT Physics/Chem/Bio, dosage & aptitude formulas, worked reasoning.",
-                    badgeColor = TealSecondary,
+                    badgeColor = tertiaryTone,
                     icon = Icons.Filled.Calculate,
                     tag = "module_gen",
                     onClick = { onOpenSubjectSection(SubjectHubSection.NON_TECH) }
@@ -383,7 +387,7 @@ fun DashboardScreen(
                     countLabel = "15 / 30 / 50 Qs",
                     title = "Timed Practice & CBT",
                     desc = "Select any subject or mixed set with custom minutes, or full TCS iON CBT.",
-                    badgeColor = EmeraldCorrect,
+                    badgeColor = editorial.correctText,
                     icon = Icons.Filled.Quiz,
                     tag = "module_cbt",
                     onClick = { onSelectTab(MainTab.CBT) }
@@ -393,7 +397,7 @@ fun DashboardScreen(
                     countLabel = "Analytics",
                     title = "Detailed Performance Stats",
                     desc = "Track accuracy by subject & category and review lowest accuracy questions.",
-                    badgeColor = Color(0xFF7C3AED),
+                    badgeColor = editorial.reviewText,
                     icon = Icons.Filled.Analytics,
                     tag = "module_stats",
                     onClick = { onSelectTab(MainTab.STATS) }

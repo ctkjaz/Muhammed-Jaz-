@@ -62,8 +62,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -82,9 +80,9 @@ import com.example.ui.screens.PracticeScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.StatsScreen
 import com.example.ui.screens.SubjectsHubScreen
-import com.example.ui.theme.CobaltPrimary
+import com.example.ui.theme.BurgundyPrimary
 import com.example.ui.theme.RrbNursingTheme
-import com.example.ui.theme.TealSecondary
+import com.example.ui.theme.WarmWhite
 import com.example.ui.viewmodel.MainTab
 import com.example.ui.viewmodel.MainViewModel
 import java.text.SimpleDateFormat
@@ -213,20 +211,20 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                                         modifier = Modifier
                                             .size(36.dp)
                                             .clip(RoundedCornerShape(10.dp))
-                                            .background(Brush.linearGradient(listOf(CobaltPrimary, TealSecondary))),
+                                            .background(BurgundyPrimary),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
                                             Icons.Filled.MonitorHeart,
                                             contentDescription = null,
-                                            tint = Color.White,
+                                            tint = WarmWhite,
                                             modifier = Modifier.size(20.dp)
                                         )
                                     }
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column {
                                         Text(
-                                            text = "RRB Nursing CBT",
+                                            text = "ClinEdge",
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold
                                         )

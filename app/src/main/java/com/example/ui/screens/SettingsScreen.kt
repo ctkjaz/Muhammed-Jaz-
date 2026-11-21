@@ -70,7 +70,9 @@ import com.example.R
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.ui.theme.MonoFontFamily
-import com.example.ui.theme.RoseWrong
+import com.example.ui.theme.MutedCrimsonFill
+import com.example.ui.theme.WarmWhite
+import com.example.ui.theme.editorialColors
 import kotlin.math.roundToInt
 
 @Composable
@@ -435,7 +437,7 @@ fun SettingsScreen(
                         icon = Icons.Filled.DeleteOutline,
                         title = "Reset my statistics",
                         subtitle = "Clear attempt counts and mock history. Bookmarks are kept.",
-                        tint = RoseWrong,
+                        tint = MaterialTheme.editorialColors.wrongText,
                         onClick = { showResetStatsDialog = true },
                         testTag = "settings_reset_stats_row"
                     )
@@ -496,7 +498,10 @@ fun SettingsScreen(
                         showResetStatsDialog = false
                         onResetStatistics()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = RoseWrong),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MutedCrimsonFill,
+                        contentColor = WarmWhite
+                    ),
                     modifier = Modifier.testTag("settings_confirm_reset_stats_btn")
                 ) {
                     Text("Reset Statistics")

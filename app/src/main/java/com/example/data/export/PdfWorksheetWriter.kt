@@ -115,52 +115,52 @@ object PdfWorksheetWriter {
         require(questions.isNotEmpty()) { "Cannot export an empty question list." }
 
         val doc = PdfDocument()
-        val accentPaint = Paint().apply { color = Color.rgb(29, 78, 216); isAntiAlias = true }
-        val dividerPaint = Paint().apply { color = Color.rgb(226, 232, 240); strokeWidth = 0.8f }
-        val boxBgPaint = Paint().apply { color = Color.rgb(248, 250, 252); isAntiAlias = true }
+        val accentPaint = Paint().apply { color = Color.rgb(84, 47, 59); isAntiAlias = true }
+        val dividerPaint = Paint().apply { color = Color.rgb(214, 201, 190); strokeWidth = 0.8f }
+        val boxBgPaint = Paint().apply { color = Color.rgb(246, 240, 233); isAntiAlias = true }
 
         val tagPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(29, 78, 216)
+            color = Color.rgb(84, 47, 59)
             textSize = 9.5f
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
         }
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(15, 23, 42)
+            color = Color.rgb(52, 56, 61)
             textSize = 17f
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
         }
         val subPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(71, 85, 105)
+            color = Color.rgb(87, 82, 87)
             textSize = 10f
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
         }
         val metaPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(100, 116, 139)
+            color = Color.rgb(114, 108, 115)
             textSize = 8.5f
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
         }
         val stemPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(15, 23, 42)
+            color = Color.rgb(52, 56, 61)
             textSize = 10.5f
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
         }
         val optionPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(30, 41, 59)
+            color = Color.rgb(52, 56, 61)
             textSize = 9.8f
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
         }
         val answerPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(5, 150, 105)
+            color = Color.rgb(42, 107, 90)
             textSize = 9.5f
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
         }
         val rationalePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(51, 65, 85)
+            color = Color.rgb(87, 82, 87)
             textSize = 9.0f
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
         }
         val footerPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(148, 163, 184)
+            color = Color.rgb(114, 108, 115)
             textSize = 8.5f
         }
 
@@ -175,7 +175,7 @@ object PdfWorksheetWriter {
             if (currentCanvas != null && currentPage != null) {
                 currentCanvas.drawLine(MARGIN_X, PAGE_HEIGHT - 28f, PAGE_WIDTH - MARGIN_X, PAGE_HEIGHT - 28f, dividerPaint)
                 currentCanvas.drawText(
-                    "RRB Nursing CBT • Offline Practice Worksheet",
+                    "ClinEdge • Offline Practice Worksheet",
                     MARGIN_X,
                     PAGE_HEIGHT - 16f,
                     footerPaint
@@ -229,7 +229,7 @@ object PdfWorksheetWriter {
             val headerHeight = 28f + titleLayout.height + 6f + subLayout.height + 26f
             c1.drawRect(MARGIN_X, y, PAGE_WIDTH - MARGIN_X, y + headerHeight, boxBgPaint)
             c1.drawRect(MARGIN_X, y, MARGIN_X + 4f, y + headerHeight, accentPaint)
-            c1.drawText("RRB NURSING CBT • PRINTABLE WORKSHEET", MARGIN_X + 14f, y + 16f, tagPaint)
+            c1.drawText("CLINEDGE • PRINTABLE WORKSHEET", MARGIN_X + 14f, y + 16f, tagPaint)
             drawLayout(c1, titleLayout, MARGIN_X + 14f, y + 24f)
             drawLayout(c1, subLayout, MARGIN_X + 14f, y + 24f + titleLayout.height + 5f)
             val metaLineY = y + headerHeight - 9f

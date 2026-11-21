@@ -35,8 +35,8 @@ import androidx.compose.ui.unit.dp
 import com.example.data.local.SettingsPreferences
 import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectCatalog
-import com.example.ui.theme.EmeraldCorrect
 import com.example.ui.theme.MonoFontFamily
+import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.DashboardDerivedState
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -56,6 +56,7 @@ fun CbtHubScreen(
     val nurPool = all.filter { SubjectCatalog.isNursing(it.question) }
     val nonPool = all.filter { !SubjectCatalog.isNursing(it.question) }
     val primaryColor = MaterialTheme.colorScheme.primary
+    val editorial = MaterialTheme.editorialColors
     val mini30Mins = SettingsPreferences.calculateSuggestedMinutes(30, secondsPerQuestion)
     val nur50Mins = SettingsPreferences.calculateSuggestedMinutes(50, secondsPerQuestion)
     val non30Mins = SettingsPreferences.calculateSuggestedMinutes(30, secondsPerQuestion)
@@ -135,7 +136,7 @@ fun CbtHubScreen(
                     durationLabel = if (useTimeLimit) "$mini30Mins Minutes" else "Untimed",
                     title = "Mini 30-Question CBT Mock",
                     desc = "Exact 70:30 ratio (21 Nursing + 9 Non-Tech/CA). Ideal for quick daily practice.",
-                    badgeColor = EmeraldCorrect,
+                    badgeColor = editorial.correctText,
                     btnLabel = "Start Mini Mock (30 Qs)",
                     isPrimary = false,
                     tag = "cbt_30q_btn",
@@ -146,7 +147,7 @@ fun CbtHubScreen(
                     durationLabel = if (useTimeLimit) "$nur50Mins Minutes" else "Untimed",
                     title = "50Q Nursing-Only Speed CBT",
                     desc = "Focused 50-question CBT covering all 9 clinical nursing subjects.",
-                    badgeColor = Color(0xFFE11D48),
+                    badgeColor = editorial.wrongText,
                     btnLabel = "Start 50Q Nursing CBT",
                     isPrimary = false,
                     tag = "cbt_50q_nur_btn",
@@ -157,7 +158,7 @@ fun CbtHubScreen(
                     durationLabel = if (useTimeLimit) "$non30Mins Minutes" else "Untimed",
                     title = "30Q Non-Tech & CA CBT",
                     desc = "2025–26 Current Affairs, Static GK, Science, Arithmetic & Reasoning.",
-                    badgeColor = Color(0xFF0891B2),
+                    badgeColor = editorial.accentDustyRoseText,
                     btnLabel = "Start 30Q Non-Tech CBT",
                     isPrimary = false,
                     tag = "cbt_30q_gen_btn",
@@ -282,7 +283,7 @@ fun CbtHubScreen(
                                 Text(
                                     "${h.accuracyPercent}% acc",
                                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                                    color = EmeraldCorrect
+                                    color = editorial.correctText
                                 )
                             }
                         }

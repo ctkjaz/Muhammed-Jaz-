@@ -62,10 +62,17 @@ import com.example.ui.components.DifficultyBadge
 import com.example.ui.components.MetricTile
 import com.example.ui.components.PyqSourceBadge
 import com.example.ui.components.formatTimer
-import com.example.ui.theme.AmberHighlight
-import com.example.ui.theme.EmeraldCorrect
+import com.example.ui.theme.CalmSageFill
+import com.example.ui.theme.EditorialBannerKpiAccent
+import com.example.ui.theme.EditorialBannerKpiDanger
+import com.example.ui.theme.EditorialBannerKpiSuccess
+import com.example.ui.theme.EditorialBannerSurface
+import com.example.ui.theme.EditorialBannerTitle
 import com.example.ui.theme.MonoFontFamily
-import com.example.ui.theme.RoseWrong
+import com.example.ui.theme.MutedCrimsonFill
+import com.example.ui.theme.WarmOchreFill
+import com.example.ui.theme.WarmWhite
+import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.CbtReviewFilter
 import com.example.ui.viewmodel.PracticeSessionState
 import java.util.Locale
@@ -114,6 +121,7 @@ fun PracticeScreen(
     val chosen = session.selectedAnswers[q.id]
     val answered = chosen != null
     val isBookmarked = liveProgressItem.isBookmarked
+    val editorial = MaterialTheme.editorialColors
 
     var sRight = 0
     var sWrong = 0
@@ -174,9 +182,9 @@ fun PracticeScreen(
                     ) {
                         if (session.timedMode && session.hasCountdown) {
                             val timerBg = when {
-                                session.remainingSeconds <= 60 -> RoseWrong
-                                session.remainingSeconds <= 300 -> AmberHighlight
-                                else -> Color(0xFF0F172A)
+                                session.remainingSeconds <= 60 -> MutedCrimsonFill
+                                session.remainingSeconds <= 300 -> WarmOchreFill
+                                else -> EditorialBannerSurface
                             }
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
@@ -191,13 +199,13 @@ fun PracticeScreen(
                                     Icon(
                                         Icons.Filled.Timer,
                                         contentDescription = "Remaining time",
-                                        tint = Color.White,
+                                        tint = WarmWhite,
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Text(
                                         text = formatTimer(session.remainingSeconds),
                                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                                        color = Color.White,
+                                        color = WarmWhite,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -305,7 +313,7 @@ fun PracticeScreen(
                                 Icon(
                                     imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
                                     contentDescription = if (isBookmarked) "Remove bookmark" else "Bookmark question",
-                                    tint = if (isBookmarked) AmberHighlight else MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = if (isBookmarked) editorial.warningText else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -322,24 +330,24 @@ fun PracticeScreen(
                                 val isChosenOpt = oi == chosen
                                 val borderColor = when {
                                     !answered -> MaterialTheme.colorScheme.outline
-                                    isCorrectOpt -> EmeraldCorrect
-                                    isChosenOpt -> RoseWrong
+                                    isCorrectOpt -> editorial.correctText
+                                    isChosenOpt -> editorial.wrongText
                                     else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
                                 }
                                 val bgColor = when {
                                     !answered -> MaterialTheme.colorScheme.surface
-                                    isCorrectOpt -> EmeraldCorrect.copy(alpha = 0.12f)
-                                    isChosenOpt -> RoseWrong.copy(alpha = 0.12f)
+                                    isCorrectOpt -> editorial.correctText.copy(alpha = 0.12f)
+                                    isChosenOpt -> editorial.wrongText.copy(alpha = 0.12f)
                                     else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
                                 }
                                 val badgeBg = when {
                                     !answered -> MaterialTheme.colorScheme.surfaceVariant
-                                    isCorrectOpt -> EmeraldCorrect
-                                    isChosenOpt -> RoseWrong
+                                    isCorrectOpt -> CalmSageFill
+                                    isChosenOpt -> MutedCrimsonFill
                                     else -> MaterialTheme.colorScheme.surfaceVariant
                                 }
                                 val badgeFg = if (answered && (isCorrectOpt || isChosenOpt)) {
-                                    Color.White
+                                    WarmWhite
                                 } else {
                                     MaterialTheme.colorScheme.onSurface
                                 }
@@ -406,7 +414,7 @@ fun PracticeScreen(
                                             "✕ Incorrect (${if (negativeMarking) "-0.33" else "0.00"}) • Correct: ${'A' + q.correctIndex}"
                                         },
                                         style = MaterialTheme.typography.labelLarge,
-                                        color = if (isRight) EmeraldCorrect else RoseWrong,
+                                        color = if (isRight) editorial.correctText else editorial.wrongText,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
@@ -418,7 +426,7 @@ fun PracticeScreen(
                                         Text(
                                             text = "Source: ${q.sourceNote}",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = EmeraldCorrect
+                                            color = editorial.correctText
                                         )
                                     }
                                 }
@@ -438,11 +446,15 @@ fun PracticeScreen(
                         val ans = session.selectedAnswers[item.id]
                         val bg = when {
                             idx == session.currentIndex -> MaterialTheme.colorScheme.primary
-                            ans == item.question.correctIndex -> EmeraldCorrect
-                            ans != null -> RoseWrong
+                            ans == item.question.correctIndex -> CalmSageFill
+                            ans != null -> MutedCrimsonFill
                             else -> MaterialTheme.colorScheme.surfaceVariant
                         }
-                        val fg = if (idx == session.currentIndex || ans != null) Color.White else MaterialTheme.colorScheme.onSurface
+                        val fg = when {
+                            idx == session.currentIndex -> MaterialTheme.colorScheme.onPrimary
+                            ans != null -> WarmWhite
+                            else -> MaterialTheme.colorScheme.onSurface
+                        }
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = bg,
@@ -498,7 +510,10 @@ fun PracticeScreen(
                     } else {
                         Button(
                             onClick = { if (session.timedMode) onRequestSubmit() else onExit() },
-                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldCorrect),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = CalmSageFill,
+                                contentColor = WarmWhite
+                            ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.testTag("practice_finish_btn")
                         ) {
@@ -523,7 +538,10 @@ fun PracticeScreen(
             confirmButton = {
                 Button(
                     onClick = onConfirmSubmit,
-                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldCorrect),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CalmSageFill,
+                        contentColor = WarmWhite
+                    ),
                     modifier = Modifier.testTag("timeout_submit_btn")
                 ) {
                     Text("Submit & View Report")
@@ -554,7 +572,10 @@ fun PracticeScreen(
             confirmButton = {
                 Button(
                     onClick = onConfirmSubmit,
-                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldCorrect),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CalmSageFill,
+                        contentColor = WarmWhite
+                    ),
                     modifier = Modifier.testTag("confirm_timed_submit_btn")
                 ) {
                     Text("Submit Practice")
@@ -645,7 +666,8 @@ private fun TimedPracticeSummaryView(
             item {
                 Card(
                     shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A))
+                    colors = CardDefaults.cardColors(containerColor = EditorialBannerSurface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
                 ) {
                     Column(
                         modifier = Modifier.padding(18.dp),
@@ -657,8 +679,8 @@ private fun TimedPracticeSummaryView(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Timed Practice Score Card", style = MaterialTheme.typography.labelMedium, color = Color(0xFF7DD3FC))
-                                Text(session.title, style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("Timed Practice Score Card", style = MaterialTheme.typography.labelMedium, color = EditorialBannerKpiAccent)
+                                Text(session.title, style = MaterialTheme.typography.titleLarge, color = EditorialBannerTitle, fontWeight = FontWeight.Bold)
                             }
                             Button(onClick = onExit) {
                                 Text("Done")
@@ -670,20 +692,20 @@ private fun TimedPracticeSummaryView(
                                 label = "Net Score",
                                 value = String.format(Locale.US, "%.2f", net),
                                 subValue = "/ ${session.questions.size}",
-                                valueColor = Color(0xFF7DD3FC),
+                                valueColor = EditorialBannerKpiAccent,
                                 modifier = Modifier.weight(1f)
                             )
                             MetricTile(
                                 label = "Accuracy",
                                 value = "$acc%",
-                                valueColor = Color(0xFF6EE7B7),
+                                valueColor = EditorialBannerKpiSuccess,
                                 modifier = Modifier.weight(1f)
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MetricTile(label = "Correct (+1)", value = "$right", valueColor = Color(0xFF6EE7B7), modifier = Modifier.weight(1f))
-                            MetricTile(label = "Wrong", value = "$wrong", valueColor = Color(0xFFFCA5A5), modifier = Modifier.weight(1f))
-                            MetricTile(label = "Skipped", value = "$skipped", modifier = Modifier.weight(1f))
+                            MetricTile(label = "Correct (+1)", value = "$right", valueColor = EditorialBannerKpiSuccess, modifier = Modifier.weight(1f))
+                            MetricTile(label = "Wrong", value = "$wrong", valueColor = EditorialBannerKpiDanger, modifier = Modifier.weight(1f))
+                            MetricTile(label = "Skipped", value = "$skipped", valueColor = EditorialBannerTitle, modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -706,6 +728,7 @@ private fun TimedPracticeSummaryView(
 
             itemsIndexed(filtered) { _, (idx, item, ans) ->
                 val q = item.question
+                val editorial = MaterialTheme.editorialColors
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -735,8 +758,8 @@ private fun TimedPracticeSummaryView(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = when {
                                     ans == null -> MaterialTheme.colorScheme.onSurfaceVariant
-                                    ans == q.correctIndex -> EmeraldCorrect
-                                    else -> RoseWrong
+                                    ans == q.correctIndex -> editorial.correctText
+                                    else -> editorial.wrongText
                                 },
                                 fontWeight = FontWeight.Bold
                             )
@@ -745,7 +768,7 @@ private fun TimedPracticeSummaryView(
                         Text(
                             "Correct Answer: ${'A' + q.correctIndex}. ${q.options.getOrElse(q.correctIndex) { "" }}",
                             style = MaterialTheme.typography.labelMedium,
-                            color = EmeraldCorrect
+                            color = editorial.correctText
                         )
                         if (q.explanation.isNotBlank()) {
                             Text(q.explanation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

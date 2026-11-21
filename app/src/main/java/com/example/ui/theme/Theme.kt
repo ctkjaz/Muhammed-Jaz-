@@ -10,23 +10,62 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
+@Immutable
+data class EditorialColors(
+    val correctText: Color,
+    val wrongText: Color,
+    val warningText: Color,
+    val reviewText: Color,
+    val accentDustyRoseText: Color,
+    val unvisitedSwatch: Color
+)
+
+private val LightEditorialColors = EditorialColors(
+    correctText = CalmSageTextLight,
+    wrongText = MutedCrimsonTextLight,
+    warningText = WarmOchreTextLight,
+    reviewText = MutedPlumTextLight,
+    accentDustyRoseText = Color(0xFF7D5242),
+    unvisitedSwatch = UnvisitedNeutral
+)
+
+private val DarkEditorialColors = EditorialColors(
+    correctText = CalmSageTextDark,
+    wrongText = MutedCrimsonTextDark,
+    warningText = WarmOchreTextDark,
+    reviewText = MutedPlumTextDark,
+    accentDustyRoseText = DustyRoseSecondaryDark,
+    unvisitedSwatch = Color(0xFF938B94)
+)
+
+private val LocalEditorialColors = staticCompositionLocalOf { LightEditorialColors }
+
+val MaterialTheme.editorialColors: EditorialColors
+    @Composable
+    @ReadOnlyComposable
+    get() = LocalEditorialColors.current
+
 private val DarkColorScheme = darkColorScheme(
-    primary = CobaltLight,
-    onPrimary = Color.White,
-    primaryContainer = CobaltContainerDark,
-    onPrimaryContainer = OnCobaltContainerDark,
-    secondary = TealSecondary,
-    onSecondary = Color.White,
-    secondaryContainer = TealContainerDark,
-    onSecondaryContainer = OnTealContainerDark,
-    tertiary = AmberHighlight,
-    onTertiary = Color.White,
-    tertiaryContainer = AmberContainerDark,
-    onTertiaryContainer = Color(0xFFFDE68A),
+    primary = BurgundyPrimaryDark,
+    onPrimary = OnBurgundyPrimaryDark,
+    primaryContainer = BurgundyContainerDark,
+    onPrimaryContainer = OnBurgundyContainerDark,
+    secondary = DustyRoseSecondaryDark,
+    onSecondary = OnDustyRoseDark,
+    secondaryContainer = DustyRoseContainerDark,
+    onSecondaryContainer = OnDustyRoseContainerDark,
+    tertiary = CharcoalAccentDark,
+    onTertiary = OnCharcoalAccentDark,
+    tertiaryContainer = CharcoalContainerDark,
+    onTertiaryContainer = OnCharcoalContainerDark,
     background = DarkBackground,
     onBackground = DarkTextPrimary,
     surface = DarkSurface,
@@ -34,38 +73,38 @@ private val DarkColorScheme = darkColorScheme(
     surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = DarkTextSecondary,
     outline = DarkOutline,
-    outlineVariant = Color(0xFF1E293B),
-    error = RoseWrong,
-    onError = Color.White,
-    errorContainer = RoseContainerDark,
-    onErrorContainer = Color(0xFFFECDD3)
+    outlineVariant = DarkOutlineVariant,
+    error = MutedCrimsonTextDark,
+    onError = Color(0xFF361016),
+    errorContainer = MutedCrimsonContainerDark,
+    onErrorContainer = OnMutedCrimsonContainerDark
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = CobaltPrimary,
-    onPrimary = Color.White,
-    primaryContainer = CobaltContainerLight,
-    onPrimaryContainer = OnCobaltContainerLight,
-    secondary = TealSecondary,
-    onSecondary = Color.White,
-    secondaryContainer = TealContainerLight,
-    onSecondaryContainer = OnTealContainerLight,
-    tertiary = AmberHighlight,
-    onTertiary = Color.White,
-    tertiaryContainer = AmberContainerLight,
-    onTertiaryContainer = Color(0xFF78350F),
-    background = LightBackground,
+    primary = BurgundyPrimary,
+    onPrimary = WarmWhite,
+    primaryContainer = BurgundyContainerLight,
+    onPrimaryContainer = OnBurgundyContainerLight,
+    secondary = DustyRoseSecondary,
+    onSecondary = OnDustyRoseLight,
+    secondaryContainer = DustyRoseContainerLight,
+    onSecondaryContainer = OnDustyRoseContainerLight,
+    tertiary = CharcoalAccent,
+    onTertiary = WarmWhite,
+    tertiaryContainer = CharcoalContainerLight,
+    onTertiaryContainer = OnCharcoalContainerLight,
+    background = CreamBackground,
     onBackground = LightTextPrimary,
-    surface = LightSurface,
+    surface = CreamSurface,
     onSurface = LightTextPrimary,
-    surfaceVariant = LightSurfaceVariant,
+    surfaceVariant = WarmLinenSurfaceVariant,
     onSurfaceVariant = LightTextSecondary,
-    outline = LightOutline,
-    outlineVariant = Color(0xFFE2E8F0),
-    error = RoseWrong,
-    onError = Color.White,
-    errorContainer = RoseContainerLight,
-    onErrorContainer = Color(0xFF881337)
+    outline = WarmSandOutline,
+    outlineVariant = WarmSandOutlineVariant,
+    error = MutedCrimsonFill,
+    onError = WarmWhite,
+    errorContainer = MutedCrimsonContainerLight,
+    onErrorContainer = OnMutedCrimsonContainerLight
 )
 
 val AppShapes = Shapes(
@@ -89,11 +128,14 @@ fun RrbNursingTheme(
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
+    val editorial = if (darkTheme) DarkEditorialColors else LightEditorialColors
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = AppTypography,
-        shapes = AppShapes,
-        content = content
-    )
+    CompositionLocalProvider(LocalEditorialColors provides editorial) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = AppTypography,
+            shapes = AppShapes,
+            content = content
+        )
+    }
 }

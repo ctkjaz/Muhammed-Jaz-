@@ -37,7 +37,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.model.QuestionItem
 import com.example.ui.components.QuestionSummaryCard
-import com.example.ui.theme.AmberHighlight
+import com.example.ui.theme.WarmOchreFill
+import com.example.ui.theme.WarmWhite
 import com.example.ui.viewmodel.DashboardDerivedState
 
 @Composable
@@ -95,7 +96,10 @@ fun BookmarksScreen(
                                 }
                                 Button(
                                     onClick = { onPracticeDeck(activeList, activeTitle) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = AmberHighlight),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = WarmOchreFill,
+                                        contentColor = WarmWhite
+                                    ),
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.testTag("practice_deck_btn")
                                 ) {

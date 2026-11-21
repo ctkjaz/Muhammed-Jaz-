@@ -46,9 +46,8 @@ import com.example.data.model.SubjectMeta
 import com.example.ui.components.DifficultyFilterBar
 import com.example.ui.components.FlashcardItemCard
 import com.example.ui.components.SubjectProgressCard
-import com.example.ui.theme.AmberHighlight
-import com.example.ui.theme.EmeraldCorrect
 import com.example.ui.theme.MonoFontFamily
+import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.DashboardDerivedState
 import com.example.ui.viewmodel.SubjectHubSection
 
@@ -278,31 +277,32 @@ private fun PyqShiftList(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                val editorial = MaterialTheme.editorialColors
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = EmeraldCorrect.copy(alpha = 0.14f),
-                        border = BorderStroke(1.dp, EmeraldCorrect.copy(alpha = 0.4f)),
+                        color = editorial.correctText.copy(alpha = 0.14f),
+                        border = BorderStroke(1.dp, editorial.correctText.copy(alpha = 0.4f)),
                         modifier = Modifier.testTag("pyq_verified_count")
                     ) {
                         Text(
                             text = "Verified: $verifiedPyqCount",
                             style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                            color = EmeraldCorrect,
+                            color = editorial.correctText,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                         )
                     }
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = AmberHighlight.copy(alpha = 0.16f),
-                        border = BorderStroke(1.dp, AmberHighlight.copy(alpha = 0.45f)),
+                        color = editorial.warningText.copy(alpha = 0.16f),
+                        border = BorderStroke(1.dp, editorial.warningText.copy(alpha = 0.45f)),
                         modifier = Modifier.testTag("pyq_unverified_count")
                     ) {
                         Text(
                             text = "Unverified: $unverifiedPyqCount",
                             style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                            color = AmberHighlight,
+                            color = editorial.warningText,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                         )
@@ -339,8 +339,9 @@ private fun PyqShiftList(
                     val shiftVerified = list.count { it.question.isVerifiedSource }
                     val shiftUnverified = list.size - shiftVerified
                     val allVerified = list.isNotEmpty() && shiftUnverified == 0
+                    val editorial = MaterialTheme.editorialColors
                     val shiftBadgeText = if (allVerified) "Verified PYQ • $sh" else "Unverified PYQ tag"
-                    val shiftBadgeColor = if (allVerified) EmeraldCorrect else AmberHighlight
+                    val shiftBadgeColor = if (allVerified) editorial.correctText else editorial.warningText
                     val title = SubjectCatalog.SHIFT_NAMES[sh] ?: "Tagged Set $sh"
                     Card(
                         modifier = Modifier.weight(1f),

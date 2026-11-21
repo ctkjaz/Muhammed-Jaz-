@@ -212,16 +212,16 @@ class NursingPrepRepository(
     fun computeCategoryStats(items: List<QuestionItem>): List<CategoryStat> {
         data class CatDef(val key: String, val label: String, val desc: String, val color: Color, val filter: (QuestionItem) -> Boolean)
         val defs = listOf(
-            CatDef("pyq", "PYQ-Tagged (2015–2026)", "Shift-tagged questions (unverified unless matched to official keys)", Color(0xFFD97706)) {
+            CatDef("pyq", "PYQ-Tagged (2015–2026)", "Shift-tagged questions (unverified unless matched to official keys)", Color(0xFFA67942)) {
                 it.question.isPyqTagged
             },
-            CatDef("nur", "Nursing (70%)", "All 9 clinical nursing subjects", Color(0xFFE11D48)) {
+            CatDef("nur", "Nursing (70%)", "All 9 clinical nursing subjects", Color(0xFF8E4456)) {
                 SubjectCatalog.isNursing(it.question)
             },
-            CatDef("ca", "CA & Static GK", "2025–26 current affairs, railways & polity", Color(0xFF2563EB)) {
+            CatDef("ca", "CA & Static GK", "2025–26 current affairs, railways & polity", Color(0xFFB78B79)) {
                 SubjectCatalog.isCa(it.question)
             },
-            CatDef("gen", "Sci / Math / Reas (30%)", "General science, arithmetic & reasoning", Color(0xFF0891B2)) {
+            CatDef("gen", "Sci / Math / Reas (30%)", "General science, arithmetic & reasoning", Color(0xFF527D86)) {
                 SubjectCatalog.isGen(it.question)
             }
         )

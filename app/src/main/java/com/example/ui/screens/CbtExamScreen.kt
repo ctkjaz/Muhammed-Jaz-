@@ -65,11 +65,18 @@ import androidx.compose.ui.unit.dp
 import com.example.ui.components.MetricTile
 import com.example.ui.components.PyqSourceBadge
 import com.example.ui.components.formatTimer
-import com.example.ui.theme.AmberHighlight
-import com.example.ui.theme.EmeraldCorrect
+import com.example.ui.theme.CalmSageFill
+import com.example.ui.theme.EditorialBannerKpiAccent
+import com.example.ui.theme.EditorialBannerKpiDanger
+import com.example.ui.theme.EditorialBannerKpiSuccess
+import com.example.ui.theme.EditorialBannerSurface
+import com.example.ui.theme.EditorialBannerTitle
 import com.example.ui.theme.MonoFontFamily
-import com.example.ui.theme.PurpleReview
-import com.example.ui.theme.RoseWrong
+import com.example.ui.theme.MutedCrimsonFill
+import com.example.ui.theme.MutedPlumFill
+import com.example.ui.theme.WarmOchreFill
+import com.example.ui.theme.WarmWhite
+import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.CbtPaletteStatus
 import com.example.ui.viewmodel.CbtReviewFilter
 import com.example.ui.viewmodel.CbtSessionState
@@ -158,9 +165,9 @@ fun CbtExamScreen(
                     ) {
                         if (session.hasCountdown) {
                             val timerBg = when {
-                                session.remainingSeconds <= 60 -> RoseWrong
-                                session.remainingSeconds <= 300 -> AmberHighlight
-                                else -> Color(0xFF0F172A)
+                                session.remainingSeconds <= 60 -> MutedCrimsonFill
+                                session.remainingSeconds <= 300 -> WarmOchreFill
+                                else -> EditorialBannerSurface
                             }
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
@@ -175,13 +182,13 @@ fun CbtExamScreen(
                                     Icon(
                                         Icons.Filled.Timer,
                                         contentDescription = "Remaining time",
-                                        tint = Color.White,
+                                        tint = WarmWhite,
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Text(
                                         text = formatTimer(session.remainingSeconds),
                                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                                        color = Color.White,
+                                        color = WarmWhite,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -203,7 +210,10 @@ fun CbtExamScreen(
 
                         Button(
                             onClick = onRequestSubmitConfirm,
-                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldCorrect),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = CalmSageFill,
+                                contentColor = WarmWhite
+                            ),
                             shape = RoundedCornerShape(10.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             modifier = Modifier.testTag("cbt_submit_header_btn")
@@ -313,7 +323,7 @@ fun CbtExamScreen(
                                                     Text(
                                                         text = "${'A' + oi}",
                                                         style = MaterialTheme.typography.labelMedium,
-                                                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                                                         fontWeight = FontWeight.Bold
                                                     )
                                                 }
@@ -345,7 +355,10 @@ fun CbtExamScreen(
                         }
                         Button(
                             onClick = onMarkForReviewAndNext,
-                            colors = ButtonDefaults.buttonColors(containerColor = PurpleReview),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MutedPlumFill,
+                                contentColor = WarmWhite
+                            ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .weight(1f)
@@ -421,7 +434,10 @@ fun CbtExamScreen(
             confirmButton = {
                 Button(
                     onClick = onConfirmSubmit,
-                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldCorrect)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CalmSageFill,
+                        contentColor = WarmWhite
+                    )
                 ) {
                     Text("View Score Card")
                 }
@@ -440,7 +456,10 @@ fun CbtExamScreen(
             confirmButton = {
                 Button(
                     onClick = onConfirmSubmit,
-                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldCorrect),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CalmSageFill,
+                        contentColor = WarmWhite
+                    ),
                     modifier = Modifier.testTag("cbt_confirm_submit_btn")
                 ) {
                     Text("Submit Exam")
@@ -473,7 +492,10 @@ fun CbtExamScreen(
                         showQuitConfirm = false
                         onExit()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = RoseWrong)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MutedCrimsonFill,
+                        contentColor = WarmWhite
+                    )
                 ) {
                     Text("Quit Exam")
                 }
@@ -497,18 +519,19 @@ private fun CbtPaletteContent(
         session.paletteStatuses.values.forEach { st -> map[st] = map.getValue(st) + 1 }
         map
     }
+    val unvisitedColor = MaterialTheme.editorialColors.unvisitedSwatch
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Question Palette", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LegendChip(color = EmeraldCorrect, text = "Ans (${counts.getValue(CbtPaletteStatus.ANSWERED)})", modifier = Modifier.weight(1f))
-            LegendChip(color = RoseWrong, text = "Not Ans (${counts.getValue(CbtPaletteStatus.NOT_ANSWERED)})", modifier = Modifier.weight(1f))
+            LegendChip(color = CalmSageFill, text = "Ans (${counts.getValue(CbtPaletteStatus.ANSWERED)})", modifier = Modifier.weight(1f))
+            LegendChip(color = MutedCrimsonFill, text = "Not Ans (${counts.getValue(CbtPaletteStatus.NOT_ANSWERED)})", modifier = Modifier.weight(1f))
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val markedTotal = counts.getValue(CbtPaletteStatus.MARKED) + counts.getValue(CbtPaletteStatus.ANSWERED_MARKED)
-            LegendChip(color = PurpleReview, text = "Marked ($markedTotal)", modifier = Modifier.weight(1f))
-            LegendChip(color = Color(0xFF64748B), text = "Unvisited (${counts.getValue(CbtPaletteStatus.NOT_VISITED)})", modifier = Modifier.weight(1f))
+            LegendChip(color = MutedPlumFill, text = "Marked ($markedTotal)", modifier = Modifier.weight(1f))
+            LegendChip(color = unvisitedColor, text = "Unvisited (${counts.getValue(CbtPaletteStatus.NOT_VISITED)})", modifier = Modifier.weight(1f))
         }
 
         LazyVerticalGrid(
@@ -522,15 +545,15 @@ private fun CbtPaletteContent(
             items(session.questions.size) { idx ->
                 val st = session.paletteStatuses[idx] ?: CbtPaletteStatus.NOT_VISITED
                 val bg = when (st) {
-                    CbtPaletteStatus.ANSWERED -> EmeraldCorrect
-                    CbtPaletteStatus.NOT_ANSWERED -> RoseWrong
-                    CbtPaletteStatus.MARKED, CbtPaletteStatus.ANSWERED_MARKED -> PurpleReview
+                    CbtPaletteStatus.ANSWERED -> CalmSageFill
+                    CbtPaletteStatus.NOT_ANSWERED -> MutedCrimsonFill
+                    CbtPaletteStatus.MARKED, CbtPaletteStatus.ANSWERED_MARKED -> MutedPlumFill
                     CbtPaletteStatus.NOT_VISITED -> MaterialTheme.colorScheme.surfaceVariant
                 }
-                val fg = if (st == CbtPaletteStatus.NOT_VISITED) MaterialTheme.colorScheme.onSurface else Color.White
+                val fg = if (st == CbtPaletteStatus.NOT_VISITED) MaterialTheme.colorScheme.onSurface else WarmWhite
                 val border = when {
                     idx == session.currentIndex -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-                    st == CbtPaletteStatus.ANSWERED_MARKED -> BorderStroke(2.dp, EmeraldCorrect)
+                    st == CbtPaletteStatus.ANSWERED_MARKED -> BorderStroke(2.dp, CalmSageFill)
                     else -> null
                 }
 
@@ -557,7 +580,10 @@ private fun CbtPaletteContent(
 
         Button(
             onClick = onSubmit,
-            colors = ButtonDefaults.buttonColors(containerColor = EmeraldCorrect),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = CalmSageFill,
+                contentColor = WarmWhite
+            ),
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -638,7 +664,8 @@ private fun CbtResultScreen(
             item {
                 Card(
                     shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A))
+                    colors = CardDefaults.cardColors(containerColor = EditorialBannerSurface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
                 ) {
                     Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(
@@ -647,8 +674,8 @@ private fun CbtResultScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("CBT Score Card", style = MaterialTheme.typography.labelMedium, color = Color(0xFF7DD3FC))
-                                Text(session.title, style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("CBT Score Card", style = MaterialTheme.typography.labelMedium, color = EditorialBannerKpiAccent)
+                                Text(session.title, style = MaterialTheme.typography.titleLarge, color = EditorialBannerTitle, fontWeight = FontWeight.Bold)
                             }
                             Button(onClick = onExit) {
                                 Text("Dashboard")
@@ -660,20 +687,20 @@ private fun CbtResultScreen(
                                 label = "Net Marks",
                                 value = String.format(Locale.US, "%.2f", netScore),
                                 subValue = "/ ${session.questions.size}",
-                                valueColor = Color(0xFF7DD3FC),
+                                valueColor = EditorialBannerKpiAccent,
                                 modifier = Modifier.weight(1f)
                             )
                             MetricTile(
                                 label = "Accuracy",
                                 value = "$acc%",
-                                valueColor = Color(0xFF6EE7B7),
+                                valueColor = EditorialBannerKpiSuccess,
                                 modifier = Modifier.weight(1f)
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MetricTile(label = "Correct (+1)", value = "$right", valueColor = Color(0xFF6EE7B7), modifier = Modifier.weight(1f))
-                            MetricTile(label = "Wrong (-0.33)", value = "$wrong", valueColor = Color(0xFFFCA5A5), modifier = Modifier.weight(1f))
-                            MetricTile(label = "Skipped", value = "$skipped", modifier = Modifier.weight(1f))
+                            MetricTile(label = "Correct (+1)", value = "$right", valueColor = EditorialBannerKpiSuccess, modifier = Modifier.weight(1f))
+                            MetricTile(label = "Wrong (-0.33)", value = "$wrong", valueColor = EditorialBannerKpiDanger, modifier = Modifier.weight(1f))
+                            MetricTile(label = "Skipped", value = "$skipped", valueColor = EditorialBannerTitle, modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -730,6 +757,7 @@ private fun CbtResultScreen(
 
             itemsIndexed(filtered) { _, (idx, item, ans) ->
                 val q = item.question
+                val editorial = MaterialTheme.editorialColors
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -758,8 +786,8 @@ private fun CbtResultScreen(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = when {
                                     ans == null -> MaterialTheme.colorScheme.onSurfaceVariant
-                                    ans == q.correctIndex -> EmeraldCorrect
-                                    else -> RoseWrong
+                                    ans == q.correctIndex -> editorial.correctText
+                                    else -> editorial.wrongText
                                 },
                                 fontWeight = FontWeight.Bold
                             )
@@ -768,7 +796,7 @@ private fun CbtResultScreen(
                         Text(
                             "Correct Answer: ${'A' + q.correctIndex}. ${q.options.getOrElse(q.correctIndex) { "" }}",
                             style = MaterialTheme.typography.labelMedium,
-                            color = EmeraldCorrect
+                            color = editorial.correctText
                         )
                         if (q.explanation.isNotBlank()) {
                             Text(q.explanation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -777,7 +805,7 @@ private fun CbtResultScreen(
                             Text(
                                 text = "Source: ${q.sourceNote}",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = EmeraldCorrect
+                                color = editorial.correctText
                             )
                         }
                     }
