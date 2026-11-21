@@ -1,51 +1,184 @@
 package com.example.data.repository
 
 import android.content.Context
+import androidx.compose.ui.graphics.Color
+import com.example.data.local.ExamQuestionLinkEntity
 import com.example.data.local.MockHistoryEntity
 import com.example.data.local.QuestionDao
 import com.example.data.local.QuestionProgressEntity
+import com.example.data.local.SubjectEntity
+import com.example.data.local.TopicEntity
 import com.example.data.local.toDomain
 import com.example.data.local.toEntity
 import com.example.data.model.CategoryStat
+import com.example.data.model.Exam
+import com.example.data.model.ExamQuestionLink
+import com.example.data.model.ExamSection
 import com.example.data.model.Flashcard
 import com.example.data.model.MockHistory
+import com.example.data.model.PlatformCatalogDefaults
+import com.example.data.model.Profession
 import com.example.data.model.Question
 import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectCatalog
 import com.example.data.model.SubjectStat
+import com.example.data.model.Topic
 import com.example.data.parser.BulkQuestionParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
-import androidx.compose.ui.graphics.Color
 
 class NursingPrepRepository(
     private val context: Context,
     private val dao: QuestionDao
 ) {
+    val professions: Flow<List<Profession>> =
+        dao.observeProfessions().map { list -> list.map { it.toDomain() } }
+
+    val exams: Flow<List<Exam>> =
+        dao.observeExams().map { list -> list.map { it.toDomain() } }
+
+    val topics: Flow<List<Topic>> =
+        dao.observeTopics().map { list -> list.map { it.toDomain() } }
+
     val allQuestions: Flow<List<QuestionItem>> =
         dao.observeAllQuestionsWithProgress().map { list -> list.map { it.toDomain() } }
 
+    val allExamLinks: Flow<List<ExamQuestionLink>> =
+        dao.observeAllExamLinks().map { list -> list.map { it.toDomain() } }
+
     val mockHistory: Flow<List<MockHistory>> =
         dao.observeMockHistory().map { list -> list.map { it.toDomain() } }
+
+    fun observeExamSections(examId: String): Flow<List<ExamSection>> =
+        dao.observeExamSections(examId).map { list -> list.map { it.toDomain() } }
+
+    fun observeQuestionsForExam(examId: String): Flow<List<QuestionItem>> =
+        dao.observeQuestionsForExam(examId).map { list -> list.map { it.toDomain() } }
+
+    fun observeMockHistoryForExam(examId: String): Flow<List<MockHistory>> =
+        dao.observeMockHistoryForExam(examId).map { list -> list.map { it.toDomain() } }
+
+    suspend fun ensureCatalogSeeded() = withContext(Dispatchers.IO) {
+        dao.upsertProfessions(PlatformCatalogDefaults.DEFAULT_PROFESSIONS.map { it.toEntity() })
+        dao.upsertExams(PlatformCatalogDefaults.DEFAULT_EXAMS.map { it.toEntity() })
+        dao.upsertExamSections(PlatformCatalogDefaults.DEFAULT_SECTIONS.map { it.toEntity() })
+
+        val subjectEntities = SubjectCatalog.ALL_SUBJS.mapIndexed { idx, meta ->
+            val profId = if (SubjectCatalog.isNursingCode(meta.code)) {
+                PlatformCatalogDefaults.PROFESSION_NURSING
+            } else {
+                null
+            }
+            SubjectEntity(
+                code = meta.code,
+                professionId = profId,
+                name = meta.name,
+                accentHex = meta.accentHex,
+                sortOrder = idx
+            )
+        }
+        dao.upsertSubjects(subjectEntities)
+
+        val defaultTopics = SubjectCatalog.ALL_SUBJS.map { meta ->
+            TopicEntity(
+                id = PlatformCatalogDefaults.defaultTopicIdFor(meta.code),
+                subjectCode = meta.code,
+                name = "General",
+                sortOrder = 0
+            )
+        }
+        dao.upsertTopics(defaultTopics)
+    }
 
     suspend fun ensureSeeded(
         currentSeedVersion: Int = 0,
         onSeededVersionUpdated: (Int) -> Unit = {}
     ) = withContext(Dispatchers.IO) {
-        if (dao.getBuiltInCount() == 0 || currentSeedVersion < CURRENT_SEED_VERSION) {
+        ensureCatalogSeeded()
+        val needsQuestions = dao.getBuiltInCount() == 0 || currentSeedVersion < CURRENT_SEED_VERSION
+        val needsRrbLinks = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_RRB_NURSING) == 0
+        if (needsQuestions || needsRrbLinks) {
             val json = context.assets.open("builtin_questions.json").bufferedReader().use { it.readText() }
             val questions = BulkQuestionParser.parseJsonBatch(json, markAsCustom = false)
             val entities = questions.mapIndexed { index, q -> q.toEntity(sortOrder = index) }
-            dao.insertQuestions(entities)
+            if (needsQuestions) {
+                dao.insertQuestions(entities)
+            }
+            val rrbLinks = questions.mapIndexed { index, q ->
+                ExamQuestionLinkEntity(
+                    examId = PlatformCatalogDefaults.EXAM_RRB_NURSING,
+                    questionId = q.id,
+                    sectionId = PlatformCatalogDefaults.sectionIdForRrbSubject(q.subject),
+                    sortOrder = index,
+                    isPyqForExam = q.isPyqTagged,
+                    examYear = q.examYear,
+                    examShift = q.examShift
+                )
+            }
+            dao.upsertExamQuestionLinks(rrbLinks)
             onSeededVersionUpdated(CURRENT_SEED_VERSION)
         }
     }
 
+    suspend fun linkQuestionToExam(
+        questionId: String,
+        examId: String,
+        sectionId: String,
+        sortOrder: Int = 0,
+        isPyqForExam: Boolean = false,
+        examYear: String = "",
+        examShift: String = ""
+    ) = withContext(Dispatchers.IO) {
+        dao.upsertExamQuestionLinks(
+            listOf(
+                ExamQuestionLinkEntity(
+                    examId = examId,
+                    questionId = questionId,
+                    sectionId = sectionId,
+                    sortOrder = sortOrder,
+                    isPyqForExam = isPyqForExam,
+                    examYear = examYear,
+                    examShift = examShift
+                )
+            )
+        )
+    }
+
+    suspend fun ensureTopicExists(subjectCode: String, topicName: String): String = withContext(Dispatchers.IO) {
+        val cleanSubject = subjectCode.trim().ifBlank { "MSN" }
+        val topicId = BulkQuestionParser.slugTopicId(cleanSubject, topicName)
+        val displayName = topicName.trim().ifBlank { "General" }
+        dao.upsertSubjects(
+            listOf(
+                SubjectEntity(
+                    code = cleanSubject,
+                    professionId = if (SubjectCatalog.isNursingCode(cleanSubject)) {
+                        PlatformCatalogDefaults.PROFESSION_NURSING
+                    } else null,
+                    name = SubjectCatalog.displayNameFor(cleanSubject),
+                    accentHex = SubjectCatalog.ALL_SUBJS.firstOrNull { it.code == cleanSubject }?.accentHex ?: "#726D70",
+                    sortOrder = SubjectCatalog.ALL_SUBJS.indexOfFirst { it.code == cleanSubject }.takeIf { it >= 0 } ?: 99
+                )
+            )
+        )
+        dao.upsertTopics(
+            listOf(
+                TopicEntity(
+                    id = topicId,
+                    subjectCode = cleanSubject,
+                    name = displayName,
+                    sortOrder = if (displayName == "General") 0 else 10
+                )
+            )
+        )
+        topicId
+    }
+
     companion object {
-        const val CURRENT_SEED_VERSION = 4
+        const val CURRENT_SEED_VERSION = 5
     }
 
     suspend fun loadFlashcards(): List<Flashcard> = withContext(Dispatchers.IO) {
@@ -134,23 +267,65 @@ class NursingPrepRepository(
         dao.upsertProgress(updated)
     }
 
-    suspend fun saveCustomQuestions(questions: List<Question>) = withContext(Dispatchers.IO) {
+    suspend fun saveCustomQuestions(
+        questions: List<Question>,
+        examIds: List<String> = listOf(PlatformCatalogDefaults.EXAM_RRB_NURSING),
+        customExamMap: Map<String, List<String>> = emptyMap(),
+        topicLabelOverrides: Map<String, String> = emptyMap()
+    ) = withContext(Dispatchers.IO) {
         if (questions.isEmpty()) return@withContext
+        ensureCatalogSeeded()
         val startOrder = dao.getTotalCount() + 1000
         val entities = questions.mapIndexed { idx, q ->
+            val explicitTopicLabel = topicLabelOverrides[q.topicId]
+            if (explicitTopicLabel != null) {
+                ensureTopicExists(q.subject, explicitTopicLabel)
+            }
             q.copy(isCustom = true).toEntity(sortOrder = startOrder + idx)
         }
         dao.insertQuestions(entities)
+
+        val validTargetExamIds = examIds.ifEmpty { listOf(PlatformCatalogDefaults.EXAM_RRB_NURSING) }
+        val links = buildList {
+            questions.forEachIndexed { idx, q ->
+                val targets = customExamMap[q.id].orEmpty().ifEmpty { validTargetExamIds }
+                targets.distinct().forEach { targetExamId ->
+                    val resolvedExamId = targetExamId.ifBlank { PlatformCatalogDefaults.EXAM_RRB_NURSING }
+                    add(
+                        ExamQuestionLinkEntity(
+                            examId = resolvedExamId,
+                            questionId = q.id,
+                            sectionId = PlatformCatalogDefaults.sectionIdForRrbSubject(q.subject),
+                            sortOrder = startOrder + idx,
+                            isPyqForExam = q.isPyqTagged,
+                            examYear = q.examYear,
+                            examShift = q.examShift
+                        )
+                    )
+                }
+            }
+        }
+        if (links.isNotEmpty()) {
+            dao.upsertExamQuestionLinks(links)
+        }
     }
 
     suspend fun clearCustomQuestions() = withContext(Dispatchers.IO) {
+        dao.deleteCustomQuestionLinks()
         dao.deleteCustomQuestions()
     }
 
-    suspend fun restoreBackup(jsonText: String): Int = withContext(Dispatchers.IO) {
+    suspend fun restoreBackup(
+        jsonText: String,
+        defaultExamId: String = PlatformCatalogDefaults.EXAM_RRB_NURSING
+    ): Int = withContext(Dispatchers.IO) {
         val restored = BulkQuestionParser.parseBackupJson(jsonText)
         if (restored.customQuestions.isNotEmpty()) {
-            saveCustomQuestions(restored.customQuestions)
+            saveCustomQuestions(
+                questions = restored.customQuestions,
+                examIds = listOf(defaultExamId),
+                customExamMap = restored.customQuestionExamIds
+            )
         }
         if (restored.progressList.isNotEmpty()) {
             dao.upsertProgressList(restored.progressList)
@@ -165,7 +340,8 @@ class NursingPrepRepository(
         wrongCount: Int,
         skippedCount: Int,
         netScore: Double,
-        accuracyPercent: Int
+        accuracyPercent: Int,
+        examId: String = PlatformCatalogDefaults.EXAM_RRB_NURSING
     ) = withContext(Dispatchers.IO) {
         dao.insertMockHistory(
             MockHistoryEntity(
@@ -176,7 +352,8 @@ class NursingPrepRepository(
                 skippedCount = skippedCount,
                 netScore = netScore,
                 accuracyPercent = accuracyPercent,
-                timestamp = System.currentTimeMillis()
+                timestamp = System.currentTimeMillis(),
+                examId = examId
             )
         )
     }

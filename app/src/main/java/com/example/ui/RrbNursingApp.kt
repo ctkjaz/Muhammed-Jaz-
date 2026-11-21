@@ -8,6 +8,7 @@ import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Quiz
@@ -69,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.local.ThemePreference
+import com.example.ui.components.ExamPickerModalSheet
 import com.example.ui.components.ImporterModalSheet
 import com.example.ui.components.PdfExportModalSheet
 import com.example.ui.components.TimedPracticeConfigDialog
@@ -104,6 +108,8 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
         val state by vm.mainState.collectAsStateWithLifecycle()
         val selectedTab by vm.selectedTab.collectAsStateWithLifecycle()
         val isSettingsOpen by vm.isSettingsOpen.collectAsStateWithLifecycle()
+        val isExamPickerOpen by vm.isExamPickerOpen.collectAsStateWithLifecycle()
+        val activeExamId by vm.activeExamId.collectAsStateWithLifecycle()
         val subjectSection by vm.subjectHubSection.collectAsStateWithLifecycle()
         val difficultyFilter by vm.difficultyFilter.collectAsStateWithLifecycle()
         val practiceSession by vm.practiceSession.collectAsStateWithLifecycle()
@@ -206,7 +212,16 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                                 containerColor = MaterialTheme.colorScheme.surface
                             ),
                             title = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                val activeExamShort = state.activeExam?.shortName ?: "RRB Nursing"
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .heightIn(min = 48.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable(onClick = vm::openExamPicker)
+                                        .padding(end = 6.dp)
+                                        .testTag("top_exam_picker_btn")
+                                ) {
                                     Box(
                                         modifier = Modifier
                                             .size(36.dp)
@@ -228,11 +243,21 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold
                                         )
-                                        Text(
-                                            text = "${state.overall.totalQuestions} MCQs • Offline Ready",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "$activeExamShort • ${state.overall.totalQuestions} MCQs",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1
+                                            )
+                                            Icon(
+                                                imageVector = Icons.Filled.KeyboardArrowDown,
+                                                contentDescription = "Switch active exam",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
                                     }
                                 }
                             },
@@ -378,10 +403,12 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                                         difficultyFilter = difficultyFilter,
                                         onSelectDifficulty = vm::selectDifficultyFilter,
                                         onLaunchFullMock = {
+                                            val fullQ = state.activeExam?.defaultMockQuestions ?: 100
+                                            val fullMins = state.activeExam?.defaultMockMinutes ?: 90
                                             vm.startCbtStandardMock(
-                                                totalQuestions = 100,
-                                                durationMinutes = 90,
-                                                title = "Full Official 100Q CBT Mock",
+                                                totalQuestions = fullQ,
+                                                durationMinutes = fullMins,
+                                                title = "Full Official ${fullQ}Q CBT Mock",
                                                 isOfficialFullMock = true
                                             )
                                         },
@@ -453,13 +480,14 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
 
             ImporterModalSheet(
                 state = importerState,
+                activeExamShortName = state.activeExam?.shortName ?: "RRB Nursing",
                 onUpdate = vm::updateImporter,
                 onPreviewPdf = vm::previewPdfTextImport,
                 onCommitPdf = vm::commitPreviewImport,
                 onImportJson = vm::importJsonBatch,
                 onExportBackup = {
                     val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-                    exportLauncher.launch("rrb-nursing-backup-$dateStr.json")
+                    exportLauncher.launch("clinedge-backup-$dateStr.json")
                 },
                 onRestoreBackup = {
                     restoreLauncher.launch(arrayOf("application/json", "text/plain"))
@@ -470,6 +498,16 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                 },
                 onClearCustom = vm::clearCustomQuestions,
                 onDismiss = vm::closeImporter
+            )
+
+            ExamPickerModalSheet(
+                isVisible = isExamPickerOpen,
+                professions = state.availableProfessions,
+                exams = state.availableExams,
+                activeExamId = activeExamId,
+                examQuestionCounts = state.examQuestionCounts,
+                onSelectExam = vm::selectActiveExam,
+                onDismiss = vm::closeExamPicker
             )
 
             val pdfMatchingCount = remember(pdfExportConfig, state.questions, state.lowestAccuracyQuestions) {

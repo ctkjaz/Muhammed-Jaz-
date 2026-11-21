@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.example.data.model.PlatformCatalogDefaults
 import kotlin.math.ceil
 
 enum class ThemePreference {
@@ -38,6 +39,13 @@ class SettingsPreferences(context: Context) {
 
     private val _keepScreenOn = MutableStateFlow(prefs.getBoolean(KEY_KEEP_SCREEN_ON, false))
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
+
+    private val _activeExamId = MutableStateFlow(
+        prefs.getString(KEY_ACTIVE_EXAM_ID, PlatformCatalogDefaults.EXAM_RRB_NURSING)
+            ?.takeIf { it.isNotBlank() }
+            ?: PlatformCatalogDefaults.EXAM_RRB_NURSING
+    )
+    val activeExamId: StateFlow<String> = _activeExamId.asStateFlow()
 
     private fun readTheme(): ThemePreference {
         val raw = prefs.getString(KEY_THEME, ThemePreference.SYSTEM.name)
@@ -81,6 +89,12 @@ class SettingsPreferences(context: Context) {
         _keepScreenOn.value = enabled
     }
 
+    fun setActiveExamId(examId: String) {
+        val clean = examId.trim().ifBlank { PlatformCatalogDefaults.EXAM_RRB_NURSING }
+        prefs.edit().putString(KEY_ACTIVE_EXAM_ID, clean).apply()
+        _activeExamId.value = clean
+    }
+
     fun getSeededVersion(): Int = prefs.getInt(KEY_SEEDED_VERSION, 0)
 
     fun setSeededVersion(version: Int) {
@@ -101,6 +115,7 @@ class SettingsPreferences(context: Context) {
         private const val KEY_USE_TIME_LIMIT = "use_time_limit"
         private const val KEY_SECONDS_PER_QUESTION = "seconds_per_question"
         private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+        private const val KEY_ACTIVE_EXAM_ID = "active_exam_id"
 
         fun calculateSuggestedMinutes(questionCount: Int, secondsPerQuestion: Int): Int {
             if (questionCount <= 0 || secondsPerQuestion <= 0) return 0

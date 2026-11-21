@@ -368,6 +368,26 @@ fun QuestionSummaryCard(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
+                    if (q.topicId.isNotBlank() && !q.topicId.endsWith("_general")) {
+                        val topicLabel = q.topicId
+                            .substringAfter("_", q.topicId)
+                            .split("_")
+                            .filter { it.isNotBlank() }
+                            .joinToString(" ") { part -> part.replaceFirstChar { it.uppercase() } }
+                        if (topicLabel.isNotBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                            ) {
+                                Text(
+                                    text = topicLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
                     PyqSourceBadge(question = q)
                     DifficultyBadge(difficulty = q.difficulty)
                     if (badgeOverride != null) {

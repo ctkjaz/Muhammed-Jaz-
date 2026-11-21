@@ -53,6 +53,11 @@ fun CbtHubScreen(
     modifier: Modifier = Modifier
 ) {
     val all = state.questions
+    val activeExam = state.activeExam
+    val examShort = activeExam?.shortName ?: "RRB Nursing"
+    val fullQ = activeExam?.defaultMockQuestions ?: 100
+    val fullMins = activeExam?.defaultMockMinutes ?: 90
+    val negMark = activeExam?.negativeMarks ?: 0.33
     val nurPool = all.filter { SubjectCatalog.isNursing(it.question) }
     val nonPool = all.filter { !SubjectCatalog.isNursing(it.question) }
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -74,9 +79,9 @@ fun CbtHubScreen(
         ) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("RRB CBT & Timed Practice Hub", style = MaterialTheme.typography.titleLarge)
+                    Text("$examShort CBT & Timed Practice Hub", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        "TCS iON-style palette, countdown timer, +1 / -0.33 negative marking & configurable timed drills",
+                        "TCS iON-style palette, countdown timer, +1 / -$negMark negative marking & configurable timed drills",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -122,14 +127,14 @@ fun CbtHubScreen(
             val cbtOptions = listOf(
                 CbtOptionData(
                     badge = "Official Pattern",
-                    durationLabel = "90 Minutes",
-                    title = "Full 100-Question CBT Mock",
-                    desc = "70 Nursing + 30 Non-Tech (Science, Math, Reasoning & Current Affairs/GK). Negative marking: -0.33.",
+                    durationLabel = "$fullMins Minutes",
+                    title = "Full $fullQ-Question CBT Mock",
+                    desc = "70% Nursing + 30% Non-Tech (Science, Math, Reasoning & Current Affairs/GK). Negative marking: -$negMark.",
                     badgeColor = primaryColor,
-                    btnLabel = "Start Full Mock (100 Qs)",
+                    btnLabel = "Start Full Mock ($fullQ Qs)",
                     isPrimary = true,
                     tag = "cbt_100q_btn",
-                    onClick = { onStartStandardMock(100, 90, "Full Official 100Q CBT Mock", true) }
+                    onClick = { onStartStandardMock(fullQ, fullMins, "Full Official ${fullQ}Q CBT Mock", true) }
                 ),
                 CbtOptionData(
                     badge = "Express Drill",

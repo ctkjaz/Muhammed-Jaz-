@@ -1,9 +1,13 @@
 package com.example.data.parser
 
 import com.example.data.local.QuestionProgressEntity
+import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
+import com.example.data.model.QuestionSourceType
+import com.example.data.model.composeShiftYear
+import com.example.data.model.parseShiftYear
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -15,6 +19,7 @@ object BulkQuestionParser {
     private val diffRegex = Regex("""^(?:Diff(?:iculty)?|Level)\s*[:-]\s*(Easy|Medium|Hard)""", RegexOption.IGNORE_CASE)
     private val sourceNoteRegex = Regex("""^(?:Source(?:\s*Note)?|Ref(?:erence)?)\s*[:-]\s*(.+)""", RegexOption.IGNORE_CASE)
     private val sourceStatusRegex = Regex("""^(?:Source\s*Status|Verification)\s*[:-]\s*(verified|unverified)""", RegexOption.IGNORE_CASE)
+    private val topicRegex = Regex("""^(?:Topic)\s*[:-]\s*(.+)""", RegexOption.IGNORE_CASE)
 
     fun resolveSourceStatus(
         category: String,
@@ -33,6 +38,17 @@ object BulkQuestionParser {
         }
     }
 
+    fun slugTopicId(subjectCode: String, rawTopicName: String): String {
+        val trimmed = rawTopicName.trim()
+        if (trimmed.isEmpty()) return PlatformCatalogDefaults.defaultTopicIdFor(subjectCode)
+        val subjSlug = subjectCode.trim().lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_')
+        val topicSlug = trimmed.lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_')
+        if (topicSlug.isEmpty() || topicSlug == "general") {
+            return PlatformCatalogDefaults.defaultTopicIdFor(subjectCode)
+        }
+        return "${subjSlug}_${topicSlug}"
+    }
+
     fun parseRawPdfText(
         rawText: String,
         category: String,
@@ -40,7 +56,9 @@ object BulkQuestionParser {
         shiftYear: String,
         defaultDifficulty: QuestionDifficulty = QuestionDifficulty.MEDIUM,
         defaultSourceNote: String = "",
-        markAsVerified: Boolean = false
+        markAsVerified: Boolean = false,
+        defaultSourceType: QuestionSourceType? = null,
+        defaultTopicId: String = ""
     ): List<Question> {
         val lines = rawText.replace("\r", "")
             .split("\n")
@@ -55,8 +73,11 @@ object BulkQuestionParser {
         var curDifficulty = defaultDifficulty
         var curSourceNote = ""
         var curSourceStatus: String? = null
+        var curTopicName = ""
         var hasCurrent = false
         val baseTs = System.currentTimeMillis()
+        val cleanShiftYear = shiftYear.trim()
+        val (parsedYear, parsedShift) = parseShiftYear(cleanShiftYear)
 
         fun pushCurrent() {
             if (hasCurrent && curQuestionText.isNotBlank() && curOptions.size >= 2) {
@@ -71,11 +92,23 @@ object BulkQuestionParser {
                     rawSourceStatus = requestedStatus,
                     sourceNote = effectiveNote
                 )
+                val resolvedSourceType = QuestionSourceType.infer(
+                    category = category,
+                    shiftYear = cleanShiftYear,
+                    sourceStatus = resolvedStatus,
+                    sourceNote = effectiveNote,
+                    rawSourceType = defaultSourceType?.dbValue
+                )
+                val resolvedTopicId = when {
+                    curTopicName.isNotBlank() -> slugTopicId(subject, curTopicName)
+                    defaultTopicId.isNotBlank() -> defaultTopicId
+                    else -> PlatformCatalogDefaults.defaultTopicIdFor(subject)
+                }
                 parsed.add(
                     Question(
                         id = "C_${baseTs}_${parsed.size}",
                         category = category,
-                        shiftYear = shiftYear.trim(),
+                        shiftYear = cleanShiftYear,
                         subject = subject,
                         difficulty = curDifficulty,
                         questionText = curQuestionText.trim(),
@@ -84,7 +117,11 @@ object BulkQuestionParser {
                         explanation = curExplanation.trim(),
                         isCustom = true,
                         sourceStatus = resolvedStatus,
-                        sourceNote = effectiveNote
+                        sourceNote = effectiveNote,
+                        topicId = resolvedTopicId,
+                        sourceType = resolvedSourceType,
+                        examYear = parsedYear,
+                        examShift = parsedShift
                     )
                 )
             }
@@ -96,6 +133,7 @@ object BulkQuestionParser {
             val diffMatch = diffRegex.find(line)
             val sourceStatusMatch = sourceStatusRegex.find(line)
             val sourceNoteMatch = sourceNoteRegex.find(line)
+            val topicMatch = topicRegex.find(line)
             val qMatch = qRegex.find(line)
             val optMatch = optRegex.find(line)
 
@@ -119,6 +157,9 @@ object BulkQuestionParser {
                 sourceNoteMatch != null && hasCurrent -> {
                     curSourceNote = sourceNoteMatch.groupValues[1].trim()
                 }
+                topicMatch != null && hasCurrent -> {
+                    curTopicName = topicMatch.groupValues[1].trim()
+                }
                 qMatch != null && (!hasCurrent || line.startsWith("Q", ignoreCase = true)) -> {
                     pushCurrent()
                     hasCurrent = true
@@ -129,6 +170,7 @@ object BulkQuestionParser {
                     curExplanation = "Imported from PDF text."
                     curSourceNote = ""
                     curSourceStatus = null
+                    curTopicName = ""
                 }
                 optMatch != null && hasCurrent && curOptions.size < 4 -> {
                     curOptions.add(optMatch.groupValues[3].trim())
@@ -143,6 +185,7 @@ object BulkQuestionParser {
                     curExplanation = "Imported from PDF text."
                     curSourceNote = ""
                     curSourceStatus = null
+                    curTopicName = ""
                 }
                 hasCurrent -> {
                     if (curOptions.isEmpty()) {
@@ -173,6 +216,15 @@ object BulkQuestionParser {
             val rawId = obj.opt("id")?.toString()?.takeIf { it.isNotBlank() }
             val rawDiff = obj.optString("d", "").ifBlank { obj.optString("difficulty", "") }
             val category = obj.optString("c", "nur").ifBlank { "nur" }
+            val subject = obj.optString("s", "MSN").ifBlank { "MSN" }
+            val rawShiftYear = obj.optString("y", "").trim()
+            val rawExamYear = obj.optString("examYear", "").trim()
+            val rawExamShift = obj.optString("examShift", "").trim()
+            val (splitYear, splitShift) = parseShiftYear(rawShiftYear)
+            val resolvedYear = rawExamYear.ifBlank { splitYear }
+            val resolvedShift = rawExamShift.ifBlank { splitShift }
+            val resolvedShiftYear = rawShiftYear.ifBlank { composeShiftYear(resolvedYear, resolvedShift) }
+
             val rawNote = obj.optString("sourceNote", "").ifBlank { obj.optString("sn", "") }.trim()
             val rawStatus = obj.optString("sourceStatus", "").ifBlank { obj.optString("ss", "") }.trim()
             val resolvedNote = if (markAsCustom) rawNote else ""
@@ -185,12 +237,30 @@ object BulkQuestionParser {
             } else {
                 Question.SOURCE_UNVERIFIED
             }
+
+            val rawSourceType = obj.optString("sourceType", "").trim().takeIf { it.isNotBlank() }
+            val resolvedSourceType = QuestionSourceType.infer(
+                category = category,
+                shiftYear = resolvedShiftYear,
+                sourceStatus = resolvedStatus,
+                sourceNote = resolvedNote,
+                rawSourceType = if (markAsCustom) rawSourceType else null
+            )
+
+            val rawTopicId = obj.optString("topicId", "").trim()
+            val rawTopicName = obj.optString("topic", "").trim()
+            val resolvedTopicId = when {
+                rawTopicId.isNotBlank() -> rawTopicId
+                rawTopicName.isNotBlank() -> slugTopicId(subject, rawTopicName)
+                else -> PlatformCatalogDefaults.defaultTopicIdFor(subject)
+            }
+
             list.add(
                 Question(
                     id = rawId ?: "J_${baseTs}_$i",
                     category = category,
-                    shiftYear = obj.optString("y", ""),
-                    subject = obj.optString("s", "MSN").ifBlank { "MSN" },
+                    shiftYear = resolvedShiftYear,
+                    subject = subject,
                     difficulty = QuestionDifficulty.fromRaw(rawDiff),
                     questionText = qText,
                     options = opts.take(4),
@@ -198,14 +268,22 @@ object BulkQuestionParser {
                     explanation = obj.optString("e", ""),
                     isCustom = markAsCustom,
                     sourceStatus = resolvedStatus,
-                    sourceNote = resolvedNote
+                    sourceNote = resolvedNote,
+                    topicId = resolvedTopicId,
+                    sourceType = resolvedSourceType,
+                    examYear = resolvedYear,
+                    examShift = resolvedShift
                 )
             )
         }
         return list
     }
 
-    fun buildBackupJson(items: List<QuestionItem>): String {
+    fun buildBackupJson(
+        items: List<QuestionItem>,
+        questionExamLinks: Map<String, List<String>> = emptyMap(),
+        activeExamId: String = PlatformCatalogDefaults.EXAM_RRB_NURSING
+    ): String {
         val root = JSONObject()
         val customArr = JSONArray()
         val bookmarksArr = JSONArray()
@@ -214,11 +292,12 @@ object BulkQuestionParser {
         items.forEach { item ->
             val q = item.question
             if (q.isCustom) {
+                val examIds = questionExamLinks[q.id].orEmpty().ifEmpty { listOf(activeExamId) }
                 customArr.put(
                     JSONObject().apply {
                         put("id", q.id)
                         put("c", q.category)
-                        put("y", q.shiftYear)
+                        put("y", q.effectiveShiftYear)
                         put("s", q.subject)
                         put("d", q.difficulty.label)
                         put("q", q.questionText)
@@ -227,6 +306,11 @@ object BulkQuestionParser {
                         put("e", q.explanation)
                         put("sourceStatus", q.sourceStatus)
                         put("sourceNote", q.sourceNote)
+                        put("topicId", q.topicId)
+                        put("sourceType", q.sourceType.dbValue)
+                        put("examYear", q.examYear)
+                        put("examShift", q.examShift)
+                        put("examIds", JSONArray(examIds))
                     }
                 )
             }
@@ -248,7 +332,8 @@ object BulkQuestionParser {
             }
         }
 
-        root.put("version", 2)
+        root.put("version", 3)
+        root.put("activeExamId", activeExamId)
         root.put("exportedAt", System.currentTimeMillis())
         root.put("customQB", customArr)
         root.put("bookmarks", bookmarksArr)
@@ -258,7 +343,9 @@ object BulkQuestionParser {
 
     data class RestoredBackup(
         val customQuestions: List<Question>,
-        val progressList: List<QuestionProgressEntity>
+        val progressList: List<QuestionProgressEntity>,
+        val customQuestionExamIds: Map<String, List<String>> = emptyMap(),
+        val activeExamId: String? = null
     )
 
     fun parseBackupJson(jsonText: String): RestoredBackup {
@@ -272,6 +359,23 @@ object BulkQuestionParser {
             parseJsonBatch(customArr.toString(), markAsCustom = true)
         } else {
             emptyList()
+        }
+
+        val customExamMap = mutableMapOf<String, List<String>>()
+        if (customArr != null) {
+            for (i in 0 until customArr.length()) {
+                val obj = customArr.optJSONObject(i) ?: continue
+                val id = obj.opt("id")?.toString()?.takeIf { it.isNotBlank() } ?: continue
+                val examsArr = obj.optJSONArray("examIds") ?: continue
+                val examIds = buildList {
+                    for (j in 0 until examsArr.length()) {
+                        examsArr.optString(j).trim().takeIf { it.isNotBlank() }?.let { add(it) }
+                    }
+                }
+                if (examIds.isNotEmpty()) {
+                    customExamMap[id] = examIds
+                }
+            }
         }
 
         val bookmarkSet = mutableSetOf<String>()
@@ -309,9 +413,13 @@ object BulkQuestionParser {
             }
         }
 
+        val parsedActiveExamId = root.optString("activeExamId", "").trim().takeIf { it.isNotBlank() }
+
         return RestoredBackup(
             customQuestions = customQuestions,
-            progressList = progressMap.values.toList()
+            progressList = progressMap.values.toList(),
+            customQuestionExamIds = customExamMap,
+            activeExamId = parsedActiveExamId
         )
     }
 }

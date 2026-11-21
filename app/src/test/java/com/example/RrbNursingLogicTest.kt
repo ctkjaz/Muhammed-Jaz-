@@ -7,18 +7,23 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.export.PdfWorksheetWriter
 import com.example.data.local.AppDatabase
+import com.example.data.local.ExamEntity
+import com.example.data.local.ExamSectionEntity
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.data.model.DifficultyFilter
+import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
 import com.example.data.model.QuestionProgress
+import com.example.data.model.QuestionSourceType
 import com.example.data.parser.BulkQuestionParser
 import com.example.data.repository.NursingPrepRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -469,7 +474,7 @@ class RrbNursingLogicTest {
         v2Helper.writableDatabase.close()
 
         val migratedDb = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
             .allowMainThreadQueries()
             .build()
         try {
@@ -480,6 +485,10 @@ class RrbNursingLogicTest {
             assertEquals("Sample v2 question", row.question.questionText)
             assertEquals(Question.SOURCE_UNVERIFIED, row.question.sourceStatus)
             assertEquals("", row.question.sourceNote)
+            assertEquals(QuestionSourceType.MEMORY_BASED.dbValue, row.question.sourceType)
+            assertEquals("2025", row.question.examYear)
+            assertEquals("S1", row.question.examShift)
+            assertEquals("msn_general", row.question.topicId)
             assertEquals(true, row.progress?.isBookmarked)
             assertEquals(5, row.progress?.attemptsCount)
             assertEquals(4, row.progress?.correctCount)
@@ -487,6 +496,7 @@ class RrbNursingLogicTest {
             val history = migratedDb.questionDao().observeMockHistory().first()
             assertEquals(1, history.size)
             assertEquals("v2 Mock", history.first().title)
+            assertEquals(PlatformCatalogDefaults.EXAM_RRB_NURSING, history.first().examId)
         } finally {
             migratedDb.close()
             context.deleteDatabase(dbName)
@@ -522,4 +532,327 @@ class RrbNursingLogicTest {
         assertEquals(false, reloaded.negativeMarking.value)
         assertEquals(true, reloaded.keepScreenOn.value)
     }
+
+    @Test
+    fun `room migration 3 to 4 preserves all question IDs progress bookmarks custom questions and backfills multi-exam metadata`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "test_migration_3_4.db"
+        context.deleteDatabase(dbName)
+
+        // Create an authentic v3 SQLite database with built-in + custom questions, bookmarks, mistakes, and mock history
+        val v3Helper = object : SQLiteOpenHelper(context, dbName, null, 3) {
+            override fun onCreate(db: SQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `questions` (
+                        `id` TEXT NOT NULL,
+                        `category` TEXT NOT NULL,
+                        `shiftYear` TEXT NOT NULL,
+                        `subject` TEXT NOT NULL,
+                        `difficulty` TEXT NOT NULL,
+                        `questionText` TEXT NOT NULL,
+                        `optionsJson` TEXT NOT NULL,
+                        `correctIndex` INTEGER NOT NULL,
+                        `explanation` TEXT NOT NULL,
+                        `sourceStatus` TEXT NOT NULL DEFAULT 'unverified',
+                        `sourceNote` TEXT NOT NULL DEFAULT '',
+                        `isCustom` INTEGER NOT NULL,
+                        `sortOrder` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `question_progress` (
+                        `questionId` TEXT NOT NULL,
+                        `isBookmarked` INTEGER NOT NULL,
+                        `attemptsCount` INTEGER NOT NULL,
+                        `correctCount` INTEGER NOT NULL,
+                        `wrongCount` INTEGER NOT NULL,
+                        `lastOutcome` TEXT,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`questionId`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `mock_history` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `totalQuestions` INTEGER NOT NULL,
+                        `correctCount` INTEGER NOT NULL,
+                        `wrongCount` INTEGER NOT NULL,
+                        `skippedCount` INTEGER NOT NULL,
+                        `netScore` REAL NOT NULL,
+                        `accuracyPercent` INTEGER NOT NULL,
+                        `timestamp` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                // 1) Verified PYQ with sourceNote -> must become official_pyq
+                db.execSQL(
+                    """
+                    INSERT INTO `questions` VALUES (
+                        'C_VER_1', 'pyq', '2025-S2', 'MSN', 'Hard',
+                        'Verified shift PYQ', '["A","B","C","D"]', 0,
+                        'Rationale 1', 'verified', 'Official RRB 2025 Shift 2 key', 1, 100
+                    )
+                    """.trimIndent()
+                )
+                // 2) Unverified PYQ -> must become memory_based
+                db.execSQL(
+                    """
+                    INSERT INTO `questions` VALUES (
+                        '602', 'pyq', '2019-S1', 'Pharm', 'Medium',
+                        'Built-in unverified PYQ', '["A","B","C","D"]', 1,
+                        'Rationale 2', 'unverified', '', 0, 1
+                    )
+                    """.trimIndent()
+                )
+                // 3) Nursing practice question -> must become practice
+                db.execSQL(
+                    """
+                    INSERT INTO `questions` VALUES (
+                        '1', 'nur', '', 'FON', 'Easy',
+                        'Nursing practice Q', '["A","B","C","D"]', 2,
+                        'Rationale 3', 'unverified', '', 0, 0
+                    )
+                    """.trimIndent()
+                )
+                // 4) Current affairs question -> must become current_affairs
+                db.execSQL(
+                    """
+                    INSERT INTO `questions` VALUES (
+                        '500', 'ca', '', 'CA', 'Medium',
+                        'Current affairs Q', '["A","B","C","D"]', 3,
+                        'Rationale 4', 'unverified', '', 0, 2
+                    )
+                    """.trimIndent()
+                )
+                // 5) Custom question with a brand-new subject code -> subject & general topic must be auto-created
+                db.execSQL(
+                    """
+                    INSERT INTO `questions` VALUES (
+                        'C_CUSTOM_SUBJ', 'nur', '', 'ICU', 'Hard',
+                        'Custom ICU question', '["A","B","C","D"]', 0,
+                        'Rationale 5', 'unverified', '', 1, 101
+                    )
+                    """.trimIndent()
+                )
+                // Progress rows (bookmarks + mistakes + attempts)
+                db.execSQL(
+                    """
+                    INSERT INTO `question_progress` VALUES
+                        ('1', 1, 6, 5, 1, 'right', 1700000001000),
+                        ('602', 0, 2, 0, 2, 'wrong', 1700000002000),
+                        ('C_VER_1', 1, 1, 1, 0, 'right', 1700000003000)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `mock_history` (`title`,`totalQuestions`,`correctCount`,`wrongCount`,`skippedCount`,`netScore`,`accuracyPercent`,`timestamp`)
+                    VALUES ('Stage 2 Full Mock', 100, 78, 12, 10, 74.04, 86, 1700000004000)
+                    """.trimIndent()
+                )
+            }
+
+            override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+        }
+        v3Helper.writableDatabase.close()
+
+        val migratedDb = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val dao = migratedDb.questionDao()
+
+            // Every question ID preserved and linked to RRB Nursing
+            val examQuestions = dao.observeQuestionsForExam(PlatformCatalogDefaults.EXAM_RRB_NURSING).first()
+            assertEquals(5, examQuestions.size)
+            val byId = examQuestions.associateBy { it.question.id }
+
+            val verified = byId.getValue("C_VER_1")
+            assertEquals(QuestionSourceType.OFFICIAL_PYQ.dbValue, verified.question.sourceType)
+            assertEquals("2025", verified.question.examYear)
+            assertEquals("S2", verified.question.examShift)
+            assertEquals("msn_general", verified.question.topicId)
+            assertEquals(true, verified.progress?.isBookmarked)
+
+            val unverifiedPyq = byId.getValue("602")
+            assertEquals(QuestionSourceType.MEMORY_BASED.dbValue, unverifiedPyq.question.sourceType)
+            assertEquals("2019", unverifiedPyq.question.examYear)
+            assertEquals("S1", unverifiedPyq.question.examShift)
+            assertEquals("wrong", unverifiedPyq.progress?.lastOutcome)
+            assertEquals(2, unverifiedPyq.progress?.wrongCount)
+
+            val practice = byId.getValue("1")
+            assertEquals(QuestionSourceType.PRACTICE.dbValue, practice.question.sourceType)
+            assertEquals("", practice.question.examYear)
+            assertEquals("", practice.question.examShift)
+            assertEquals(true, practice.progress?.isBookmarked)
+            assertEquals(6, practice.progress?.attemptsCount)
+
+            val ca = byId.getValue("500")
+            assertEquals(QuestionSourceType.CURRENT_AFFAIRS.dbValue, ca.question.sourceType)
+
+            val customSubj = byId.getValue("C_CUSTOM_SUBJ")
+            assertEquals("icu_general", customSubj.question.topicId)
+
+            // Catalog seeded cleanly
+            val professions = dao.observeProfessions().first()
+            assertTrue(professions.any { it.id == PlatformCatalogDefaults.PROFESSION_NURSING })
+            val exams = dao.observeExams().first()
+            assertTrue(exams.any { it.id == PlatformCatalogDefaults.EXAM_RRB_NURSING })
+            val sections = dao.observeExamSections(PlatformCatalogDefaults.EXAM_RRB_NURSING).first()
+            assertEquals(3, sections.size)
+            val subjects = dao.observeSubjects().first()
+            assertTrue(subjects.any { it.code == "ICU" })
+            assertEquals(5, dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_RRB_NURSING))
+
+            // Mock history preserved and attached to RRB Nursing
+            val history = dao.observeMockHistoryForExam(PlatformCatalogDefaults.EXAM_RRB_NURSING).first()
+            assertEquals(1, history.size)
+            assertEquals("Stage 2 Full Mock", history.first().title)
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(dbName)
+        }
+    }
+
+    @Test
+    fun `one question can belong to multiple exams without duplicating question record or splitting progress`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val dao = db.questionDao()
+            val repo = NursingPrepRepository(context, dao)
+            repo.ensureCatalogSeeded()
+
+            // Register a second Nursing exam (AIIMS NORCET) without touching RRB Nursing
+            dao.upsertExams(
+                listOf(
+                    ExamEntity(
+                        id = "aiims_norcet",
+                        professionId = PlatformCatalogDefaults.PROFESSION_NURSING,
+                        name = "AIIMS NORCET",
+                        shortName = "NORCET",
+                        description = "AIIMS Nursing Officer Recruitment Common Eligibility Test",
+                        defaultMockQuestions = 100,
+                        defaultMockMinutes = 90,
+                        positiveMarks = 1.0,
+                        negativeMarks = 0.33,
+                        sortOrder = 2,
+                        isActive = true
+                    )
+                )
+            )
+            dao.upsertExamSections(
+                listOf(
+                    ExamSectionEntity(
+                        id = "norcet_clinical",
+                        examId = "aiims_norcet",
+                        name = "Clinical Nursing",
+                        weightagePercent = 80,
+                        sortOrder = 1
+                    )
+                )
+            )
+
+            // Save one shared question into RRB Nursing first
+            val sharedQ = Question(
+                id = "C_SHARED_1",
+                category = "nur",
+                shiftYear = "",
+                subject = "MSN",
+                topicId = "msn_cardiology",
+                sourceType = QuestionSourceType.PRACTICE,
+                difficulty = QuestionDifficulty.HARD,
+                questionText = "First-line drug for unstable SVT with pulse?",
+                options = listOf("Adenosine", "Atropine", "Digoxin", "Amiodarone"),
+                correctIndex = 0,
+                explanation = "Rapid IV push Adenosine is first-line for stable/regular SVT.",
+                isCustom = true
+            )
+            repo.saveCustomQuestions(
+                questions = listOf(sharedQ),
+                examIds = listOf(PlatformCatalogDefaults.EXAM_RRB_NURSING),
+                topicLabelOverrides = mapOf("msn_cardiology" to "Cardiology")
+            )
+
+            // Link the EXACT SAME question ID to AIIMS NORCET
+            repo.linkQuestionToExam(
+                questionId = sharedQ.id,
+                examId = "aiims_norcet",
+                sectionId = "norcet_clinical",
+                isPyqForExam = false
+            )
+
+            // Record an attempt and bookmark on that question
+            repo.recordAttempt(sharedQ.id, isCorrect = true)
+            repo.toggleBookmark(sharedQ.id)
+
+            // Question row exists ONCE in `questions` table (no duplication)
+            assertEquals(1, dao.getTotalCount())
+            assertEquals(2, dao.getLinksForQuestion(sharedQ.id).size)
+
+            // Both exams see the question with identical shared progress & bookmark
+            val rrbList = repo.observeQuestionsForExam(PlatformCatalogDefaults.EXAM_RRB_NURSING).first()
+            val norcetList = repo.observeQuestionsForExam("aiims_norcet").first()
+            assertEquals(1, rrbList.size)
+            assertEquals(1, norcetList.size)
+            assertEquals("C_SHARED_1", rrbList.first().id)
+            assertEquals("C_SHARED_1", norcetList.first().id)
+            assertTrue(rrbList.first().isBookmarked)
+            assertTrue(norcetList.first().isBookmarked)
+            assertEquals(1, rrbList.first().attemptsCount)
+            assertEquals(1, norcetList.first().attemptsCount)
+            assertEquals("right", norcetList.first().lastOutcome)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `v3 backup json preserves sourceType topicId examIds and restores cleanly`() {
+        val customQ = Question(
+            id = "C_V3_1",
+            category = "pyq",
+            shiftYear = "2025-S1",
+            subject = "MSN",
+            topicId = "msn_cardiology",
+            sourceType = QuestionSourceType.OFFICIAL_PYQ,
+            examYear = "2025",
+            examShift = "S1",
+            difficulty = QuestionDifficulty.HARD,
+            questionText = "Which ECG change indicates acute anterior STEMI?",
+            options = listOf("ST elevation in V1-V4", "ST elevation in II, III, aVF", "Peaked P wave", "Short QT"),
+            correctIndex = 0,
+            explanation = "Anterior wall MI affects precordial leads V1-V4.",
+            sourceStatus = Question.SOURCE_VERIFIED,
+            sourceNote = "Official RRB 2025 Shift 1 key",
+            isCustom = true
+        )
+        val json = BulkQuestionParser.buildBackupJson(
+            items = listOf(QuestionItem(customQ, QuestionProgress("C_V3_1", isBookmarked = true, attemptsCount = 2, correctCount = 2))),
+            questionExamLinks = mapOf("C_V3_1" to listOf("rrb_nursing", "aiims_norcet")),
+            activeExamId = "rrb_nursing"
+        )
+        val restored = BulkQuestionParser.parseBackupJson(json)
+        assertEquals(1, restored.customQuestions.size)
+        val q = restored.customQuestions.first()
+        assertEquals(QuestionSourceType.OFFICIAL_PYQ, q.sourceType)
+        assertEquals("msn_cardiology", q.topicId)
+        assertEquals("2025", q.examYear)
+        assertEquals("S1", q.examShift)
+        assertEquals(listOf("rrb_nursing", "aiims_norcet"), restored.customQuestionExamIds["C_V3_1"])
+        assertEquals("rrb_nursing", restored.activeExamId)
+        assertFalse(restored.progressList.isEmpty())
+        assertTrue(restored.progressList.first().isBookmarked)
+    }
 }
+

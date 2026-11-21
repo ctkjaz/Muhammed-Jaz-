@@ -8,18 +8,26 @@ import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.data.model.CategoryStat
 import com.example.data.model.DifficultyFilter
+import com.example.data.model.Exam
+import com.example.data.model.ExamQuestionLink
+import com.example.data.model.ExamSection
 import com.example.data.model.Flashcard
 import com.example.data.model.MockHistory
+import com.example.data.model.PlatformCatalogDefaults
+import com.example.data.model.Profession
 import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
+import com.example.data.model.QuestionSourceType
 import com.example.data.model.SubjectCatalog
 import com.example.data.model.SubjectStat
+import com.example.data.model.Topic
 import com.example.data.export.PdfWorksheetOptions
 import com.example.data.export.PdfWorksheetWriter
 import com.example.data.parser.BulkQuestionParser
 import com.example.data.repository.NursingPrepRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +35,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -101,7 +110,9 @@ data class ImporterUiState(
     val isVisible: Boolean = false,
     val selectedTab: Int = 0,
     val category: String = "pyq",
+    val sourceType: QuestionSourceType = QuestionSourceType.MEMORY_BASED,
     val subject: String = "MSN",
+    val topicName: String = "",
     val shiftYear: String = "2025-S1",
     val difficulty: QuestionDifficulty = QuestionDifficulty.MEDIUM,
     val sourceNote: String = "",
@@ -136,6 +147,12 @@ data class OverallStats(
 )
 
 data class DashboardDerivedState(
+    val activeExam: Exam? = PlatformCatalogDefaults.DEFAULT_EXAMS.first(),
+    val activeExamSections: List<ExamSection> = PlatformCatalogDefaults.DEFAULT_SECTIONS,
+    val availableProfessions: List<Profession> = PlatformCatalogDefaults.DEFAULT_PROFESSIONS,
+    val availableExams: List<Exam> = PlatformCatalogDefaults.DEFAULT_EXAMS,
+    val examQuestionCounts: Map<String, Int> = emptyMap(),
+    val topicsById: Map<String, Topic> = emptyMap(),
     val questions: List<QuestionItem> = emptyList(),
     val overall: OverallStats = OverallStats(),
     val subjectStats: List<SubjectStat> = emptyList(),
@@ -146,6 +163,7 @@ data class DashboardDerivedState(
     val isLoaded: Boolean = false
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val db = AppDatabase.getInstance(application)
     private val repository = NursingPrepRepository(application, db.questionDao())
@@ -157,16 +175,72 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val useTimeLimit: StateFlow<Boolean> = settings.useTimeLimit
     val secondsPerQuestion: StateFlow<Int> = settings.secondsPerQuestion
     val keepScreenOn: StateFlow<Boolean> = settings.keepScreenOn
+    val activeExamId: StateFlow<String> = settings.activeExamId
 
     private val _flashcards = MutableStateFlow<List<Flashcard>>(emptyList())
     private val _isSeeded = MutableStateFlow(false)
+    private val _isExamPickerOpen = MutableStateFlow(false)
+    val isExamPickerOpen: StateFlow<Boolean> = _isExamPickerOpen.asStateFlow()
+
+    private val allPlatformQuestions: StateFlow<List<QuestionItem>> = repository.allQuestions.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
+
+    private val allPlatformLinks: StateFlow<List<ExamQuestionLink>> = repository.allExamLinks.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
+
+    private val activeExamQuestions = activeExamId.flatMapLatest { examId ->
+        repository.observeQuestionsForExam(examId)
+    }
+
+    private val activeExamHistory = activeExamId.flatMapLatest { examId ->
+        repository.observeMockHistoryForExam(examId)
+    }
+
+    private val activeExamSections = activeExamId.flatMapLatest { examId ->
+        repository.observeExamSections(examId)
+    }
+
+    private data class CatalogBundle(
+        val activeExamId: String,
+        val professions: List<Profession>,
+        val exams: List<Exam>,
+        val sections: List<ExamSection>,
+        val topics: List<Topic>,
+        val links: List<ExamQuestionLink>
+    )
+
+    private val catalogBundle = combine(
+        activeExamId,
+        repository.professions,
+        repository.exams,
+        activeExamSections,
+        repository.topics
+    ) { examId, profs, exams, sections, topics ->
+        CatalogBundle(
+            activeExamId = examId,
+            professions = profs,
+            exams = exams,
+            sections = sections,
+            topics = topics,
+            links = emptyList()
+        )
+    }.combine(allPlatformLinks) { bundle, links ->
+        bundle.copy(links = links)
+    }
 
     val mainState: StateFlow<DashboardDerivedState> = combine(
-        repository.allQuestions,
-        repository.mockHistory,
+        activeExamQuestions,
+        activeExamHistory,
         _flashcards,
-        _isSeeded
-    ) { items, history, cards, seeded ->
+        _isSeeded,
+        catalogBundle
+    ) { items, history, cards, seeded, catalog ->
         val attemptedUnique = items.count { it.attemptsCount > 0 }
         val totalAttempts = items.sumOf { it.attemptsCount }
         val totalCorrect = items.sumOf { it.correctCount }
@@ -175,7 +249,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val latestRight = items.count { it.lastOutcome == "right" }
         val latestWrong = items.count { it.lastOutcome == "wrong" }
         val netScore = latestRight - (latestWrong * 0.33)
+        val activeExam = catalog.exams.firstOrNull { it.id == catalog.activeExamId }
+            ?: catalog.exams.firstOrNull()
+            ?: PlatformCatalogDefaults.DEFAULT_EXAMS.first()
+        val countsByExam = catalog.links.groupingBy { it.examId }.eachCount()
         DashboardDerivedState(
+            activeExam = activeExam,
+            activeExamSections = catalog.sections,
+            availableProfessions = catalog.professions,
+            availableExams = catalog.exams,
+            examQuestionCounts = countsByExam,
+            topicsById = catalog.topics.associateBy { it.id },
             questions = items,
             overall = OverallStats(
                 totalQuestions = items.size,
@@ -258,6 +342,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun closeSettings() {
         _isSettingsOpen.value = false
+    }
+
+    fun openExamPicker() {
+        _isExamPickerOpen.value = true
+    }
+
+    fun closeExamPicker() {
+        _isExamPickerOpen.value = false
+    }
+
+    fun selectActiveExam(examId: String) {
+        settings.setActiveExamId(examId)
+        _isExamPickerOpen.value = false
     }
 
     fun selectSubjectSection(section: SubjectHubSection) {
@@ -586,10 +683,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         stopActiveTimer()
         _practiceSession.value = null
+        val activeExam = mainState.value.activeExam
         val hasCountdown = isOfficialFullMock || settings.useTimeLimit.value
         val totalSec = if (hasCountdown) {
             val mins = if (isOfficialFullMock) {
-                90
+                activeExam?.defaultMockMinutes ?: 90
             } else {
                 durationMinutes ?: SettingsPreferences.calculateSuggestedMinutes(
                     questionCount = items.size,
@@ -759,7 +857,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 wrongCount = wrong,
                 skippedCount = skipped,
                 netScore = netScore,
-                accuracyPercent = acc
+                accuracyPercent = acc,
+                examId = settings.activeExamId.value
             )
         }
     }
@@ -801,6 +900,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun previewPdfTextImport() {
         val st = _importerState.value
+        val effectiveTopicId = BulkQuestionParser.slugTopicId(st.subject, st.topicName)
         val parsed = BulkQuestionParser.parseRawPdfText(
             rawText = st.rawText,
             category = st.category,
@@ -808,20 +908,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             shiftYear = st.shiftYear,
             defaultDifficulty = st.difficulty,
             defaultSourceNote = st.sourceNote,
-            markAsVerified = st.markAsVerified
+            markAsVerified = st.markAsVerified,
+            defaultSourceType = st.sourceType,
+            defaultTopicId = effectiveTopicId
         )
         _importerState.update { it.copy(previewQuestions = parsed, hasPreviewed = true) }
     }
 
     fun commitPreviewImport() {
-        val list = _importerState.value.previewQuestions
+        val st = _importerState.value
+        val list = st.previewQuestions
         if (list.isEmpty()) return
+        val topicLabelOverrides = if (st.topicName.isNotBlank()) {
+            mapOf(BulkQuestionParser.slugTopicId(st.subject, st.topicName) to st.topicName.trim())
+        } else {
+            emptyMap()
+        }
         viewModelScope.launch {
-            repository.saveCustomQuestions(list)
+            repository.saveCustomQuestions(
+                questions = list,
+                examIds = listOf(settings.activeExamId.value),
+                topicLabelOverrides = topicLabelOverrides
+            )
             _importerState.update {
                 it.copy(
                     isVisible = false,
                     rawText = "",
+                    topicName = "",
                     sourceNote = "",
                     markAsVerified = false,
                     previewQuestions = emptyList(),
@@ -842,17 +955,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         viewModelScope.launch {
-            repository.saveCustomQuestions(parsed)
+            repository.saveCustomQuestions(
+                questions = parsed,
+                examIds = listOf(settings.activeExamId.value)
+            )
             _importerState.update { it.copy(isVisible = false, jsonText = "") }
             showMessage("Imported ${parsed.size} JSON questions!")
         }
     }
 
-    fun buildBackupJson(): String = BulkQuestionParser.buildBackupJson(mainState.value.questions)
+    fun buildBackupJson(): String {
+        val backupItems = allPlatformQuestions.value.ifEmpty { mainState.value.questions }
+        val linksByQuestion = allPlatformLinks.value
+            .groupBy { it.questionId }
+            .mapValues { (_, links) -> links.map { it.examId }.distinct() }
+        return BulkQuestionParser.buildBackupJson(
+            items = backupItems,
+            questionExamLinks = linksByQuestion,
+            activeExamId = settings.activeExamId.value
+        )
+    }
 
     fun restoreBackupFromText(jsonText: String) {
         viewModelScope.launch {
-            runCatching { repository.restoreBackup(jsonText) }
+            runCatching { repository.restoreBackup(jsonText, defaultExamId = settings.activeExamId.value) }
                 .onSuccess { count ->
                     _importerState.update { it.copy(isVisible = false) }
                     showMessage("Backup restored ($count custom questions + progress synced).")

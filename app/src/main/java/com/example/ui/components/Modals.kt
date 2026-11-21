@@ -17,11 +17,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -62,8 +65,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.export.PdfWorksheetWriter
 import com.example.data.model.DifficultyFilter
+import com.example.data.model.Exam
+import com.example.data.model.Profession
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
+import com.example.data.model.QuestionSourceType
 import com.example.data.model.SubjectCatalog
 import com.example.ui.theme.CalmSageFill
 import com.example.ui.theme.MonoFontFamily
@@ -281,6 +287,7 @@ fun TimedPracticeConfigDialog(
 @Composable
 fun ImporterModalSheet(
     state: ImporterUiState,
+    activeExamShortName: String = "RRB Nursing",
     onUpdate: ((ImporterUiState) -> ImporterUiState) -> Unit,
     onPreviewPdf: () -> Unit,
     onCommitPdf: () -> Unit,
@@ -312,13 +319,25 @@ fun ImporterModalSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Expand Offline Question Bank", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        "Paste raw text from RRB Shift PDFs or JSON arrays",
+                        "Paste raw text from Shift PDFs or JSON arrays",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = "Linking to: $activeExamShortName",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
                 }
                 IconButton(onClick = onDismiss) {
                     Icon(Icons.Filled.Close, contentDescription = "Close importer")
@@ -385,7 +404,7 @@ fun ImporterModalSheet(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun PdfTextImportPane(
     state: ImporterUiState,
@@ -397,6 +416,40 @@ private fun PdfTextImportPane(
     val subjects = SubjectCatalog.ALL_SUBJS.map { it.code }
     var catExpanded by remember { mutableStateOf(false) }
     var subjExpanded by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Source Type", style = MaterialTheme.typography.labelLarge)
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            QuestionSourceType.entries.forEach { st ->
+                FilterChip(
+                    selected = state.sourceType == st,
+                    onClick = {
+                        onUpdate { current ->
+                            val alignedCategory = when (st) {
+                                QuestionSourceType.OFFICIAL_PYQ,
+                                QuestionSourceType.MEMORY_BASED -> "pyq"
+                                QuestionSourceType.CURRENT_AFFAIRS -> "ca"
+                                QuestionSourceType.PRACTICE -> if (current.category == "gen") "gen" else "nur"
+                            }
+                            current.copy(sourceType = st, category = alignedCategory)
+                        }
+                    },
+                    label = { Text(st.label, style = MaterialTheme.typography.labelSmall) },
+                    modifier = Modifier.testTag("import_source_${st.dbValue}")
+                )
+            }
+        }
+        if (state.sourceType == QuestionSourceType.OFFICIAL_PYQ && state.sourceNote.isBlank()) {
+            Text(
+                text = "Official PYQ requires a non-empty Source Note and Verified toggle below; otherwise saved honestly as Memory-Based PYQ.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.editorialColors.warningText
+            )
+        }
+    }
 
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ExposedDropdownMenuBox(
@@ -417,7 +470,18 @@ private fun PdfTextImportPane(
                     DropdownMenuItem(
                         text = { Text(label) },
                         onClick = {
-                            onUpdate { it.copy(category = code) }
+                            onUpdate { current ->
+                                val alignedSource = when (code) {
+                                    "pyq" -> if (current.sourceType == QuestionSourceType.OFFICIAL_PYQ) {
+                                        QuestionSourceType.OFFICIAL_PYQ
+                                    } else {
+                                        QuestionSourceType.MEMORY_BASED
+                                    }
+                                    "ca" -> QuestionSourceType.CURRENT_AFFAIRS
+                                    else -> QuestionSourceType.PRACTICE
+                                }
+                                current.copy(category = code, sourceType = alignedSource)
+                            }
                             catExpanded = false
                         }
                     )
@@ -451,6 +515,17 @@ private fun PdfTextImportPane(
             }
         }
     }
+
+    OutlinedTextField(
+        value = state.topicName,
+        onValueChange = { txt -> onUpdate { it.copy(topicName = txt) } },
+        label = { Text("Topic (optional)") },
+        placeholder = { Text("e.g. Cardiology, Fluids & Electrolytes") },
+        singleLine = true,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("pdf_topic_input")
+    )
 
     OutlinedTextField(
         value = state.shiftYear,
@@ -919,3 +994,161 @@ fun PdfExportModalSheet(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ExamPickerModalSheet(
+    isVisible: Boolean,
+    professions: List<Profession>,
+    exams: List<Exam>,
+    activeExamId: String,
+    examQuestionCounts: Map<String, Int>,
+    onSelectExam: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (!isVisible) return
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp)
+                .verticalScroll(rememberScrollState())
+                .testTag("exam_picker_sheet"),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.School,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Column {
+                        Text("Active Exam Track", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            "ClinEdge multi-exam architecture • shared progress",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.testTag("close_exam_picker_btn")
+                ) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close exam picker")
+                }
+            }
+
+            val examsByProfession = exams.groupBy { it.professionId }
+            professions.forEach { profession ->
+                val profExams = examsByProfession[profession.id].orEmpty()
+                if (profExams.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = profession.name.uppercase(),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        profExams.forEach { exam ->
+                            val isSelected = exam.id == activeExamId
+                            val qCount = examQuestionCounts[exam.id] ?: 0
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 56.dp)
+                                    .clickable { onSelectExam(exam.id) }
+                                    .testTag("exam_option_${exam.id}"),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.surface
+                                    }
+                                ),
+                                border = BorderStroke(
+                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.outline
+                                    }
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                                    ) {
+                                        Text(
+                                            text = exam.name,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSelected) {
+                                                MaterialTheme.colorScheme.onPrimaryContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            }
+                                        )
+                                        Text(
+                                            text = "$qCount MCQs  •  ${exam.defaultMockQuestions}Q / ${exam.defaultMockMinutes}m  •  -${exam.negativeMarks}",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                            color = if (isSelected) {
+                                                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            }
+                                        )
+                                    }
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Filled.CheckCircle,
+                                            contentDescription = "Active exam",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                Text(
+                    text = "ClinEdge is ready for multiple healthcare exams (such as AIIMS NORCET, ESIC, DSSSB, and Pharmacy). Shared questions keep one unified progress and bookmark record across exams.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(14.dp)
+                )
+            }
+        }
+    }
+}
+
