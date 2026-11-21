@@ -432,6 +432,49 @@ private fun PdfTextImportPane(
         modifier = Modifier.fillMaxWidth()
     )
 
+    OutlinedTextField(
+        value = state.sourceNote,
+        onValueChange = { txt ->
+            onUpdate {
+                it.copy(
+                    sourceNote = txt,
+                    markAsVerified = if (txt.isBlank()) false else it.markAsVerified
+                )
+            }
+        },
+        label = { Text("Source Note (required to mark PYQ as Verified)") },
+        placeholder = { Text("e.g. Official RRB 2025 Shift 1 answer key PDF") },
+        singleLine = true,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("pdf_source_note_input")
+    )
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Mark Imported Questions as Verified", style = MaterialTheme.typography.labelLarge)
+            Text(
+                text = if (state.sourceNote.isBlank()) {
+                    "Add a non-empty Source Note above to enable Verified status; otherwise saved as Unverified."
+                } else {
+                    "Will be saved as Verified with the Source Note above."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(
+            checked = state.markAsVerified && state.sourceNote.isNotBlank(),
+            enabled = state.sourceNote.isNotBlank(),
+            onCheckedChange = { checked -> onUpdate { it.copy(markAsVerified = checked) } },
+            modifier = Modifier.testTag("pdf_mark_verified_switch")
+        )
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Default Difficulty", style = MaterialTheme.typography.labelLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -515,6 +558,7 @@ private fun PdfTextImportPane(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
                         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            PyqSourceBadge(question = q)
                             Text("${idx + 1}. ${q.questionText}", style = MaterialTheme.typography.labelMedium)
                             Text(
                                 "Ans: ${'A' + q.correctIndex} • ${q.options.getOrElse(q.correctIndex) { "" }}",
@@ -545,7 +589,13 @@ private fun JsonBackupPane(
         label = { Text("Compact JSON Array") },
         placeholder = {
             Text(
-                """[{"c":"pyq","y":"2025-S2","s":"MSN","d":"Medium","q":"...","o":["A","B","C","D"],"a":0,"e":"..."}]""",
+                """[{"c":"pyq","y":"2025-S2","s":"MSN","d":"Medium","q":"...","o":["A","B","C","D"],"a":0,"e":"...","sourceStatus":"verified","sourceNote":"Official RRB 2025-S2 key"}]""",
+                style = MaterialTheme.typography.bodySmall
+            )
+        },
+        supportingText = {
+            Text(
+                "PYQ items are saved as verified only when sourceStatus is \"verified\" and sourceNote is non-empty; otherwise saved as unverified.",
                 style = MaterialTheme.typography.bodySmall
             )
         },

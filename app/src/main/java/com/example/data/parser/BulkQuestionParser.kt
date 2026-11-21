@@ -13,13 +13,34 @@ object BulkQuestionParser {
     private val ansRegex = Regex("""^(?:Ans(?:wer)?|Correct\s*(?:Option|Answer))\s*[:-]\s*([1-4A-Da-d])""", RegexOption.IGNORE_CASE)
     private val expRegex = Regex("""^(?:Exp(?:lanation)?|Rationale|Sol(?:ution)?)\s*[:-]\s*(.+)""", RegexOption.IGNORE_CASE)
     private val diffRegex = Regex("""^(?:Diff(?:iculty)?|Level)\s*[:-]\s*(Easy|Medium|Hard)""", RegexOption.IGNORE_CASE)
+    private val sourceNoteRegex = Regex("""^(?:Source(?:\s*Note)?|Ref(?:erence)?)\s*[:-]\s*(.+)""", RegexOption.IGNORE_CASE)
+    private val sourceStatusRegex = Regex("""^(?:Source\s*Status|Verification)\s*[:-]\s*(verified|unverified)""", RegexOption.IGNORE_CASE)
+
+    fun resolveSourceStatus(
+        category: String,
+        rawSourceStatus: String?,
+        sourceNote: String
+    ): String {
+        val normalizedStatus = rawSourceStatus?.trim()?.lowercase()
+        val trimmedNote = sourceNote.trim()
+        if (normalizedStatus != Question.SOURCE_VERIFIED) {
+            return Question.SOURCE_UNVERIFIED
+        }
+        return if (trimmedNote.isNotEmpty()) {
+            Question.SOURCE_VERIFIED
+        } else {
+            Question.SOURCE_UNVERIFIED
+        }
+    }
 
     fun parseRawPdfText(
         rawText: String,
         category: String,
         subject: String,
         shiftYear: String,
-        defaultDifficulty: QuestionDifficulty = QuestionDifficulty.MEDIUM
+        defaultDifficulty: QuestionDifficulty = QuestionDifficulty.MEDIUM,
+        defaultSourceNote: String = "",
+        markAsVerified: Boolean = false
     ): List<Question> {
         val lines = rawText.replace("\r", "")
             .split("\n")
@@ -32,6 +53,8 @@ object BulkQuestionParser {
         var curAnswerIdx = 0
         var curExplanation = "Imported from PDF text."
         var curDifficulty = defaultDifficulty
+        var curSourceNote = ""
+        var curSourceStatus: String? = null
         var hasCurrent = false
         val baseTs = System.currentTimeMillis()
 
@@ -40,6 +63,14 @@ object BulkQuestionParser {
                 val padded = curOptions.toMutableList()
                 while (padded.size < 4) padded.add("None of these")
                 val safeAns = curAnswerIdx.coerceIn(0, 3)
+                val effectiveNote = curSourceNote.ifBlank { defaultSourceNote }.trim()
+                val requestedStatus = curSourceStatus
+                    ?: if (markAsVerified) Question.SOURCE_VERIFIED else Question.SOURCE_UNVERIFIED
+                val resolvedStatus = resolveSourceStatus(
+                    category = category,
+                    rawSourceStatus = requestedStatus,
+                    sourceNote = effectiveNote
+                )
                 parsed.add(
                     Question(
                         id = "C_${baseTs}_${parsed.size}",
@@ -51,7 +82,9 @@ object BulkQuestionParser {
                         options = padded.take(4),
                         correctIndex = safeAns,
                         explanation = curExplanation.trim(),
-                        isCustom = true
+                        isCustom = true,
+                        sourceStatus = resolvedStatus,
+                        sourceNote = effectiveNote
                     )
                 )
             }
@@ -61,6 +94,8 @@ object BulkQuestionParser {
             val ansMatch = ansRegex.find(line)
             val expMatch = expRegex.find(line)
             val diffMatch = diffRegex.find(line)
+            val sourceStatusMatch = sourceStatusRegex.find(line)
+            val sourceNoteMatch = sourceNoteRegex.find(line)
             val qMatch = qRegex.find(line)
             val optMatch = optRegex.find(line)
 
@@ -78,6 +113,12 @@ object BulkQuestionParser {
                 diffMatch != null && hasCurrent -> {
                     curDifficulty = QuestionDifficulty.fromRaw(diffMatch.groupValues[1])
                 }
+                sourceStatusMatch != null && hasCurrent -> {
+                    curSourceStatus = sourceStatusMatch.groupValues[1].trim().lowercase()
+                }
+                sourceNoteMatch != null && hasCurrent -> {
+                    curSourceNote = sourceNoteMatch.groupValues[1].trim()
+                }
                 qMatch != null && (!hasCurrent || line.startsWith("Q", ignoreCase = true)) -> {
                     pushCurrent()
                     hasCurrent = true
@@ -86,6 +127,8 @@ object BulkQuestionParser {
                     curAnswerIdx = 0
                     curDifficulty = defaultDifficulty
                     curExplanation = "Imported from PDF text."
+                    curSourceNote = ""
+                    curSourceStatus = null
                 }
                 optMatch != null && hasCurrent && curOptions.size < 4 -> {
                     curOptions.add(optMatch.groupValues[3].trim())
@@ -98,6 +141,8 @@ object BulkQuestionParser {
                     curAnswerIdx = 0
                     curDifficulty = defaultDifficulty
                     curExplanation = "Imported from PDF text."
+                    curSourceNote = ""
+                    curSourceStatus = null
                 }
                 hasCurrent -> {
                     if (curOptions.isEmpty()) {
@@ -127,10 +172,23 @@ object BulkQuestionParser {
             while (opts.size < 4) opts.add("None of these")
             val rawId = obj.opt("id")?.toString()?.takeIf { it.isNotBlank() }
             val rawDiff = obj.optString("d", "").ifBlank { obj.optString("difficulty", "") }
+            val category = obj.optString("c", "nur").ifBlank { "nur" }
+            val rawNote = obj.optString("sourceNote", "").ifBlank { obj.optString("sn", "") }.trim()
+            val rawStatus = obj.optString("sourceStatus", "").ifBlank { obj.optString("ss", "") }.trim()
+            val resolvedNote = if (markAsCustom) rawNote else ""
+            val resolvedStatus = if (markAsCustom) {
+                resolveSourceStatus(
+                    category = category,
+                    rawSourceStatus = rawStatus,
+                    sourceNote = resolvedNote
+                )
+            } else {
+                Question.SOURCE_UNVERIFIED
+            }
             list.add(
                 Question(
                     id = rawId ?: "J_${baseTs}_$i",
-                    category = obj.optString("c", "nur").ifBlank { "nur" },
+                    category = category,
                     shiftYear = obj.optString("y", ""),
                     subject = obj.optString("s", "MSN").ifBlank { "MSN" },
                     difficulty = QuestionDifficulty.fromRaw(rawDiff),
@@ -138,7 +196,9 @@ object BulkQuestionParser {
                     options = opts.take(4),
                     correctIndex = obj.optInt("a", 0).coerceIn(0, 3),
                     explanation = obj.optString("e", ""),
-                    isCustom = markAsCustom
+                    isCustom = markAsCustom,
+                    sourceStatus = resolvedStatus,
+                    sourceNote = resolvedNote
                 )
             )
         }
@@ -165,6 +225,8 @@ object BulkQuestionParser {
                         put("o", JSONArray(q.options))
                         put("a", q.correctIndex)
                         put("e", q.explanation)
+                        put("sourceStatus", q.sourceStatus)
+                        put("sourceNote", q.sourceNote)
                     }
                 )
             }
@@ -186,7 +248,7 @@ object BulkQuestionParser {
             }
         }
 
-        root.put("version", 1)
+        root.put("version", 2)
         root.put("exportedAt", System.currentTimeMillis())
         root.put("customQB", customArr)
         root.put("bookmarks", bookmarksArr)

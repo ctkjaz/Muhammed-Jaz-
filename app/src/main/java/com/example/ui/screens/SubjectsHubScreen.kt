@@ -5,6 +5,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -44,6 +46,8 @@ import com.example.data.model.SubjectMeta
 import com.example.ui.components.DifficultyFilterBar
 import com.example.ui.components.FlashcardItemCard
 import com.example.ui.components.SubjectProgressCard
+import com.example.ui.theme.AmberHighlight
+import com.example.ui.theme.EmeraldCorrect
 import com.example.ui.theme.MonoFontFamily
 import com.example.ui.viewmodel.DashboardDerivedState
 import com.example.ui.viewmodel.SubjectHubSection
@@ -237,6 +241,7 @@ private fun SubjectListGrid(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PyqShiftList(
     allQuestions: List<QuestionItem>,
@@ -252,8 +257,10 @@ private fun PyqShiftList(
             .sortedDescending()
     }
     val allPyqs = remember(allQuestions) {
-        allQuestions.filter { it.question.category == "pyq" || it.question.shiftYear.isNotBlank() }
+        allQuestions.filter { it.question.isPyqTagged }
     }
+    val verifiedPyqCount = remember(allPyqs) { allPyqs.count { it.question.isVerifiedSource } }
+    val unverifiedPyqCount = remember(allPyqs, verifiedPyqCount) { allPyqs.size - verifiedPyqCount }
     val rows = shifts.chunked(columns)
 
     LazyColumn(
@@ -265,19 +272,49 @@ private fun PyqShiftList(
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Previous Year Questions (PYQs)", style = MaterialTheme.typography.titleLarge)
+                Text("PYQ-Tagged Practice Sets", style = MaterialTheme.typography.titleLarge)
                 Text(
-                    "Grouped by RRB Nursing exam year and shift",
+                    "Questions tagged by exam year and shift. Unverified tags have not yet been verified against official RRB question papers or answer keys.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = EmeraldCorrect.copy(alpha = 0.14f),
+                        border = BorderStroke(1.dp, EmeraldCorrect.copy(alpha = 0.4f)),
+                        modifier = Modifier.testTag("pyq_verified_count")
+                    ) {
+                        Text(
+                            text = "Verified: $verifiedPyqCount",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                            color = EmeraldCorrect,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = AmberHighlight.copy(alpha = 0.16f),
+                        border = BorderStroke(1.dp, AmberHighlight.copy(alpha = 0.45f)),
+                        modifier = Modifier.testTag("pyq_unverified_count")
+                    ) {
+                        Text(
+                            text = "Unverified: $unverifiedPyqCount",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                            color = AmberHighlight,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
-                        onClick = { onStartPractice(allPyqs, "All RRB PYQs Combined$diffSuffix") },
+                        onClick = { onStartPractice(allPyqs, "All PYQ-Tagged Sets$diffSuffix") },
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.testTag("practice_all_pyqs")
                     ) {
-                        Text("Practice All PYQs (${allPyqs.size})")
+                        Text("Practice All Tagged (${allPyqs.size})")
                     }
                     OutlinedButton(
                         onClick = onOpenImporter,
@@ -299,7 +336,12 @@ private fun PyqShiftList(
                 rowItems.forEach { sh ->
                     val list = allQuestions.filter { it.question.shiftYear == sh }
                     val solved = list.count { it.attemptsCount > 0 }
-                    val title = SubjectCatalog.SHIFT_NAMES[sh] ?: "RRB Exam $sh"
+                    val shiftVerified = list.count { it.question.isVerifiedSource }
+                    val shiftUnverified = list.size - shiftVerified
+                    val allVerified = list.isNotEmpty() && shiftUnverified == 0
+                    val shiftBadgeText = if (allVerified) "Verified PYQ • $sh" else "Unverified PYQ tag"
+                    val shiftBadgeColor = if (allVerified) EmeraldCorrect else AmberHighlight
+                    val title = SubjectCatalog.SHIFT_NAMES[sh] ?: "Tagged Set $sh"
                     Card(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
@@ -315,17 +357,37 @@ private fun PyqShiftList(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.tertiaryContainer
+                                FlowRow(
+                                    modifier = Modifier.weight(1f),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Text(
-                                        text = sh,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.tertiaryContainer
+                                    ) {
+                                        Text(
+                                            text = sh,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = shiftBadgeColor.copy(alpha = 0.15f),
+                                        border = BorderStroke(1.dp, shiftBadgeColor.copy(alpha = 0.45f)),
+                                        modifier = Modifier.testTag("shift_badge_$sh")
+                                    ) {
+                                        Text(
+                                            text = shiftBadgeText,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = shiftBadgeColor,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
                                 }
                                 Text(
                                     text = "$solved/${list.size} done",
@@ -334,6 +396,11 @@ private fun PyqShiftList(
                                 )
                             }
                             Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "Verified: $shiftVerified • Unverified: $shiftUnverified",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(
                                     onClick = { onStartPractice(list, "$title$diffSuffix") },

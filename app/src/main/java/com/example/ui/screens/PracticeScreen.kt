@@ -9,6 +9,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -58,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import com.example.data.model.QuestionItem
 import com.example.ui.components.DifficultyBadge
 import com.example.ui.components.MetricTile
+import com.example.ui.components.PyqSourceBadge
 import com.example.ui.components.formatTimer
 import com.example.ui.theme.AmberHighlight
 import com.example.ui.theme.EmeraldCorrect
@@ -67,6 +70,7 @@ import com.example.ui.viewmodel.CbtReviewFilter
 import com.example.ui.viewmodel.PracticeSessionState
 import java.util.Locale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PracticeScreen(
     session: PracticeSessionState,
@@ -262,9 +266,10 @@ fun PracticeScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
+                            FlowRow(
+                                modifier = Modifier.weight(1f),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
@@ -289,20 +294,7 @@ fun PracticeScreen(
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                 }
-                                if (q.shiftYear.isNotBlank()) {
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.tertiaryContainer
-                                    ) {
-                                        Text(
-                                            text = "PYQ ${q.shiftYear}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                        )
-                                    }
-                                }
+                                PyqSourceBadge(question = q)
                                 DifficultyBadge(difficulty = q.difficulty)
                             }
 
@@ -418,10 +410,17 @@ fun PracticeScreen(
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
-                                        text = "Clinical Rationale / Solution: ${q.explanation.ifBlank { "Verified answer." }}",
+                                        text = "Clinical Rationale / Solution: ${q.explanation.ifBlank { "No rationale provided." }}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
+                                    if (q.isVerifiedSource) {
+                                        Text(
+                                            text = "Source: ${q.sourceNote}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = EmeraldCorrect
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -587,6 +586,7 @@ fun PracticeScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TimedPracticeSummaryView(
     session: PracticeSessionState,
@@ -705,11 +705,13 @@ private fun TimedPracticeSummaryView(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
+                            FlowRow(
+                                modifier = Modifier.weight(1f),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text("Q${idx + 1} • ${q.subject}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                PyqSourceBadge(question = q)
                                 DifficultyBadge(difficulty = q.difficulty)
                             }
                             Text(

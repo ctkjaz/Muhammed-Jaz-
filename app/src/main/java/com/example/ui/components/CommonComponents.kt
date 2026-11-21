@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,6 +46,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.Flashcard
+import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
 import com.example.ui.theme.AmberHighlight
@@ -71,6 +74,40 @@ fun DifficultyBadge(
             text = difficulty.label,
             style = MaterialTheme.typography.labelSmall,
             color = badgeColor,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+}
+
+@Composable
+fun PyqSourceBadge(
+    question: Question,
+    modifier: Modifier = Modifier
+) {
+    val badgeText = question.pyqBadgeText() ?: return
+    val isVerified = question.isVerifiedSource
+    val bgColor = if (isVerified) {
+        EmeraldCorrect.copy(alpha = 0.14f)
+    } else {
+        AmberHighlight.copy(alpha = 0.16f)
+    }
+    val fgColor = if (isVerified) EmeraldCorrect else AmberHighlight
+    val borderColor = if (isVerified) {
+        EmeraldCorrect.copy(alpha = 0.4f)
+    } else {
+        AmberHighlight.copy(alpha = 0.45f)
+    }
+    Surface(
+        modifier = modifier.testTag("pyq_source_badge"),
+        shape = RoundedCornerShape(8.dp),
+        color = bgColor,
+        border = BorderStroke(1.dp, borderColor)
+    ) {
+        Text(
+            text = badgeText,
+            style = MaterialTheme.typography.labelSmall,
+            color = fgColor,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         )
@@ -298,6 +335,7 @@ fun FlashcardItemCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun QuestionSummaryCard(
     item: QuestionItem,
@@ -322,7 +360,11 @@ fun QuestionSummaryCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                FlowRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
                         Text(
                             text = q.subject,
@@ -331,17 +373,7 @@ fun QuestionSummaryCard(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
-                    if (q.shiftYear.isNotBlank()) {
-                        Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.tertiaryContainer) {
-                            Text(
-                                text = q.shiftYear,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
-                    }
+                    PyqSourceBadge(question = q)
                     DifficultyBadge(difficulty = q.difficulty)
                     if (badgeOverride != null) {
                         Surface(

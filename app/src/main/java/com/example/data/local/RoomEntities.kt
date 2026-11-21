@@ -24,7 +24,9 @@ data class QuestionEntity(
     val correctIndex: Int,
     val explanation: String,
     val isCustom: Boolean = false,
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    val sourceStatus: String = Question.SOURCE_UNVERIFIED,
+    val sourceNote: String = ""
 )
 
 @Entity(tableName = "question_progress")
@@ -90,7 +92,9 @@ fun QuestionWithProgressRelation.toDomain(): QuestionItem {
         options = QuestionConverters.jsonToList(question.optionsJson),
         correctIndex = question.correctIndex,
         explanation = question.explanation,
-        isCustom = question.isCustom
+        isCustom = question.isCustom,
+        sourceStatus = question.sourceStatus,
+        sourceNote = question.sourceNote
     )
     val p = progress?.let {
         QuestionProgress(
@@ -117,7 +121,9 @@ fun Question.toEntity(sortOrder: Int = 0): QuestionEntity = QuestionEntity(
     correctIndex = correctIndex,
     explanation = explanation,
     isCustom = isCustom,
-    sortOrder = sortOrder
+    sortOrder = sortOrder,
+    sourceStatus = sourceStatus,
+    sourceNote = sourceNote
 )
 
 fun MockHistoryEntity.toDomain(): MockHistory = MockHistory(

@@ -9,6 +9,7 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import com.example.data.model.DifficultyFilter
+import com.example.data.model.Question
 import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectCatalog
 import java.io.OutputStream
@@ -38,7 +39,7 @@ object PdfWorksheetWriter {
         "BOOKMARKS" -> "Bookmarked Revision"
         "MISTAKES" -> "Recent Mistakes"
         "LOWEST_ACCURACY" -> "Lowest Accuracy"
-        "PYQ" -> "Previous Year Questions"
+        "PYQ" -> "PYQ-Tagged Questions"
         "NURSING" -> "Nursing Core (70%)"
         "CA" -> "Current Affairs & Static GK"
         "GEN" -> "Science, Math & Reasoning"
@@ -95,6 +96,15 @@ object PdfWorksheetWriter {
             0
         }
         return questionPages + keyPages
+    }
+
+    fun formatQuestionTagLine(index: Int, question: Question): String {
+        val qTagParts = buildList {
+            add(question.subject)
+            add(question.difficulty.label)
+            question.pyqBadgeText()?.let { add(it) }
+        }
+        return "Q${index + 1}  •  ${qTagParts.joinToString("  •  ")}"
     }
 
     fun writeWorksheetPdf(
@@ -234,12 +244,7 @@ object PdfWorksheetWriter {
             // Questions loop
             questions.forEachIndexed { idx, item ->
                 val q = item.question
-                val qTagParts = buildList {
-                    add(q.subject)
-                    add(q.difficulty.label)
-                    if (q.shiftYear.isNotBlank()) add(q.shiftYear)
-                }
-                val qTagText = "Q${idx + 1}  •  ${qTagParts.joinToString("  •  ")}"
+                val qTagText = formatQuestionTagLine(idx, q)
                 val stemLayout = makeLayout(q.questionText, stemPaint, CONTENT_WIDTH)
                 val optionLayouts = q.options.mapIndexed { optIdx, opt ->
                     val letter = ('A' + optIdx)

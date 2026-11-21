@@ -102,6 +102,8 @@ data class ImporterUiState(
     val subject: String = "MSN",
     val shiftYear: String = "2025-S1",
     val difficulty: QuestionDifficulty = QuestionDifficulty.MEDIUM,
+    val sourceNote: String = "",
+    val markAsVerified: Boolean = false,
     val rawText: String = "",
     val jsonText: String = "",
     val previewQuestions: List<Question> = emptyList(),
@@ -702,7 +704,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             category = st.category,
             subject = st.subject,
             shiftYear = st.shiftYear,
-            defaultDifficulty = st.difficulty
+            defaultDifficulty = st.difficulty,
+            defaultSourceNote = st.sourceNote,
+            markAsVerified = st.markAsVerified
         )
         _importerState.update { it.copy(previewQuestions = parsed, hasPreviewed = true) }
     }
@@ -716,6 +720,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 it.copy(
                     isVisible = false,
                     rawText = "",
+                    sourceNote = "",
+                    markAsVerified = false,
                     previewQuestions = emptyList(),
                     hasPreviewed = false
                 )

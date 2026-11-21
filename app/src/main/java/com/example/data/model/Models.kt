@@ -33,8 +33,30 @@ data class Question(
     val options: List<String>,
     val correctIndex: Int,
     val explanation: String,
-    val isCustom: Boolean = false
-)
+    val isCustom: Boolean = false,
+    val sourceStatus: String = SOURCE_UNVERIFIED, // "unverified" | "verified"
+    val sourceNote: String = ""
+) {
+    val isPyqTagged: Boolean
+        get() = category == "pyq" || shiftYear.isNotBlank()
+
+    val isVerifiedSource: Boolean
+        get() = sourceStatus == SOURCE_VERIFIED && sourceNote.isNotBlank()
+
+    fun pyqBadgeText(): String? {
+        if (!isPyqTagged) return null
+        return if (isVerifiedSource) {
+            if (shiftYear.isNotBlank()) "Verified PYQ • $shiftYear" else "Verified PYQ"
+        } else {
+            "Unverified PYQ tag"
+        }
+    }
+
+    companion object {
+        const val SOURCE_UNVERIFIED = "unverified"
+        const val SOURCE_VERIFIED = "verified"
+    }
+}
 
 data class QuestionProgress(
     val questionId: String,
@@ -168,9 +190,12 @@ object SubjectCatalog {
         "2025-S1" to "2025 Nursing Supt. — Shift 1",
         "2025-S2" to "2025 Nursing Supt. — Shift 2",
         "2025-S3" to "2025 Nursing Supt. — Shift 3",
-        "2026-S1" to "2026 Memory-Based Set",
+        "2026-S1" to "2026 RRB Staff Nurse — Shift 1",
+        "2026-S2" to "2026 RRB Staff Nurse — Shift 2",
+        "2026-S3" to "2026 RRB Staff Nurse — Shift 3",
         "2019-S1" to "2019 RRB Staff Nurse — Shift 1",
         "2019-S2" to "2019 RRB Staff Nurse — Shift 2",
+        "2019-S3" to "2019 RRB Staff Nurse — Shift 3",
         "2015" to "2015 RRB Staff Nurse PYQ"
     )
 }

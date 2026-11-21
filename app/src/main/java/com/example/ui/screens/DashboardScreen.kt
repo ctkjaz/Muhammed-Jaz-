@@ -94,7 +94,10 @@ fun DashboardScreen(
         state.lowestAccuracyQuestions.filter { it.question.difficulty == d }
     } ?: state.lowestAccuracyQuestions
     val diffLabelSuffix = difficultyFilter.difficulty?.let { " • ${it.label}" } ?: ""
-    val pyqCount = all.count { it.question.category == "pyq" || it.question.shiftYear.isNotBlank() }
+    val pyqItems = all.filter { it.question.isPyqTagged }
+    val pyqCount = pyqItems.size
+    val pyqVerified = pyqItems.count { it.question.isVerifiedSource }
+    val pyqUnverified = pyqCount - pyqVerified
     val nurCount = all.count { SubjectCatalog.isNursing(it.question) }
     val caCount = all.count { SubjectCatalog.isCa(it.question) }
     val genCount = all.count { SubjectCatalog.isGen(it.question) }
@@ -336,10 +339,10 @@ fun DashboardScreen(
 
             val moduleCards = listOf(
                 ModuleCardData(
-                    badge = "2015–2026 Shifts",
+                    badge = "Verified: $pyqVerified • Unverified: $pyqUnverified",
                     countLabel = "$pyqCount Qs",
-                    title = "Previous Year Questions",
-                    desc = "2025 Shifts 1, 2, 3 • 2026 • 2019 • 2015 solved papers with clinical rationales.",
+                    title = "PYQ-Tagged Questions",
+                    desc = "Shift-tagged practice sets (2015–2026). Tags remain unverified until matched to official papers.",
                     badgeColor = AmberHighlight,
                     icon = Icons.Filled.History,
                     tag = "module_pyq",

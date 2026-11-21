@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -61,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.ui.components.MetricTile
+import com.example.ui.components.PyqSourceBadge
 import com.example.ui.components.formatTimer
 import com.example.ui.theme.AmberHighlight
 import com.example.ui.theme.EmeraldCorrect
@@ -72,7 +75,7 @@ import com.example.ui.viewmodel.CbtReviewFilter
 import com.example.ui.viewmodel.CbtSessionState
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CbtExamScreen(
     session: CbtSessionState,
@@ -236,10 +239,10 @@ fun CbtExamScreen(
                                 modifier = Modifier.padding(18.dp),
                                 verticalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
-                                Row(
+                                FlowRow(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Text(
                                         text = "Question No. ${session.currentIndex + 1} of ${session.questions.size}",
@@ -258,6 +261,7 @@ fun CbtExamScreen(
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                         )
                                     }
+                                    PyqSourceBadge(question = q)
                                 }
 
                                 Text(
@@ -565,6 +569,7 @@ private fun LegendChip(color: Color, text: String, modifier: Modifier = Modifier
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CbtResultScreen(
     session: CbtSessionState,
@@ -721,8 +726,19 @@ private fun CbtResultScreen(
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                 ) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Q${idx + 1} • ${q.subject}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FlowRow(
+                                modifier = Modifier.weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text("Q${idx + 1} • ${q.subject}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                PyqSourceBadge(question = q)
+                            }
                             Text(
                                 text = when {
                                     ans == null -> "Skipped"
@@ -746,6 +762,13 @@ private fun CbtResultScreen(
                         )
                         if (q.explanation.isNotBlank()) {
                             Text(q.explanation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (q.isVerifiedSource) {
+                            Text(
+                                text = "Source: ${q.sourceNote}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = EmeraldCorrect
+                            )
                         }
                     }
                 }

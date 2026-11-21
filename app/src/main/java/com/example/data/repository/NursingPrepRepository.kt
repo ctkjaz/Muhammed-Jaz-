@@ -45,7 +45,7 @@ class NursingPrepRepository(
     }
 
     companion object {
-        const val CURRENT_SEED_VERSION = 3
+        const val CURRENT_SEED_VERSION = 4
     }
 
     suspend fun loadFlashcards(): List<Flashcard> = withContext(Dispatchers.IO) {
@@ -212,8 +212,8 @@ class NursingPrepRepository(
     fun computeCategoryStats(items: List<QuestionItem>): List<CategoryStat> {
         data class CatDef(val key: String, val label: String, val desc: String, val color: Color, val filter: (QuestionItem) -> Boolean)
         val defs = listOf(
-            CatDef("pyq", "PYQs (2015–2026)", "Tagged previous year shift papers", Color(0xFFD97706)) {
-                it.question.category == "pyq" || it.question.shiftYear.isNotBlank()
+            CatDef("pyq", "PYQ-Tagged (2015–2026)", "Shift-tagged questions (unverified unless matched to official keys)", Color(0xFFD97706)) {
+                it.question.isPyqTagged
             },
             CatDef("nur", "Nursing (70%)", "All 9 clinical nursing subjects", Color(0xFFE11D48)) {
                 SubjectCatalog.isNursing(it.question)
