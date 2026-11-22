@@ -222,7 +222,14 @@ class CloudSyncRepository(
         negativeMarking: Boolean,
         useTimeLimit: Boolean,
         secondsPerQuestion: Int,
-        keepScreenOn: Boolean
+        keepScreenOn: Boolean,
+        onboardingCompleted: Boolean,
+        dailyGoalQuestions: Int,
+        currentStreakDays: Int,
+        longestStreakDays: Int,
+        lastGoalMetDate: String,
+        todayStudyDate: String,
+        todayAnsweredCount: Int
     ): Result<Unit> {
         val docPath = "users/$userId"
         return try {
@@ -237,6 +244,15 @@ class CloudSyncRepository(
                 SettingsPreferences.MIN_SECONDS_PER_QUESTION,
                 SettingsPreferences.MAX_SECONDS_PER_QUESTION
             )
+            val safeDailyGoal = dailyGoalQuestions.coerceIn(
+                com.example.data.model.StudyGoalLogic.MIN_DAILY_GOAL,
+                com.example.data.model.StudyGoalLogic.MAX_DAILY_GOAL
+            )
+            val safeCurrentStreak = currentStreakDays.coerceIn(0, com.example.data.model.StudyGoalLogic.MAX_COUNT_BOUND)
+            val safeLongestStreak = longestStreakDays.coerceIn(0, com.example.data.model.StudyGoalLogic.MAX_COUNT_BOUND)
+            val safeLastMetDate = com.example.data.model.StudyGoalLogic.sanitizeDateKey(lastGoalMetDate)
+            val safeTodayDate = com.example.data.model.StudyGoalLogic.sanitizeDateKey(todayStudyDate)
+            val safeTodayCount = todayAnsweredCount.coerceIn(0, com.example.data.model.StudyGoalLogic.MAX_COUNT_BOUND)
 
             val docRef = userDoc(uid)
             val exists = docRef.get().await().exists()
@@ -252,6 +268,13 @@ class CloudSyncRepository(
                     "useTimeLimit" to useTimeLimit,
                     "secondsPerQuestion" to safeSec,
                     "keepScreenOn" to keepScreenOn,
+                    "onboardingCompleted" to onboardingCompleted,
+                    "dailyGoalQuestions" to safeDailyGoal,
+                    "currentStreakDays" to safeCurrentStreak,
+                    "longestStreakDays" to safeLongestStreak,
+                    "lastGoalMetDate" to safeLastMetDate,
+                    "todayStudyDate" to safeTodayDate,
+                    "todayAnsweredCount" to safeTodayCount,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
                 docRef.update(updatePayload).await()
@@ -268,6 +291,13 @@ class CloudSyncRepository(
                     "useTimeLimit" to useTimeLimit,
                     "secondsPerQuestion" to safeSec,
                     "keepScreenOn" to keepScreenOn,
+                    "onboardingCompleted" to onboardingCompleted,
+                    "dailyGoalQuestions" to safeDailyGoal,
+                    "currentStreakDays" to safeCurrentStreak,
+                    "longestStreakDays" to safeLongestStreak,
+                    "lastGoalMetDate" to safeLastMetDate,
+                    "todayStudyDate" to safeTodayDate,
+                    "todayAnsweredCount" to safeTodayCount,
                     "createdAt" to FieldValue.serverTimestamp(),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )

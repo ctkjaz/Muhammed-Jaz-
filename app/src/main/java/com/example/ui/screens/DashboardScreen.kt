@@ -25,8 +25,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Quiz
@@ -37,10 +40,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +58,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.QuestionItem
@@ -78,10 +84,13 @@ import java.util.Locale
 @Composable
 fun DashboardScreen(
     state: DashboardDerivedState,
+    studyGoal: DailyStudyGoalState,
     difficultyFilter: DifficultyFilter,
     onSelectDifficulty: (DifficultyFilter) -> Unit,
     onLaunchFullMock: () -> Unit,
     onOpenTimedPractice: () -> Unit,
+    onStartDailyGoalDrill: () -> Unit,
+    onAdjustDailyGoal: () -> Unit,
     onOpenSubjectSection: (SubjectHubSection) -> Unit,
     onSelectTab: (MainTab) -> Unit,
     onOpenImporter: () -> Unit,
@@ -257,6 +266,147 @@ fun DashboardScreen(
                                     valueColor = EditorialBannerKpiHighlight,
                                     modifier = Modifier.weight(1f)
                                 )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Daily Study Goal & Streak Card
+            item {
+                val todayCount = studyGoal.effectiveTodayCount()
+                val targetGoal = studyGoal.dailyGoalQuestions
+                val remaining = studyGoal.remainingQuestions()
+                val goalMet = studyGoal.isGoalMetToday()
+                val progress = studyGoal.progressFraction()
+                val activeStreak = studyGoal.effectiveCurrentStreak()
+                val bestStreak = studyGoal.longestStreakDays
+
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = if (goalMet) editorial.correctText.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("dashboard_daily_goal_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = if (goalMet) Icons.Filled.CheckCircle else Icons.Filled.Flag,
+                                    contentDescription = null,
+                                    tint = if (goalMet) editorial.correctText else MaterialTheme.colorScheme.primary
+                                )
+                                Column {
+                                    Text(
+                                        text = if (goalMet) "Daily Goal Complete!" else "Today's Study Goal",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "$todayCount / $targetGoal questions answered today",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = MonoFontFamily),
+                                        color = if (goalMet) editorial.correctText else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (activeStreak > 0) {
+                                    editorial.warningText.copy(alpha = 0.14f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                },
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (activeStreak > 0) editorial.warningText.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.LocalFireDepartment,
+                                        contentDescription = "Study streak",
+                                        tint = if (activeStreak > 0) editorial.warningText else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.height(16.dp)
+                                    )
+                                    Text(
+                                        text = if (activeStreak == 1) "1 day" else "$activeStreak days",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (activeStreak > 0) editorial.warningText else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            color = if (goalMet) editorial.correctText else MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(9.dp)
+                                .clip(RoundedCornerShape(50))
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FilledTonalButton(
+                                onClick = onStartDailyGoalDrill,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("dashboard_daily_goal_btn")
+                            ) {
+                                Text(
+                                    text = if (remaining > 0) {
+                                        "Finish Goal ($remaining Qs left)"
+                                    } else {
+                                        "Bonus ${targetGoal}Q Drill"
+                                    },
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.widthIn(min = 8.dp))
+
+                            Column(horizontalAlignment = Alignment.End) {
+                                TextButton(
+                                    onClick = onAdjustDailyGoal,
+                                    modifier = Modifier.testTag("dashboard_adjust_goal_btn")
+                                ) {
+                                    Text("Edit Goal")
+                                }
+                                if (bestStreak > 0) {
+                                    Text(
+                                        text = "Best: ${bestStreak}d",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }

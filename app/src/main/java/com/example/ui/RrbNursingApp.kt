@@ -99,6 +99,7 @@ import com.example.ui.screens.BookmarksScreen
 import com.example.ui.screens.CbtExamScreen
 import com.example.ui.screens.CbtHubScreen
 import com.example.ui.screens.DashboardScreen
+import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.PracticeScreen
 import com.example.ui.screens.ProfileDrawerContent
 import com.example.ui.screens.ProfileScreen
@@ -211,6 +212,8 @@ fun RrbNursingApp(vm: MainViewModel) {
         val useTimeLimit by vm.useTimeLimit.collectAsStateWithLifecycle()
         val secondsPerQuestion by vm.secondsPerQuestion.collectAsStateWithLifecycle()
         val keepScreenOn by vm.keepScreenOn.collectAsStateWithLifecycle()
+        val onboardingCompleted by vm.onboardingCompleted.collectAsStateWithLifecycle()
+        val studyGoal by vm.studyGoalState.collectAsStateWithLifecycle()
         val snackbarMessage by vm.snackbarMessage.collectAsStateWithLifecycle()
         val cloudSyncState by vm.cloudSyncState.collectAsStateWithLifecycle()
         val signedInAccount = vm.signedInAccount
@@ -301,6 +304,22 @@ fun RrbNursingApp(vm: MainViewModel) {
             }
         }
 
+        if (!onboardingCompleted) {
+            OnboardingScreen(
+                availableExams = state.availableExams,
+                initialExamId = activeExamId,
+                initialName = profileName.ifBlank { signedInAccount.displayName },
+                initialRole = profileRole,
+                initialTargetYear = targetYear,
+                initialFocusSubject = focusSubject,
+                initialDailyGoal = studyGoal.dailyGoalQuestions,
+                secondsPerQuestion = secondsPerQuestion,
+                onComplete = vm::completeOnboarding,
+                onSkip = vm::skipOnboarding
+            )
+            return@RrbNursingTheme
+        }
+
         ModalNavigationDrawer(
             drawerState = drawerState,
             gesturesEnabled = !inActiveSession && !isSettingsOpen && !isProfileOpen,
@@ -312,6 +331,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                     focusSubject = focusSubject,
                     account = signedInAccount,
                     cloudSyncState = cloudSyncState,
+                    studyGoal = studyGoal,
                     state = state,
                     onOpenFullProfile = {
                         scope.launch {
@@ -539,12 +559,15 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     secondsPerQuestion = secondsPerQuestion,
                                     negativeMarking = negMarking,
                                     keepScreenOn = keepScreenOn,
+                                    dailyGoalQuestions = studyGoal.dailyGoalQuestions,
                                     onProfileNameChange = vm::setProfileName,
                                     onThemePreferenceChange = vm::setThemePreference,
                                     onUseTimeLimitChange = vm::setUseTimeLimit,
                                     onSecondsPerQuestionChange = vm::setSecondsPerQuestion,
                                     onNegativeMarkingChange = vm::setNegativeMarking,
                                     onKeepScreenOnChange = vm::setKeepScreenOn,
+                                    onDailyGoalChange = vm::setDailyGoalQuestions,
+                                    onReopenOnboarding = vm::reopenOnboarding,
                                     onOpenImporter = vm::openImporter,
                                     onOpenPdfExport = { vm.openPdfExport() },
                                     onResetStatistics = vm::clearAllStatistics,
@@ -560,11 +583,17 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     focusSubject = focusSubject,
                                     account = signedInAccount,
                                     cloudSyncState = cloudSyncState,
+                                    studyGoal = studyGoal,
                                     state = state,
                                     onProfileNameChange = vm::setProfileName,
                                     onProfileRoleChange = vm::setProfileRole,
                                     onTargetYearChange = vm::setTargetYear,
                                     onFocusSubjectChange = vm::setFocusSubject,
+                                    onDailyGoalChange = vm::setDailyGoalQuestions,
+                                    onStartDailyGoalDrill = {
+                                        vm.closeProfile()
+                                        vm.startDailyGoalDrill()
+                                    },
                                     onOpenExamPicker = vm::openExamPicker,
                                     onPracticeSubject = { list, title ->
                                         vm.closeProfile()
@@ -581,6 +610,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                 when (selectedTab) {
                                     MainTab.DASHBOARD -> DashboardScreen(
                                         state = state,
+                                        studyGoal = studyGoal,
                                         difficultyFilter = difficultyFilter,
                                         onSelectDifficulty = vm::selectDifficultyFilter,
                                         onLaunchFullMock = {
@@ -599,6 +629,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             )
                                         },
                                         onOpenTimedPractice = { vm.openTimedPracticeConfig() },
+                                        onStartDailyGoalDrill = vm::startDailyGoalDrill,
+                                        onAdjustDailyGoal = vm::openSettings,
                                         onOpenSubjectSection = vm::openSubjectHub,
                                         onSelectTab = vm::selectTab,
                                         onOpenImporter = vm::openImporter,

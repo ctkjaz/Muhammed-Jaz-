@@ -46,6 +46,13 @@ service cloud.firestore {
              data.useTimeLimit is bool &&
              data.secondsPerQuestion is int && data.secondsPerQuestion >= 20 && data.secondsPerQuestion <= 120 &&
              data.keepScreenOn is bool &&
+             (!('onboardingCompleted' in data) || data.onboardingCompleted is bool) &&
+             (!('dailyGoalQuestions' in data) || (data.dailyGoalQuestions is int && data.dailyGoalQuestions >= 5 && data.dailyGoalQuestions <= 200)) &&
+             (!('currentStreakDays' in data) || (data.currentStreakDays is int && data.currentStreakDays >= 0 && data.currentStreakDays <= 10000)) &&
+             (!('longestStreakDays' in data) || (data.longestStreakDays is int && data.longestStreakDays >= 0 && data.longestStreakDays <= 10000)) &&
+             (!('lastGoalMetDate' in data) || (data.lastGoalMetDate is string && data.lastGoalMetDate.size() <= 16)) &&
+             (!('todayStudyDate' in data) || (data.todayStudyDate is string && data.todayStudyDate.size() <= 16)) &&
+             (!('todayAnsweredCount' in data) || (data.todayAnsweredCount is int && data.todayAnsweredCount >= 0 && data.todayAnsweredCount <= 10000)) &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
     }
@@ -127,7 +134,10 @@ service cloud.firestore {
                        incoming().keys().hasOnly([
                          'userId', 'displayName', 'role', 'targetYear', 'focusSubject',
                          'activeExamId', 'themePreference', 'negativeMarking', 'useTimeLimit',
-                         'secondsPerQuestion', 'keepScreenOn', 'createdAt', 'updatedAt'
+                         'secondsPerQuestion', 'keepScreenOn', 'onboardingCompleted',
+                         'dailyGoalQuestions', 'currentStreakDays', 'longestStreakDays',
+                         'lastGoalMetDate', 'todayStudyDate', 'todayAnsweredCount',
+                         'createdAt', 'updatedAt'
                        ]) &&
                        isValidUserProfile(incoming(), userId);
 
@@ -136,11 +146,14 @@ service cloud.firestore {
                        isValidUserProfile(incoming(), userId) &&
                        incoming().userId == existing().userId &&
                        incoming().createdAt == existing().createdAt && (
-                         // Action: Update learner profile & study preferences
+                         // Action: Update learner profile, study preferences, onboarding & daily goal streak
                          incoming().diff(existing()).affectedKeys().hasOnly([
                            'displayName', 'role', 'targetYear', 'focusSubject',
                            'activeExamId', 'themePreference', 'negativeMarking',
-                           'useTimeLimit', 'secondsPerQuestion', 'keepScreenOn', 'updatedAt'
+                           'useTimeLimit', 'secondsPerQuestion', 'keepScreenOn',
+                           'onboardingCompleted', 'dailyGoalQuestions', 'currentStreakDays',
+                           'longestStreakDays', 'lastGoalMetDate', 'todayStudyDate',
+                           'todayAnsweredCount', 'updatedAt'
                          ])
                        );
 

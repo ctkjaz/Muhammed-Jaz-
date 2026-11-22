@@ -15,6 +15,7 @@ import com.example.data.local.ExamSectionEntity
 import com.example.data.local.QuestionProgressEntity
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
+import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.Question
@@ -22,6 +23,7 @@ import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
 import com.example.data.model.QuestionProgress
 import com.example.data.model.QuestionSourceType
+import com.example.data.model.StudyGoalLogic
 import com.example.data.parser.BulkQuestionParser
 import com.example.data.repository.NursingPrepRepository
 import com.example.ui.components.formatApproxQuestionCount
@@ -1034,6 +1036,100 @@ class RrbNursingLogicTest {
         assertEquals(PlatformCatalogDefaults.EXAM_AIIMS_NORCET, reloaded.activeExamId.value)
         assertEquals(ThemePreference.DARK, reloaded.themePreference.value)
         assertEquals(45, reloaded.secondsPerQuestion.value)
+    }
+
+    @Test
+    fun `study goal logic tracks daily progress streaks rollover target changes cloud merge and persists preferences`() {
+        val day1 = "2026-11-20"
+        val day0 = "2026-11-19"
+        val day2 = "2026-11-21"
+        val day4 = "2026-11-23"
+        val day3 = "2026-11-22"
+
+        // Day 1: Partial progress (10 / 15) -> goal not yet met
+        val initial = DailyStudyGoalState(dailyGoalQuestions = 15)
+        val partial = StudyGoalLogic.recordStudyActivity(initial, answeredDelta = 10, todayKey = day1, yesterdayKey = day0)
+        assertFalse(partial.justMetDailyGoal)
+        assertEquals(10, partial.updatedState.effectiveTodayCount(day1))
+        assertEquals(5, partial.updatedState.remainingQuestions(day1))
+        assertEquals(0, partial.updatedState.currentStreakDays)
+
+        // Day 1: Cross threshold (+5 -> 15 / 15) -> streak becomes 1, justMet = true
+        val metDay1 = StudyGoalLogic.recordStudyActivity(partial.updatedState, answeredDelta = 5, todayKey = day1, yesterdayKey = day0)
+        assertTrue(metDay1.justMetDailyGoal)
+        assertEquals(15, metDay1.updatedState.effectiveTodayCount(day1))
+        assertEquals(1, metDay1.updatedState.currentStreakDays)
+        assertEquals(1, metDay1.updatedState.longestStreakDays)
+        assertEquals(day1, metDay1.updatedState.lastGoalMetDate)
+
+        // Day 1: Additional questions (+8 -> 23 / 15) -> idempotent streak (still 1, justMet = false)
+        val bonusDay1 = StudyGoalLogic.recordStudyActivity(metDay1.updatedState, answeredDelta = 8, todayKey = day1, yesterdayKey = day0)
+        assertFalse(bonusDay1.justMetDailyGoal)
+        assertEquals(23, bonusDay1.updatedState.effectiveTodayCount(day1))
+        assertEquals(1, bonusDay1.updatedState.currentStreakDays)
+
+        // Day 2: Consecutive calendar day -> today count resets cleanly, streak continues to 2
+        assertEquals(0, bonusDay1.updatedState.effectiveTodayCount(day2))
+        assertEquals(1, bonusDay1.updatedState.effectiveCurrentStreak(day2, day1))
+        val metDay2 = StudyGoalLogic.recordStudyActivity(bonusDay1.updatedState, answeredDelta = 15, todayKey = day2, yesterdayKey = day1)
+        assertTrue(metDay2.justMetDailyGoal)
+        assertEquals(2, metDay2.updatedState.currentStreakDays)
+        assertEquals(2, metDay2.updatedState.longestStreakDays)
+
+        // Day 4 (skipped Day 3): Streak expires cleanly, longest stays 2, hitting goal restarts streak at 1
+        assertEquals(0, metDay2.updatedState.effectiveCurrentStreak(day4, day3))
+        val restartedDay4 = StudyGoalLogic.recordStudyActivity(metDay2.updatedState, answeredDelta = 15, todayKey = day4, yesterdayKey = day3)
+        assertTrue(restartedDay4.justMetDailyGoal)
+        assertEquals(1, restartedDay4.updatedState.currentStreakDays)
+        assertEquals(2, restartedDay4.updatedState.longestStreakDays)
+
+        // Lowering daily goal target below already-answered today triggers goal completion
+        val highTarget = DailyStudyGoalState(dailyGoalQuestions = 50, todayStudyDate = day4, todayAnsweredCount = 20)
+        val lowered = StudyGoalLogic.updateDailyGoalTarget(highTarget, newTarget = 15, todayKey = day4, yesterdayKey = day3)
+        assertTrue(lowered.justMetDailyGoal)
+        assertEquals(15, lowered.updatedState.dailyGoalQuestions)
+        assertEquals(1, lowered.updatedState.currentStreakDays)
+
+        // Cloud merge preserves max today count and highest longest streak
+        val localState = DailyStudyGoalState(
+            dailyGoalQuestions = 25,
+            todayStudyDate = day4,
+            todayAnsweredCount = 18,
+            currentStreakDays = 2,
+            longestStreakDays = 5,
+            lastGoalMetDate = day3
+        )
+        val remoteState = DailyStudyGoalState(
+            dailyGoalQuestions = 50,
+            todayStudyDate = day4,
+            todayAnsweredCount = 30,
+            currentStreakDays = 3,
+            longestStreakDays = 4,
+            lastGoalMetDate = day4
+        )
+        val merged = StudyGoalLogic.mergeCloudGoalState(localState, remoteState, todayKey = day4)
+        assertEquals(50, merged.dailyGoalQuestions)
+        assertEquals(30, merged.todayAnsweredCount)
+        assertEquals(3, merged.currentStreakDays)
+        assertEquals(5, merged.longestStreakDays)
+        assertEquals(day4, merged.lastGoalMetDate)
+
+        // SettingsPreferences persistence for onboarding & daily goal state
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.getSharedPreferences("rrb_nursing_settings", Context.MODE_PRIVATE).edit().clear().commit()
+        val prefs = SettingsPreferences(context)
+        assertFalse(prefs.onboardingCompleted.value)
+        assertEquals(25, prefs.studyGoalState.value.dailyGoalQuestions)
+
+        prefs.setOnboardingCompleted(true)
+        prefs.setStudyGoalState(merged)
+        val reloaded = SettingsPreferences(context)
+        assertTrue(reloaded.onboardingCompleted.value)
+        assertEquals(50, reloaded.studyGoalState.value.dailyGoalQuestions)
+        assertEquals(30, reloaded.studyGoalState.value.todayAnsweredCount)
+        assertEquals(3, reloaded.studyGoalState.value.currentStreakDays)
+        assertEquals(5, reloaded.studyGoalState.value.longestStreakDays)
+        assertEquals(day4, reloaded.studyGoalState.value.lastGoalMetDate)
     }
 }
 

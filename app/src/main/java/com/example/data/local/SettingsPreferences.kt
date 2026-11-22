@@ -4,7 +4,9 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.PlatformCatalogDefaults
+import com.example.data.model.StudyGoalLogic
 import kotlin.math.ceil
 
 enum class ThemePreference {
@@ -63,9 +65,32 @@ class SettingsPreferences(context: Context) {
     )
     val activeExamId: StateFlow<String> = _activeExamId.asStateFlow()
 
+    private val _onboardingCompleted = MutableStateFlow(
+        prefs.getBoolean(KEY_ONBOARDING_COMPLETED, false)
+    )
+    val onboardingCompleted: StateFlow<Boolean> = _onboardingCompleted.asStateFlow()
+
+    private val _studyGoalState = MutableStateFlow(readStudyGoalState())
+    val studyGoalState: StateFlow<DailyStudyGoalState> = _studyGoalState.asStateFlow()
+
     private fun readTheme(): ThemePreference {
         val raw = prefs.getString(KEY_THEME, ThemePreference.LIGHT.name)
         return runCatching { ThemePreference.valueOf(raw ?: "") }.getOrDefault(ThemePreference.LIGHT)
+    }
+
+    private fun readStudyGoalState(): DailyStudyGoalState {
+        return DailyStudyGoalState(
+            dailyGoalQuestions = prefs.getInt(KEY_DAILY_GOAL, StudyGoalLogic.DEFAULT_DAILY_GOAL)
+                .coerceIn(StudyGoalLogic.MIN_DAILY_GOAL, StudyGoalLogic.MAX_DAILY_GOAL),
+            todayStudyDate = StudyGoalLogic.sanitizeDateKey(prefs.getString(KEY_TODAY_STUDY_DATE, "") ?: ""),
+            todayAnsweredCount = prefs.getInt(KEY_TODAY_ANSWERED_COUNT, 0)
+                .coerceIn(0, StudyGoalLogic.MAX_COUNT_BOUND),
+            currentStreakDays = prefs.getInt(KEY_CURRENT_STREAK_DAYS, 0)
+                .coerceIn(0, StudyGoalLogic.MAX_COUNT_BOUND),
+            longestStreakDays = prefs.getInt(KEY_LONGEST_STREAK_DAYS, 0)
+                .coerceIn(0, StudyGoalLogic.MAX_COUNT_BOUND),
+            lastGoalMetDate = StudyGoalLogic.sanitizeDateKey(prefs.getString(KEY_LAST_GOAL_MET_DATE, "") ?: "")
+        )
     }
 
     fun setThemePreference(preference: ThemePreference) {
@@ -129,6 +154,39 @@ class SettingsPreferences(context: Context) {
         _activeExamId.value = clean
     }
 
+    fun setOnboardingCompleted(completed: Boolean) {
+        prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, completed).apply()
+        _onboardingCompleted.value = completed
+    }
+
+    fun setStudyGoalState(state: DailyStudyGoalState) {
+        val clean = DailyStudyGoalState(
+            dailyGoalQuestions = state.dailyGoalQuestions.coerceIn(
+                StudyGoalLogic.MIN_DAILY_GOAL,
+                StudyGoalLogic.MAX_DAILY_GOAL
+            ),
+            todayStudyDate = StudyGoalLogic.sanitizeDateKey(state.todayStudyDate),
+            todayAnsweredCount = state.todayAnsweredCount.coerceIn(0, StudyGoalLogic.MAX_COUNT_BOUND),
+            currentStreakDays = state.currentStreakDays.coerceIn(0, StudyGoalLogic.MAX_COUNT_BOUND),
+            longestStreakDays = state.longestStreakDays.coerceIn(0, StudyGoalLogic.MAX_COUNT_BOUND),
+            lastGoalMetDate = StudyGoalLogic.sanitizeDateKey(state.lastGoalMetDate)
+        )
+        prefs.edit()
+            .putInt(KEY_DAILY_GOAL, clean.dailyGoalQuestions)
+            .putString(KEY_TODAY_STUDY_DATE, clean.todayStudyDate)
+            .putInt(KEY_TODAY_ANSWERED_COUNT, clean.todayAnsweredCount)
+            .putInt(KEY_CURRENT_STREAK_DAYS, clean.currentStreakDays)
+            .putInt(KEY_LONGEST_STREAK_DAYS, clean.longestStreakDays)
+            .putString(KEY_LAST_GOAL_MET_DATE, clean.lastGoalMetDate)
+            .apply()
+        _studyGoalState.value = clean
+    }
+
+    fun resetGoalStateForAccountSwitch() {
+        setOnboardingCompleted(false)
+        setStudyGoalState(DailyStudyGoalState())
+    }
+
     fun getSeededVersion(): Int = prefs.getInt(KEY_SEEDED_VERSION, 0)
 
     fun setSeededVersion(version: Int) {
@@ -151,7 +209,9 @@ class SettingsPreferences(context: Context) {
         negativeMarking: Boolean,
         useTimeLimit: Boolean,
         secondsPerQuestion: Int,
-        keepScreenOn: Boolean
+        keepScreenOn: Boolean,
+        onboardingCompleted: Boolean? = null,
+        mergedGoalState: DailyStudyGoalState? = null
     ) {
         val cleanName = displayName.take(MAX_PROFILE_NAME_LENGTH)
         val cleanRole = role.take(MAX_PROFILE_ROLE_LENGTH)
@@ -159,6 +219,8 @@ class SettingsPreferences(context: Context) {
         val cleanFocus = focusSubject.trim()
         val cleanExam = activeExamId.trim().ifBlank { PlatformCatalogDefaults.EXAM_RRB_NURSING }
         val cleanSec = secondsPerQuestion.coerceIn(MIN_SECONDS_PER_QUESTION, MAX_SECONDS_PER_QUESTION)
+        val resolvedOnboarding = onboardingCompleted ?: _onboardingCompleted.value
+        val resolvedGoal = mergedGoalState ?: _studyGoalState.value
 
         prefs.edit()
             .putString(KEY_PROFILE_NAME, cleanName)
@@ -171,6 +233,13 @@ class SettingsPreferences(context: Context) {
             .putBoolean(KEY_USE_TIME_LIMIT, useTimeLimit)
             .putInt(KEY_SECONDS_PER_QUESTION, cleanSec)
             .putBoolean(KEY_KEEP_SCREEN_ON, keepScreenOn)
+            .putBoolean(KEY_ONBOARDING_COMPLETED, resolvedOnboarding)
+            .putInt(KEY_DAILY_GOAL, resolvedGoal.dailyGoalQuestions)
+            .putString(KEY_TODAY_STUDY_DATE, resolvedGoal.todayStudyDate)
+            .putInt(KEY_TODAY_ANSWERED_COUNT, resolvedGoal.todayAnsweredCount)
+            .putInt(KEY_CURRENT_STREAK_DAYS, resolvedGoal.currentStreakDays)
+            .putInt(KEY_LONGEST_STREAK_DAYS, resolvedGoal.longestStreakDays)
+            .putString(KEY_LAST_GOAL_MET_DATE, resolvedGoal.lastGoalMetDate)
             .apply()
 
         _profileName.value = cleanName
@@ -183,6 +252,8 @@ class SettingsPreferences(context: Context) {
         _useTimeLimit.value = useTimeLimit
         _secondsPerQuestion.value = cleanSec
         _keepScreenOn.value = keepScreenOn
+        _onboardingCompleted.value = resolvedOnboarding
+        _studyGoalState.value = resolvedGoal
     }
 
     companion object {
@@ -207,6 +278,13 @@ class SettingsPreferences(context: Context) {
         private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         private const val KEY_ACTIVE_EXAM_ID = "active_exam_id"
         private const val KEY_LAST_SIGNED_IN_UID = "last_signed_in_uid"
+        private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
+        private const val KEY_DAILY_GOAL = "daily_goal_questions"
+        private const val KEY_TODAY_STUDY_DATE = "today_study_date"
+        private const val KEY_TODAY_ANSWERED_COUNT = "today_answered_count"
+        private const val KEY_CURRENT_STREAK_DAYS = "current_streak_days"
+        private const val KEY_LONGEST_STREAK_DAYS = "longest_streak_days"
+        private const val KEY_LAST_GOAL_MET_DATE = "last_goal_met_date"
 
         fun calculateSuggestedMinutes(questionCount: Int, secondsPerQuestion: Int): Int {
             if (questionCount <= 0 || secondsPerQuestion <= 0) return 0

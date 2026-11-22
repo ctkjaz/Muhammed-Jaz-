@@ -35,6 +35,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
@@ -68,7 +70,9 @@ import com.example.data.cloud.CloudSyncUiState
 import com.example.data.cloud.SignedInAccountInfo
 import com.example.data.cloud.SyncBadgeState
 import com.example.data.local.SettingsPreferences
+import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.QuestionItem
+import com.example.data.model.StudyGoalLogic
 import com.example.data.model.SubjectCatalog
 import com.example.ui.components.ProfileAvatarCircle
 import com.example.ui.components.formatApproxQuestionCount
@@ -85,6 +89,7 @@ fun ProfileDrawerContent(
     focusSubject: String,
     account: SignedInAccountInfo,
     cloudSyncState: CloudSyncUiState,
+    studyGoal: DailyStudyGoalState,
     state: DashboardDerivedState,
     onOpenFullProfile: () -> Unit,
     onOpenExamPicker: () -> Unit,
@@ -184,6 +189,21 @@ fun ProfileDrawerContent(
                     }
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val todayCount = studyGoal.effectiveTodayCount()
+                        val activeStreak = studyGoal.effectiveCurrentStreak()
+                        Text(
+                            text = "Today: $todayCount/${studyGoal.dailyGoalQuestions} Qs • ${activeStreak}d streak",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -450,11 +470,14 @@ fun ProfileScreen(
     focusSubject: String,
     account: SignedInAccountInfo,
     cloudSyncState: CloudSyncUiState,
+    studyGoal: DailyStudyGoalState,
     state: DashboardDerivedState,
     onProfileNameChange: (String) -> Unit,
     onProfileRoleChange: (String) -> Unit,
     onTargetYearChange: (String) -> Unit,
     onFocusSubjectChange: (String) -> Unit,
+    onDailyGoalChange: (Int) -> Unit,
+    onStartDailyGoalDrill: () -> Unit,
     onOpenExamPicker: () -> Unit,
     onPracticeSubject: (List<QuestionItem>, String) -> Unit,
     onOpenSettings: () -> Unit,
@@ -559,6 +582,7 @@ fun ProfileScreen(
                             )
                         }
 
+                        val activeStreak = studyGoal.effectiveCurrentStreak()
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -576,11 +600,84 @@ fun ProfileScreen(
                                 modifier = Modifier.weight(1f)
                             )
                             ProfileStatPill(
-                                label = "Saved",
-                                value = "${state.overall.bookmarkCount}",
+                                label = "Streak",
+                                value = "${activeStreak}d",
                                 modifier = Modifier.weight(1f)
                             )
                         }
+                    }
+                }
+            }
+
+            // Daily Study Goal & Streak Card
+            item {
+                val todayCount = studyGoal.effectiveTodayCount()
+                val activeStreak = studyGoal.effectiveCurrentStreak()
+                val bestStreak = studyGoal.longestStreakDays
+                ProfileSectionCard(
+                    title = "Daily Study Goal & Streak",
+                    icon = Icons.Filled.Flag,
+                    cardTag = "profile_card_daily_goal"
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "$todayCount / ${studyGoal.dailyGoalQuestions} questions today",
+                                style = MaterialTheme.typography.titleSmall.copy(fontFamily = MonoFontFamily),
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Current streak: $activeStreak days  •  Best: $bestStreak days",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Filled.LocalFireDepartment,
+                            contentDescription = "Study streak",
+                            tint = if (activeStreak > 0) editorial.warningText else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        StudyGoalLogic.DAILY_GOAL_PRESETS.forEach { preset ->
+                            FilterChip(
+                                selected = studyGoal.dailyGoalQuestions == preset,
+                                onClick = { onDailyGoalChange(preset) },
+                                label = {
+                                    Text(
+                                        text = "$preset Qs/day",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily)
+                                    )
+                                },
+                                modifier = Modifier.testTag("profile_daily_goal_$preset")
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = onStartDailyGoalDrill,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("profile_start_daily_goal_btn")
+                    ) {
+                        val rem = studyGoal.remainingQuestions()
+                        Text(
+                            text = if (rem > 0) "Finish Remaining ($rem Qs)" else "Start Bonus Daily Drill",
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }

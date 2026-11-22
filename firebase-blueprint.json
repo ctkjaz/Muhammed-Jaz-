@@ -50,6 +50,34 @@
           "type": "boolean",
           "description": "Whether to keep screen awake during active sessions."
         },
+        "onboardingCompleted": {
+          "type": "boolean",
+          "description": "Optional flag indicating whether the learner finished or skipped the first-launch onboarding wizard."
+        },
+        "dailyGoalQuestions": {
+          "type": "integer",
+          "description": "Optional daily MCQ study goal target (5 to 200)."
+        },
+        "currentStreakDays": {
+          "type": "integer",
+          "description": "Optional active consecutive-day goal streak counter."
+        },
+        "longestStreakDays": {
+          "type": "integer",
+          "description": "Optional best-ever consecutive-day goal streak counter."
+        },
+        "lastGoalMetDate": {
+          "type": "string",
+          "description": "Optional YYYY-MM-DD date string when the daily goal was last met."
+        },
+        "todayStudyDate": {
+          "type": "string",
+          "description": "Optional YYYY-MM-DD date string for todayAnsweredCount."
+        },
+        "todayAnsweredCount": {
+          "type": "integer",
+          "description": "Optional number of questions answered on todayStudyDate."
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",

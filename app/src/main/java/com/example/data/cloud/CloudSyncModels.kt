@@ -29,6 +29,13 @@ data class CloudUserProfile(
     val useTimeLimit: Boolean = true,
     val secondsPerQuestion: Long = SettingsPreferences.DEFAULT_SECONDS_PER_QUESTION.toLong(),
     val keepScreenOn: Boolean = false,
+    val onboardingCompleted: Boolean? = null,
+    val dailyGoalQuestions: Long? = null,
+    val currentStreakDays: Long = 0L,
+    val longestStreakDays: Long = 0L,
+    val lastGoalMetDate: String = "",
+    val todayStudyDate: String = "",
+    val todayAnsweredCount: Long = 0L,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )

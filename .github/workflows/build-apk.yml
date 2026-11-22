@@ -58,6 +58,46 @@ jobs:
           fi
           ls -lh debug.keystore
 
+      - name: Prepare Firebase google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s\n' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+            echo "Using GOOGLE_SERVICES_JSON secret"
+          elif [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | tr -d '\r\n ' | base64 -d > app/google-services.json
+            echo "Using GOOGLE_SERVICES_JSON_BASE64 secret"
+          elif [ -s app/google-services.json ]; then
+            echo "Using repository app/google-services.json"
+          else
+            echo "::error::Missing app/google-services.json. Add your Firebase config as a repository secret named GOOGLE_SERVICES_JSON in GitHub Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json, sys
+          try:
+              with open("app/google-services.json", "r", encoding="utf-8") as f:
+                  data = json.load(f)
+          except Exception as exc:
+              print(f"::error::app/google-services.json is not valid JSON ({exc}). Check the GOOGLE_SERVICES_JSON secret.")
+              sys.exit(1)
+          clients = data.get("client", [])
+          has_web_client = any(
+              oauth.get("client_type") == 3
+              for c in clients
+              for oauth in (
+                  c.get("oauth_client", [])
+                  + c.get("services", {}).get("appinvite_service", {}).get("other_platform_oauth_client", [])
+              )
+          )
+          if not has_web_client:
+              print("::error::app/google-services.json is missing a Web OAuth client (client_type 3) required for R.string.default_web_client_id.")
+              sys.exit(1)
+          print("Verified app/google-services.json structure.")
+          PY
+
       - name: Build Debug APK
         run: gradle :app:assembleDebug --stacktrace
 

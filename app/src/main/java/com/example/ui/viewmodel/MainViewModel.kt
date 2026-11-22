@@ -20,6 +20,7 @@ import com.example.data.export.PdfWorksheetWriter
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.data.model.CategoryStat
+import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.Exam
 import com.example.data.model.ExamQuestionLink
@@ -32,6 +33,7 @@ import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
 import com.example.data.model.QuestionSourceType
+import com.example.data.model.StudyGoalLogic
 import com.example.data.model.SubjectCatalog
 import com.example.data.model.SubjectStat
 import com.example.data.model.Topic
@@ -216,6 +218,8 @@ class MainViewModel(
     val secondsPerQuestion: StateFlow<Int> = settings.secondsPerQuestion
     val keepScreenOn: StateFlow<Boolean> = settings.keepScreenOn
     val activeExamId: StateFlow<String> = settings.activeExamId
+    val onboardingCompleted: StateFlow<Boolean> = settings.onboardingCompleted
+    val studyGoalState: StateFlow<DailyStudyGoalState> = settings.studyGoalState
 
     private val _cloudSyncState = MutableStateFlow(CloudSyncUiState())
     val cloudSyncState: StateFlow<CloudSyncUiState> = _cloudSyncState.asStateFlow()
@@ -372,6 +376,7 @@ class MainViewModel(
             val previousUid = settings.getLastSignedInUid()
             if (previousUid.isNotBlank() && previousUid != currentUserId) {
                 repository.clearUserSpecificLocalDataForAccountSwitch()
+                settings.resetGoalStateForAccountSwitch()
             }
             settings.setLastSignedInUid(currentUserId)
             if (settings.profileName.value.isBlank() && signedInAccount.displayName.isNotBlank()) {
@@ -566,6 +571,35 @@ class MainViewModel(
         applyingCloudProfile = true
         try {
             val resolvedName = remote.displayName.ifBlank { signedInAccount.displayName }
+            val resolvedOnboarding = when {
+                remote.onboardingCompleted == true -> true
+                settings.onboardingCompleted.value -> true
+                else -> remote.onboardingCompleted
+            }
+            val hasRemoteGoalData = remote.dailyGoalQuestions != null ||
+                remote.currentStreakDays > 0L ||
+                remote.longestStreakDays > 0L ||
+                remote.todayAnsweredCount > 0L ||
+                remote.lastGoalMetDate.isNotBlank()
+            val mergedGoal = if (hasRemoteGoalData) {
+                val remoteGoal = DailyStudyGoalState(
+                    dailyGoalQuestions = (remote.dailyGoalQuestions?.toInt()
+                        ?: settings.studyGoalState.value.dailyGoalQuestions)
+                        .coerceIn(StudyGoalLogic.MIN_DAILY_GOAL, StudyGoalLogic.MAX_DAILY_GOAL),
+                    todayStudyDate = StudyGoalLogic.sanitizeDateKey(remote.todayStudyDate),
+                    todayAnsweredCount = remote.todayAnsweredCount.toInt().coerceIn(0, StudyGoalLogic.MAX_COUNT_BOUND),
+                    currentStreakDays = remote.currentStreakDays.toInt().coerceIn(0, StudyGoalLogic.MAX_COUNT_BOUND),
+                    longestStreakDays = remote.longestStreakDays.toInt().coerceIn(0, StudyGoalLogic.MAX_COUNT_BOUND),
+                    lastGoalMetDate = StudyGoalLogic.sanitizeDateKey(remote.lastGoalMetDate)
+                )
+                StudyGoalLogic.mergeCloudGoalState(
+                    local = settings.studyGoalState.value,
+                    remote = remoteGoal
+                )
+            } else {
+                settings.studyGoalState.value
+            }
+
             settings.applySyncedProfile(
                 displayName = resolvedName,
                 role = remote.role,
@@ -576,7 +610,9 @@ class MainViewModel(
                 negativeMarking = remote.negativeMarking,
                 useTimeLimit = remote.useTimeLimit,
                 secondsPerQuestion = remote.secondsPerQuestion.toInt(),
-                keepScreenOn = remote.keepScreenOn
+                keepScreenOn = remote.keepScreenOn,
+                onboardingCompleted = resolvedOnboarding,
+                mergedGoalState = mergedGoal
             )
         } finally {
             applyingCloudProfile = false
@@ -627,6 +663,7 @@ class MainViewModel(
 
     private suspend fun pushCurrentProfileToCloud() {
         if (currentUserId.isBlank() || isSigningOut) return
+        val goal = settings.studyGoalState.value
         val result = cloudSync.upsertProfile(
             userId = currentUserId,
             displayName = settings.profileName.value,
@@ -638,7 +675,14 @@ class MainViewModel(
             negativeMarking = settings.negativeMarking.value,
             useTimeLimit = settings.useTimeLimit.value,
             secondsPerQuestion = settings.secondsPerQuestion.value,
-            keepScreenOn = settings.keepScreenOn.value
+            keepScreenOn = settings.keepScreenOn.value,
+            onboardingCompleted = settings.onboardingCompleted.value,
+            dailyGoalQuestions = goal.dailyGoalQuestions,
+            currentStreakDays = goal.currentStreakDays,
+            longestStreakDays = goal.longestStreakDays,
+            lastGoalMetDate = goal.lastGoalMetDate,
+            todayStudyDate = goal.todayStudyDate,
+            todayAnsweredCount = goal.todayAnsweredCount
         )
         result.onSuccess { markSynced() }.onFailure { recordSyncFailure(it) }
     }
@@ -791,6 +835,103 @@ class MainViewModel(
         scheduleProfileCloudPush()
     }
 
+    // ------------------------------------------------------------------------
+    // ONBOARDING & DAILY STUDY GOALS
+    // ------------------------------------------------------------------------
+    fun completeOnboarding(
+        examId: String,
+        name: String,
+        role: String,
+        targetYear: String,
+        focusSubject: String,
+        dailyGoalQuestions: Int
+    ) {
+        settings.setActiveExamId(examId)
+        if (name.isNotBlank()) {
+            settings.setProfileName(name)
+        }
+        settings.setProfileRole(role)
+        settings.setTargetYear(targetYear)
+        settings.setFocusSubject(focusSubject)
+        val goalResult = StudyGoalLogic.updateDailyGoalTarget(
+            current = settings.studyGoalState.value,
+            newTarget = dailyGoalQuestions
+        )
+        settings.setStudyGoalState(goalResult.updatedState)
+        settings.setOnboardingCompleted(true)
+        scheduleProfileCloudPush()
+        val examLabel = mainState.value.availableExams.firstOrNull { it.id == examId }?.shortName
+            ?: PlatformCatalogDefaults.DEFAULT_EXAMS.firstOrNull { it.id == examId }?.shortName
+            ?: "ClinEdge"
+        showMessage("All set for $examLabel • Daily goal: ${goalResult.updatedState.dailyGoalQuestions} Qs")
+    }
+
+    fun skipOnboarding() {
+        settings.setOnboardingCompleted(true)
+        scheduleProfileCloudPush()
+    }
+
+    fun reopenOnboarding() {
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = false
+        settings.setOnboardingCompleted(false)
+    }
+
+    fun setDailyGoalQuestions(target: Int) {
+        val result = StudyGoalLogic.updateDailyGoalTarget(
+            current = settings.studyGoalState.value,
+            newTarget = target
+        )
+        settings.setStudyGoalState(result.updatedState)
+        scheduleProfileCloudPush()
+        if (result.justMetDailyGoal) {
+            val days = result.updatedState.currentStreakDays
+            showMessage("Daily goal complete! $days-day study streak!")
+        }
+    }
+
+    fun startDailyGoalDrill() {
+        val all = mainState.value.questions
+        if (all.isEmpty()) {
+            showMessage("Loading question bank, please wait a moment.")
+            return
+        }
+        val goal = settings.studyGoalState.value
+        val remaining = goal.remainingQuestions()
+        val targetCount = if (remaining > 0) remaining else goal.dailyGoalQuestions
+        val focus = settings.focusSubject.value
+        val focusPool = if (focus.isNotBlank()) {
+            all.filter { it.question.subject == focus }
+        } else {
+            emptyList()
+        }
+        val primaryPool = if (focusPool.size >= targetCount) focusPool else all
+        // Prioritize mistakes and fresh unattempted questions first
+        val mistakesAndFresh = primaryPool.filter { it.lastOutcome == "wrong" || it.attemptsCount == 0 }.shuffled()
+        val remainder = primaryPool.filter { it.lastOutcome != "wrong" && it.attemptsCount > 0 }.shuffled()
+        val picked = (mistakesAndFresh + remainder).take(targetCount)
+        val drillTitle = if (remaining > 0) {
+            "Daily Goal Drill (${picked.size}Q remaining)"
+        } else {
+            "Bonus Daily Drill (${picked.size}Q)"
+        }
+        startPractice(items = picked, title = drillTitle)
+    }
+
+    private fun recordDailyStudyProgress(answeredDelta: Int) {
+        if (answeredDelta <= 0) return
+        val result = StudyGoalLogic.recordStudyActivity(
+            current = settings.studyGoalState.value,
+            answeredDelta = answeredDelta
+        )
+        settings.setStudyGoalState(result.updatedState)
+        scheduleProfileCloudPush()
+        if (result.justMetDailyGoal) {
+            val days = result.updatedState.currentStreakDays
+            showMessage("Daily goal complete! $days-day study streak!")
+        }
+    }
+
     fun clearSnackbar() {
         _snackbarMessage.value = null
     }
@@ -865,6 +1006,8 @@ class MainViewModel(
             selectedAnswers = updatedMap,
             showCompletionPrompt = sess.timedMode && allAnswered
         )
+
+        recordDailyStudyProgress(answeredDelta = 1)
 
         viewModelScope.launch {
             val savedProgress = repository.recordAttempt(qItem.id, isCorrect)
@@ -1258,6 +1401,10 @@ class MainViewModel(
             showSubmitConfirm = false,
             showTimeoutDialog = false
         )
+
+        if (batchResults.isNotEmpty()) {
+            recordDailyStudyProgress(answeredDelta = batchResults.size)
+        }
 
         viewModelScope.launch {
             val savedProgress = repository.recordBatchAttempts(batchResults)

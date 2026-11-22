@@ -23,6 +23,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -36,11 +38,13 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -69,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
+import com.example.data.model.StudyGoalLogic
 import com.example.ui.theme.MonoFontFamily
 import com.example.ui.theme.MutedCrimsonFill
 import com.example.ui.theme.WarmWhite
@@ -83,12 +88,15 @@ fun SettingsScreen(
     secondsPerQuestion: Int,
     negativeMarking: Boolean,
     keepScreenOn: Boolean,
+    dailyGoalQuestions: Int,
     onProfileNameChange: (String) -> Unit,
     onThemePreferenceChange: (ThemePreference) -> Unit,
     onUseTimeLimitChange: (Boolean) -> Unit,
     onSecondsPerQuestionChange: (Int) -> Unit,
     onNegativeMarkingChange: (Boolean) -> Unit,
     onKeepScreenOnChange: (Boolean) -> Unit,
+    onDailyGoalChange: (Int) -> Unit,
+    onReopenOnboarding: () -> Unit,
     onOpenImporter: () -> Unit,
     onOpenPdfExport: () -> Unit,
     onResetStatistics: () -> Unit,
@@ -378,6 +386,45 @@ fun SettingsScreen(
                     icon = Icons.Filled.BrightnessHigh,
                     cardTag = "settings_card_study"
                 ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val estDailyMins = SettingsPreferences.calculateSuggestedMinutes(
+                            dailyGoalQuestions,
+                            secondsPerQuestion
+                        ).coerceAtLeast(5)
+                        Text(
+                            text = "Daily study goal",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Target $dailyGoalQuestions questions/day (~$estDailyMins min) to build your daily study streak.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            StudyGoalLogic.DAILY_GOAL_PRESETS.forEach { preset ->
+                                FilterChip(
+                                    selected = dailyGoalQuestions == preset,
+                                    onClick = { onDailyGoalChange(preset) },
+                                    label = {
+                                        Text(
+                                            text = "$preset Qs",
+                                            style = MaterialTheme.typography.labelLarge.copy(fontFamily = MonoFontFamily)
+                                        )
+                                    },
+                                    modifier = Modifier.testTag("settings_daily_goal_$preset")
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -407,6 +454,16 @@ fun SettingsScreen(
                             modifier = Modifier.testTag("settings_keep_screen_on_switch")
                         )
                     }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+
+                    SettingsActionRow(
+                        icon = Icons.Filled.Tune,
+                        title = "Run setup wizard again",
+                        subtitle = "Re-pick your exam track, focus subject, and daily goal",
+                        onClick = onReopenOnboarding,
+                        testTag = "settings_reopen_onboarding_row"
+                    )
                 }
             }
 

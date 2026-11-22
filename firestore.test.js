@@ -150,13 +150,40 @@ test("User profile: owner create, partial update, get succeed; list, shadow fiel
   // Listing /users is always forbidden (no user directory scraping)
   await assertFails(aliceDb.collection("users").get());
 
-  // Valid partial update preserving createdAt & userId
+  // Valid partial update preserving createdAt & userId (including onboarding & daily goal streak)
   await assertSucceeds(
     aliceDb.collection("users").doc(ALICE_UID).update({
       displayName: "Jaz Saleem",
       activeExamId: "rrb_nursing",
       themePreference: "DARK",
+      onboardingCompleted: true,
+      dailyGoalQuestions: 50,
+      currentStreakDays: 4,
+      longestStreakDays: 7,
+      lastGoalMetDate: "2026-11-22",
+      todayStudyDate: "2026-11-22",
+      todayAnsweredCount: 52,
       updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Reject out-of-bounds dailyGoalQuestions (<5 or >200) and negative streak
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      dailyGoalQuestions: 3,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      dailyGoalQuestions: 500,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      currentStreakDays: -1,
+      updatedAt: new Date(Date.now() - 500),
     })
   );
 
