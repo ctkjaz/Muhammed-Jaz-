@@ -39,11 +39,18 @@ jobs:
           gradle-version: '9.3.1'
 
       - name: Prepare debug signing keystore
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
         run: |
-          if [ -s debug.keystore.base64 ]; then
-            base64 -d debug.keystore.base64 > debug.keystore || rm -f debug.keystore
+          if [ -n "$DEBUG_KEYSTORE_BASE64" ]; then
+            printf '%s' "$DEBUG_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > debug.keystore
+            echo "Using permanent DEBUG_KEYSTORE_BASE64 secret"
+          elif [ -s debug.keystore.base64 ]; then
+            tr -d '\r\n ' < debug.keystore.base64 | base64 -d > debug.keystore || rm -f debug.keystore
+            echo "Using repository debug.keystore.base64"
           fi
           if [ ! -s debug.keystore ]; then
+            echo "WARNING: No permanent debug keystore found; generating temporary key"
             keytool -genkeypair -v -keystore debug.keystore \
               -storepass android -alias androiddebugkey -keypass android \
               -keyalg RSA -keysize 2048 -validity 10000 \
