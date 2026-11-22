@@ -70,7 +70,7 @@ import java.io.OutputStream
 enum class MainTab(val label: String) {
     DASHBOARD("Home"),
     SUBJECTS("Subjects"),
-    CBT("CBT Mock"),
+    CBT("CBT"),
     STATS("Stats"),
     DECK("Deck")
 }

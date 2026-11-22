@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,6 +56,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.model.DailyStudyGoalState
@@ -191,37 +194,60 @@ fun DashboardScreen(
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Button(
                                     onClick = onLaunchFullMock,
                                     shape = RoundedCornerShape(14.dp),
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = DustyRoseSecondary,
                                         contentColor = OnDustyRoseLight
                                     ),
                                     modifier = Modifier
-                                        .weight(1f)
+                                        .weight(1.15f)
                                         .testTag("launch_100q_mock_btn")
                                 ) {
-                                    Text(mockCtaLabel, fontWeight = FontWeight.Bold)
-                                    Spacer(modifier = Modifier.widthIn(min = 6.dp))
+                                    Text(
+                                        text = mockCtaLabel,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Icon(
                                         Icons.AutoMirrored.Filled.ArrowForward,
                                         contentDescription = null,
-                                        modifier = Modifier.height(16.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
                                 OutlinedButton(
                                     onClick = onOpenTimedPractice,
                                     shape = RoundedCornerShape(14.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
                                     border = BorderStroke(1.dp, DustyRoseSecondary.copy(alpha = 0.8f)),
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = EditorialBannerTitle),
-                                    modifier = Modifier.testTag("open_timed_practice_btn")
+                                    modifier = Modifier
+                                        .weight(0.85f)
+                                        .testTag("open_timed_practice_btn")
                                 ) {
-                                    Icon(Icons.Filled.Timer, contentDescription = null, modifier = Modifier.height(16.dp))
-                                    Spacer(modifier = Modifier.widthIn(min = 6.dp))
-                                    Text("Timed Drill", fontWeight = FontWeight.SemiBold)
+                                    Icon(
+                                        Icons.Filled.Timer,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Timed Drill",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
 

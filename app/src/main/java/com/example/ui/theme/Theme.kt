@@ -1,5 +1,8 @@
 package com.example.ui.theme
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,10 +16,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 
 @Immutable
 data class EditorialColors(
@@ -129,6 +135,17 @@ fun RrbNursingTheme(
         else -> LightColorScheme
     }
     val editorial = if (darkTheme) DarkEditorialColors else LightEditorialColors
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = view.context.findActivityWindow()
+            if (window != null) {
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.isAppearanceLightStatusBars = !darkTheme
+                controller.isAppearanceLightNavigationBars = !darkTheme
+            }
+        }
+    }
 
     CompositionLocalProvider(LocalEditorialColors provides editorial) {
         MaterialTheme(
@@ -138,4 +155,10 @@ fun RrbNursingTheme(
             content = content
         )
     }
+}
+
+private tailrec fun Context.findActivityWindow(): android.view.Window? = when (this) {
+    is Activity -> window
+    is ContextWrapper -> baseContext.findActivityWindow()
+    else -> null
 }

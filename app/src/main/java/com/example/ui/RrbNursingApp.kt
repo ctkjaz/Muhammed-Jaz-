@@ -72,6 +72,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
 import androidx.lifecycle.Lifecycle
@@ -475,7 +477,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.primary,
                                                     fontWeight = FontWeight.SemiBold,
-                                                    maxLines = 1
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
                                                 Icon(
                                                     imageVector = Icons.Filled.KeyboardArrowDown,
@@ -527,7 +530,15 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     selected = selected,
                                     onClick = { vm.selectTab(tab) },
                                     icon = { NavTabIcon(tab, selected) },
-                                    label = { Text(tab.label, maxLines = 1) },
+                                    label = {
+                                        Text(
+                                            text = tab.label,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    },
                                     modifier = Modifier.testTag("nav_${tab.name}")
                                 )
                             }
@@ -549,7 +560,15 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     selected = selected,
                                     onClick = { vm.selectTab(tab) },
                                     icon = { NavTabIcon(tab, selected) },
-                                    label = { Text(tab.label) },
+                                    label = {
+                                        Text(
+                                            text = tab.label,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    },
                                     modifier = Modifier.testTag("rail_${tab.name}")
                                 )
                             }

@@ -578,9 +578,9 @@ fun ProfileScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Box(
-                            contentAlignment = Alignment.BottomEnd,
+                            contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .clip(CircleShape)
+                                .size(92.dp)
                                 .clickable(onClick = onPickProfilePhoto)
                                 .testTag("profile_avatar_picker_trigger")
                         ) {
@@ -594,7 +594,9 @@ fun ProfileScreen(
                                 shape = CircleShape,
                                 color = MaterialTheme.colorScheme.primary,
                                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.surface),
-                                modifier = Modifier.size(30.dp)
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .size(30.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
