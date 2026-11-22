@@ -135,6 +135,56 @@ class SettingsPreferences(context: Context) {
         prefs.edit().putInt(KEY_SEEDED_VERSION, version).apply()
     }
 
+    fun getLastSignedInUid(): String = prefs.getString(KEY_LAST_SIGNED_IN_UID, "") ?: ""
+
+    fun setLastSignedInUid(uid: String) {
+        prefs.edit().putString(KEY_LAST_SIGNED_IN_UID, uid).apply()
+    }
+
+    fun applySyncedProfile(
+        displayName: String,
+        role: String,
+        targetYear: String,
+        focusSubject: String,
+        activeExamId: String,
+        themePreference: ThemePreference,
+        negativeMarking: Boolean,
+        useTimeLimit: Boolean,
+        secondsPerQuestion: Int,
+        keepScreenOn: Boolean
+    ) {
+        val cleanName = displayName.take(MAX_PROFILE_NAME_LENGTH)
+        val cleanRole = role.take(MAX_PROFILE_ROLE_LENGTH)
+        val cleanYear = targetYear.trim().take(MAX_TARGET_YEAR_LENGTH)
+        val cleanFocus = focusSubject.trim()
+        val cleanExam = activeExamId.trim().ifBlank { PlatformCatalogDefaults.EXAM_RRB_NURSING }
+        val cleanSec = secondsPerQuestion.coerceIn(MIN_SECONDS_PER_QUESTION, MAX_SECONDS_PER_QUESTION)
+
+        prefs.edit()
+            .putString(KEY_PROFILE_NAME, cleanName)
+            .putString(KEY_PROFILE_ROLE, cleanRole)
+            .putString(KEY_TARGET_YEAR, cleanYear)
+            .putString(KEY_FOCUS_SUBJECT, cleanFocus)
+            .putString(KEY_ACTIVE_EXAM_ID, cleanExam)
+            .putString(KEY_THEME, themePreference.name)
+            .putBoolean(KEY_NEG_MARKING, negativeMarking)
+            .putBoolean(KEY_USE_TIME_LIMIT, useTimeLimit)
+            .putInt(KEY_SECONDS_PER_QUESTION, cleanSec)
+            .putBoolean(KEY_KEEP_SCREEN_ON, keepScreenOn)
+            .apply()
+
+        _profileName.value = cleanName
+        _profileRole.value = cleanRole
+        _targetYear.value = cleanYear
+        _focusSubject.value = cleanFocus
+        _activeExamId.value = cleanExam
+        _themePreference.value = themePreference
+        _negativeMarking.value = negativeMarking
+        _useTimeLimit.value = useTimeLimit
+        _secondsPerQuestion.value = cleanSec
+        _keepScreenOn.value = keepScreenOn
+    }
+
     companion object {
         const val MAX_PROFILE_NAME_LENGTH = 40
         const val MAX_PROFILE_ROLE_LENGTH = 40
@@ -156,6 +206,7 @@ class SettingsPreferences(context: Context) {
         private const val KEY_SECONDS_PER_QUESTION = "seconds_per_question"
         private const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         private const val KEY_ACTIVE_EXAM_ID = "active_exam_id"
+        private const val KEY_LAST_SIGNED_IN_UID = "last_signed_in_uid"
 
         fun calculateSuggestedMinutes(questionCount: Int, secondsPerQuestion: Int): Int {
             if (questionCount <= 0 || secondsPerQuestion <= 0) return 0

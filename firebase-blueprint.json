@@ -1,0 +1,342 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated learner profile, study preferences, and active exam track synced across devices. Clients must write FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the profile owner."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Learner display name (max 40 chars)."
+        },
+        "role": {
+          "type": "string",
+          "description": "Qualification or clinical role (max 40 chars)."
+        },
+        "targetYear": {
+          "type": "string",
+          "description": "Target exam year (max 10 chars)."
+        },
+        "focusSubject": {
+          "type": "string",
+          "description": "Primary focus subject code or empty string for all subjects."
+        },
+        "activeExamId": {
+          "type": "string",
+          "description": "Active exam track ID (e.g. rrb_nursing or aiims_norcet)."
+        },
+        "themePreference": {
+          "type": "string",
+          "enum": ["LIGHT", "DARK", "SYSTEM"],
+          "description": "Appearance theme preference."
+        },
+        "negativeMarking": {
+          "type": "boolean",
+          "description": "Whether -1/3 negative marking is enabled."
+        },
+        "useTimeLimit": {
+          "type": "boolean",
+          "description": "Whether practice countdown timers are enabled."
+        },
+        "secondsPerQuestion": {
+          "type": "integer",
+          "description": "Default pacing seconds per question (20 to 120)."
+        },
+        "keepScreenOn": {
+          "type": "boolean",
+          "description": "Whether to keep screen awake during active sessions."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "role",
+        "targetYear",
+        "focusSubject",
+        "activeExamId",
+        "themePreference",
+        "negativeMarking",
+        "useTimeLimit",
+        "secondsPerQuestion",
+        "keepScreenOn",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "QuestionProgressRecord": {
+      "title": "QuestionProgressRecord",
+      "description": "Per-question mastery, attempt counts, and bookmark state for a user. Clients must write FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner UID."
+        },
+        "questionId": {
+          "type": "string",
+          "description": "Question identifier matching the document ID."
+        },
+        "bookmarked": {
+          "type": "boolean",
+          "description": "Whether the question is saved in the revision deck."
+        },
+        "attemptsCount": {
+          "type": "integer",
+          "description": "Total number of attempts."
+        },
+        "correctCount": {
+          "type": "integer",
+          "description": "Total correct attempts."
+        },
+        "wrongCount": {
+          "type": "integer",
+          "description": "Total wrong attempts."
+        },
+        "lastOutcome": {
+          "type": "string",
+          "enum": ["right", "wrong"],
+          "description": "Optional latest outcome (omitted when unattempted or reset)."
+        },
+        "clientUpdatedAtMs": {
+          "type": "integer",
+          "description": "Client epoch milliseconds used for offline-first merge ordering."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "questionId",
+        "bookmarked",
+        "attemptsCount",
+        "correctCount",
+        "wrongCount",
+        "clientUpdatedAtMs",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "MockHistoryRecord": {
+      "title": "MockHistoryRecord",
+      "description": "Completed CBT mock examination score history entry. Clients must write FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner UID."
+        },
+        "title": {
+          "type": "string",
+          "description": "Mock exam display title."
+        },
+        "examId": {
+          "type": "string",
+          "description": "Exam track ID associated with this mock."
+        },
+        "totalQuestions": {
+          "type": "integer",
+          "description": "Total questions in the mock."
+        },
+        "correctCount": {
+          "type": "integer",
+          "description": "Correctly answered questions."
+        },
+        "wrongCount": {
+          "type": "integer",
+          "description": "Incorrectly answered questions."
+        },
+        "skippedCount": {
+          "type": "integer",
+          "description": "Unanswered questions."
+        },
+        "netScore": {
+          "type": "number",
+          "description": "Net score after negative marking."
+        },
+        "accuracyPercent": {
+          "type": "integer",
+          "description": "Accuracy percentage (0-100)."
+        },
+        "completedAtMs": {
+          "type": "integer",
+          "description": "Completion epoch milliseconds."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "title",
+        "examId",
+        "totalQuestions",
+        "correctCount",
+        "wrongCount",
+        "skippedCount",
+        "netScore",
+        "accuracyPercent",
+        "completedAtMs",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CustomQuestionRecord": {
+      "title": "CustomQuestionRecord",
+      "description": "User-imported custom MCQ synced across devices. Clients must write FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner UID."
+        },
+        "category": {
+          "type": "string",
+          "description": "Question category (pyq, nur, ca, gen)."
+        },
+        "shiftYear": {
+          "type": "string",
+          "description": "Shift/year tag if PYQ."
+        },
+        "subject": {
+          "type": "string",
+          "description": "Subject code."
+        },
+        "difficulty": {
+          "type": "string",
+          "enum": ["Easy", "Medium", "Hard"],
+          "description": "Question difficulty label."
+        },
+        "questionText": {
+          "type": "string",
+          "description": "Question stem text."
+        },
+        "options": {
+          "type": "array",
+          "description": "2 to 6 answer choice strings."
+        },
+        "correctIndex": {
+          "type": "integer",
+          "description": "Zero-based index of the correct option."
+        },
+        "explanation": {
+          "type": "string",
+          "description": "Clinical rationale or explanation."
+        },
+        "sourceStatus": {
+          "type": "string",
+          "enum": ["verified", "unverified"],
+          "description": "Verification status."
+        },
+        "sourceNote": {
+          "type": "string",
+          "description": "Reference note for verified sources."
+        },
+        "topicId": {
+          "type": "string",
+          "description": "Topic identifier."
+        },
+        "sourceType": {
+          "type": "string",
+          "description": "Source type database value."
+        },
+        "examYear": {
+          "type": "string",
+          "description": "Exam year."
+        },
+        "examShift": {
+          "type": "string",
+          "description": "Exam shift."
+        },
+        "examIds": {
+          "type": "array",
+          "description": "Exam track IDs linked to this custom question."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "category",
+        "shiftYear",
+        "subject",
+        "difficulty",
+        "questionText",
+        "options",
+        "correctIndex",
+        "explanation",
+        "sourceStatus",
+        "sourceNote",
+        "topicId",
+        "sourceType",
+        "examYear",
+        "examShift",
+        "examIds",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Owner-isolated learner profile and study preferences document."
+    },
+    "/users/{userId}/progress/{questionId}": {
+      "schema": {
+        "$ref": "#/entities/QuestionProgressRecord"
+      },
+      "description": "Owner-isolated question attempt counts, last outcome, and revision deck bookmarks."
+    },
+    "/users/{userId}/mockHistory/{mockId}": {
+      "schema": {
+        "$ref": "#/entities/MockHistoryRecord"
+      },
+      "description": "Owner-isolated completed CBT mock test history records."
+    },
+    "/users/{userId}/customQuestions/{questionId}": {
+      "schema": {
+        "$ref": "#/entities/CustomQuestionRecord"
+      },
+      "description": "Owner-isolated user-imported custom MCQs."
+    }
+  }
+}

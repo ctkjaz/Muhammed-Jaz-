@@ -109,12 +109,22 @@ interface QuestionDao {
     @Query("SELECT * FROM mock_history ORDER BY timestamp DESC LIMIT 25")
     fun observeMockHistory(): Flow<List<MockHistoryEntity>>
 
+    @Query("SELECT * FROM mock_history ORDER BY timestamp DESC LIMIT 25")
+    suspend fun getAllMockHistorySnapshot(): List<MockHistoryEntity>
+
     @Query("SELECT * FROM mock_history WHERE examId = :examId ORDER BY timestamp DESC LIMIT 25")
     fun observeMockHistoryForExam(examId: String): Flow<List<MockHistoryEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMockHistory(history: MockHistoryEntity)
 
+    @Query("DELETE FROM mock_history")
+    suspend fun clearMockHistory()
+
     @Query("DELETE FROM question_progress")
     suspend fun clearAllProgress()
+
+    @Transaction
+    @Query("SELECT * FROM questions WHERE isCustom = 1 ORDER BY sortOrder ASC, id ASC")
+    suspend fun getCustomQuestionsSnapshot(): List<QuestionWithProgressRelation>
 }

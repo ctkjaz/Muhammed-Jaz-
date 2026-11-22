@@ -299,7 +299,7 @@ class NursingPrepRepository(
         }.getOrDefault(emptyList())
     }
 
-    suspend fun recordAttempt(questionId: String, isCorrect: Boolean) = withContext(Dispatchers.IO) {
+    suspend fun recordAttempt(questionId: String, isCorrect: Boolean): QuestionProgressEntity = withContext(Dispatchers.IO) {
         val existing = dao.getProgressForQuestion(questionId)
         val now = System.currentTimeMillis()
         val updated = if (existing == null) {
@@ -322,10 +322,11 @@ class NursingPrepRepository(
             )
         }
         dao.upsertProgress(updated)
+        updated
     }
 
-    suspend fun recordBatchAttempts(results: List<Pair<String, Boolean>>) = withContext(Dispatchers.IO) {
-        if (results.isEmpty()) return@withContext
+    suspend fun recordBatchAttempts(results: List<Pair<String, Boolean>>): List<QuestionProgressEntity> = withContext(Dispatchers.IO) {
+        if (results.isEmpty()) return@withContext emptyList()
         val existingMap = dao.getAllProgressSnapshot().associateBy { it.questionId }.toMutableMap()
         val now = System.currentTimeMillis()
         val updates = results.map { (qId, isCorrect) ->
@@ -353,9 +354,10 @@ class NursingPrepRepository(
             updated
         }
         dao.upsertProgressList(updates)
+        updates
     }
 
-    suspend fun toggleBookmark(questionId: String) = withContext(Dispatchers.IO) {
+    suspend fun toggleBookmark(questionId: String): QuestionProgressEntity = withContext(Dispatchers.IO) {
         val existing = dao.getProgressForQuestion(questionId)
         val now = System.currentTimeMillis()
         val updated = existing?.copy(
@@ -367,6 +369,7 @@ class NursingPrepRepository(
             updatedAt = now
         )
         dao.upsertProgress(updated)
+        updated
     }
 
     suspend fun saveCustomQuestions(
@@ -444,28 +447,77 @@ class NursingPrepRepository(
         netScore: Double,
         accuracyPercent: Int,
         examId: String = PlatformCatalogDefaults.EXAM_RRB_NURSING
-    ) = withContext(Dispatchers.IO) {
-        dao.insertMockHistory(
-            MockHistoryEntity(
-                title = title,
-                totalQuestions = totalQuestions,
-                correctCount = correctCount,
-                wrongCount = wrongCount,
-                skippedCount = skippedCount,
-                netScore = netScore,
-                accuracyPercent = accuracyPercent,
-                timestamp = System.currentTimeMillis(),
-                examId = examId
-            )
+    ): MockHistoryEntity = withContext(Dispatchers.IO) {
+        val entity = MockHistoryEntity(
+            title = title,
+            totalQuestions = totalQuestions,
+            correctCount = correctCount,
+            wrongCount = wrongCount,
+            skippedCount = skippedCount,
+            netScore = netScore,
+            accuracyPercent = accuracyPercent,
+            timestamp = System.currentTimeMillis(),
+            examId = examId
         )
+        dao.insertMockHistory(entity)
+        entity
     }
 
-    suspend fun clearStatistics() = withContext(Dispatchers.IO) {
+    suspend fun clearStatistics(): List<QuestionProgressEntity> = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
         val allProgress = dao.getAllProgressSnapshot()
         val resetBookmarksKept = allProgress.map {
-            it.copy(attemptsCount = 0, correctCount = 0, wrongCount = 0, lastOutcome = null)
+            it.copy(
+                attemptsCount = 0,
+                correctCount = 0,
+                wrongCount = 0,
+                lastOutcome = null,
+                updatedAt = now
+            )
         }
         dao.upsertProgressList(resetBookmarksKept)
+        resetBookmarksKept
+    }
+
+    suspend fun getAllProgressSnapshot(): List<QuestionProgressEntity> = withContext(Dispatchers.IO) {
+        dao.getAllProgressSnapshot()
+    }
+
+    suspend fun upsertProgressList(items: List<QuestionProgressEntity>) = withContext(Dispatchers.IO) {
+        if (items.isNotEmpty()) {
+            dao.upsertProgressList(items)
+        }
+    }
+
+    suspend fun getAllMockHistorySnapshot(): List<MockHistoryEntity> = withContext(Dispatchers.IO) {
+        dao.getAllMockHistorySnapshot()
+    }
+
+    suspend fun insertMockHistoryIfMissing(entity: MockHistoryEntity) = withContext(Dispatchers.IO) {
+        val existing = dao.getAllMockHistorySnapshot()
+        val duplicate = existing.any {
+            it.timestamp == entity.timestamp && it.examId == entity.examId && it.title == entity.title
+        }
+        if (!duplicate) {
+            dao.insertMockHistory(entity)
+        }
+    }
+
+    suspend fun getCustomQuestionsWithExamIds(): Pair<List<Question>, Map<String, List<String>>> =
+        withContext(Dispatchers.IO) {
+            val customItems = dao.getCustomQuestionsSnapshot().map { it.toDomain().question }
+            val examMap = customItems.associate { q ->
+                val links = dao.getLinksForQuestion(q.id).map { it.examId }.distinct()
+                q.id to links.ifEmpty { listOf(PlatformCatalogDefaults.EXAM_RRB_NURSING) }
+            }
+            customItems to examMap
+        }
+
+    suspend fun clearUserSpecificLocalDataForAccountSwitch() = withContext(Dispatchers.IO) {
+        dao.clearAllProgress()
+        dao.clearMockHistory()
+        dao.deleteCustomQuestionLinks()
+        dao.deleteCustomQuestions()
     }
 
     fun computeSubjectStats(items: List<QuestionItem>): List<SubjectStat> {

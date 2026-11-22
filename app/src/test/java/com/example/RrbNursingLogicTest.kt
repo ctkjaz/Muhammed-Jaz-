@@ -5,10 +5,14 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.example.data.cloud.CloudCustomQuestion
+import com.example.data.cloud.CloudMergeLogic
+import com.example.data.cloud.CloudQuestionProgress
 import com.example.data.export.PdfWorksheetWriter
 import com.example.data.local.AppDatabase
 import com.example.data.local.ExamEntity
 import com.example.data.local.ExamSectionEntity
+import com.example.data.local.QuestionProgressEntity
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.data.model.DifficultyFilter
@@ -947,6 +951,89 @@ class RrbNursingLogicTest {
         } finally {
             db.close()
         }
+    }
+
+    @Test
+    fun `cloud merge logic resolves newer progress safely sanitizes firestore ids and syncs preferences`() {
+        val localOlder = QuestionProgressEntity(
+            questionId = "N_12",
+            isBookmarked = false,
+            attemptsCount = 2,
+            correctCount = 1,
+            wrongCount = 1,
+            lastOutcome = "wrong",
+            updatedAt = 1000L
+        )
+        val cloudNewer = CloudQuestionProgress(
+            id = "N_12",
+            userId = "uid_1",
+            questionId = "N_12",
+            bookmarked = true,
+            attemptsCount = 4,
+            correctCount = 3,
+            wrongCount = 1,
+            lastOutcome = "right",
+            clientUpdatedAtMs = 2000L
+        )
+        val merged = CloudMergeLogic.mergeProgress(localOlder, cloudNewer)
+        assertTrue(merged.isBookmarked)
+        assertEquals(4, merged.attemptsCount)
+        assertEquals(3, merged.correctCount)
+        assertEquals("right", merged.lastOutcome)
+        assertFalse(CloudMergeLogic.shouldPushLocalProgress(localOlder, cloudNewer))
+
+        val localNewer = localOlder.copy(attemptsCount = 6, updatedAt = 3000L)
+        assertTrue(CloudMergeLogic.shouldPushLocalProgress(localNewer, cloudNewer))
+        assertEquals(6, CloudMergeLogic.mergeProgress(localNewer, cloudNewer).attemptsCount)
+
+        val mockId = CloudMergeLogic.deterministicMockDocId(1700000000000L, "aiims_norcet")
+        assertTrue(CloudMergeLogic.isValidFirestoreId(mockId))
+        assertEquals(ThemePreference.LIGHT, CloudMergeLogic.parseThemeSafe("INVALID_THEME"))
+        assertEquals(ThemePreference.DARK, CloudMergeLogic.parseThemeSafe("DARK"))
+
+        val cloudQ = CloudCustomQuestion(
+            id = "C_SYNC_1",
+            userId = "uid_1",
+            category = "pyq",
+            shiftYear = "NORCET-9",
+            subject = "MSN",
+            difficulty = "Hard",
+            questionText = "Which lead shows anterior MI?",
+            options = listOf("V1-V4", "II, III, aVF", "aVR", "V5-V6"),
+            correctIndex = 0,
+            explanation = "Anterior wall is supplied by LAD (V1-V4).",
+            sourceStatus = Question.SOURCE_UNVERIFIED,
+            sourceNote = "",
+            topicId = "msn_general",
+            sourceType = "memory_based",
+            examIds = listOf("aiims_norcet")
+        )
+        val domainQ = CloudMergeLogic.toDomainQuestion(cloudQ)
+        assertEquals("C_SYNC_1", domainQ?.id)
+        assertEquals(QuestionDifficulty.HARD, domainQ?.difficulty)
+        assertTrue(domainQ?.isCustom == true)
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = SettingsPreferences(context)
+        prefs.setLastSignedInUid("uid_1")
+        prefs.applySyncedProfile(
+            displayName = "Synced Nurse",
+            role = "Staff Nurse",
+            targetYear = "2027",
+            focusSubject = "OBG",
+            activeExamId = PlatformCatalogDefaults.EXAM_AIIMS_NORCET,
+            themePreference = ThemePreference.DARK,
+            negativeMarking = true,
+            useTimeLimit = false,
+            secondsPerQuestion = 45,
+            keepScreenOn = true
+        )
+        val reloaded = SettingsPreferences(context)
+        assertEquals("uid_1", reloaded.getLastSignedInUid())
+        assertEquals("Synced Nurse", reloaded.profileName.value)
+        assertEquals(PlatformCatalogDefaults.EXAM_AIIMS_NORCET, reloaded.activeExamId.value)
+        assertEquals(ThemePreference.DARK, reloaded.themePreference.value)
+        assertEquals(45, reloaded.secondsPerQuestion.value)
     }
 }
 

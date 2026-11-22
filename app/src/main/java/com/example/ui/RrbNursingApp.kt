@@ -64,6 +64,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -73,15 +74,27 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.credentials.CredentialManager
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.R
+import com.example.data.cloud.CloudSyncRepository
+import com.example.data.local.AppDatabase
+import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
+import com.example.data.repository.NursingPrepRepository
+import com.example.ui.auth.authStateFlow
+import com.example.ui.auth.signOut
 import com.example.ui.components.ExamPickerModalSheet
 import com.example.ui.components.ImporterModalSheet
 import com.example.ui.components.PdfExportModalSheet
 import com.example.ui.components.ProfileAvatarCircle
 import com.example.ui.components.TimedPracticeConfigDialog
 import com.example.ui.components.formatApproxQuestionCount
+import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.BookmarksScreen
 import com.example.ui.screens.CbtExamScreen
 import com.example.ui.screens.CbtHubScreen
@@ -95,14 +108,79 @@ import com.example.ui.screens.SubjectsHubScreen
 import com.example.ui.theme.RrbNursingTheme
 import com.example.ui.viewmodel.MainTab
 import com.example.ui.viewmodel.MainViewModel
+import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.auth
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@Composable
+fun ClinEdgeRootApp(auth: FirebaseAuth = Firebase.auth) {
+    val context = LocalContext.current
+    val initialTheme = remember(context) { SettingsPreferences(context).themePreference.value }
+    val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+    val user = currentUser
+
+    if (user == null) {
+        val systemDark = isSystemInDarkTheme()
+        val isDark = when (initialTheme) {
+            ThemePreference.SYSTEM -> systemDark
+            ThemePreference.DARK -> true
+            ThemePreference.LIGHT -> false
+        }
+        RrbNursingTheme(darkTheme = isDark) {
+            AuthScreen(onAuthSuccess = { /* AuthStateListener drives navigation reactively */ })
+        }
+    } else {
+        key(user.uid) {
+            AuthenticatedClinEdgeApp(user = user)
+        }
+    }
+}
+
+@Composable
+private fun AuthenticatedClinEdgeApp(user: FirebaseUser) {
+    val uid = user.uid
+    val displayName = user.displayName.orEmpty()
+    val email = user.email.orEmpty()
+    val photoUrl = user.photoUrl?.toString()
+
+    val vm: MainViewModel = viewModel(
+        key = uid,
+        factory = viewModelFactory {
+            initializer {
+                val app = checkNotNull(this[APPLICATION_KEY]) {
+                    "APPLICATION_KEY missing from CreationExtras"
+                }
+                val databaseId = app.getString(R.string.firestore_database_id)
+                val firestore = FirebaseFirestore.getInstance(databaseId)
+                val localDb = AppDatabase.getInstance(app)
+                val repository = NursingPrepRepository(app, localDb.questionDao())
+                val settings = SettingsPreferences(app)
+                val cloudSync = CloudSyncRepository(firestore)
+                MainViewModel(
+                    repository = repository,
+                    settings = settings,
+                    cloudSync = cloudSync,
+                    currentUserId = uid,
+                    accountDisplayName = displayName,
+                    accountEmail = email,
+                    accountPhotoUrl = photoUrl
+                )
+            }
+        }
+    )
+
+    RrbNursingApp(vm = vm)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RrbNursingApp(vm: MainViewModel = viewModel()) {
+fun RrbNursingApp(vm: MainViewModel) {
     val themePref by vm.themePreference.collectAsStateWithLifecycle()
     val systemDark = isSystemInDarkTheme()
     val isDark = when (themePref) {
@@ -134,11 +212,22 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
         val secondsPerQuestion by vm.secondsPerQuestion.collectAsStateWithLifecycle()
         val keepScreenOn by vm.keepScreenOn.collectAsStateWithLifecycle()
         val snackbarMessage by vm.snackbarMessage.collectAsStateWithLifecycle()
+        val cloudSyncState by vm.cloudSyncState.collectAsStateWithLifecycle()
+        val signedInAccount = vm.signedInAccount
 
         val snackbarHostState = remember { SnackbarHostState() }
         val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
         val scope = rememberCoroutineScope()
         val context = LocalContext.current
+        val credentialManager = remember(context) { CredentialManager.create(context) }
+
+        val performSignOut: () -> Unit = {
+            signOut(
+                credentialManager = credentialManager,
+                scope = scope,
+                onBeforeSignOut = { vm.detachCloudSyncForSignOut() }
+            )
+        }
 
         LaunchedEffect(snackbarMessage) {
             snackbarMessage?.let { msg ->
@@ -221,6 +310,8 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                     profileRole = profileRole,
                     targetYear = targetYear,
                     focusSubject = focusSubject,
+                    account = signedInAccount,
+                    cloudSyncState = cloudSyncState,
                     state = state,
                     onOpenFullProfile = {
                         scope.launch {
@@ -250,6 +341,18 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                         scope.launch {
                             drawerState.close()
                             vm.openImporter()
+                        }
+                    },
+                    onSyncNow = {
+                        scope.launch {
+                            drawerState.close()
+                            vm.syncNow()
+                        }
+                    },
+                    onSignOut = {
+                        scope.launch {
+                            drawerState.close()
+                            performSignOut()
                         }
                     }
                 )
@@ -455,6 +558,8 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                                     profileRole = profileRole,
                                     targetYear = targetYear,
                                     focusSubject = focusSubject,
+                                    account = signedInAccount,
+                                    cloudSyncState = cloudSyncState,
                                     state = state,
                                     onProfileNameChange = vm::setProfileName,
                                     onProfileRoleChange = vm::setProfileRole,
@@ -466,6 +571,8 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                                         vm.startPractice(list, title)
                                     },
                                     onOpenSettings = vm::openSettings,
+                                    onSyncNow = vm::syncNow,
+                                    onSignOut = performSignOut,
                                     onBack = vm::closeProfile
                                 )
                             }

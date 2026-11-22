@@ -1,9 +1,22 @@
 package com.example.ui.viewmodel
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import android.util.Log
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.data.local.AppDatabase
+import com.example.data.cloud.CloudAccountSnapshot
+import com.example.data.cloud.CloudCustomQuestion
+import com.example.data.cloud.CloudMergeLogic
+import com.example.data.cloud.CloudMockHistory
+import com.example.data.cloud.CloudQuestionProgress
+import com.example.data.cloud.CloudSyncRepository
+import com.example.data.cloud.CloudSyncUiState
+import com.example.data.cloud.CloudUserProfile
+import com.example.data.cloud.SignedInAccountInfo
+import com.example.data.cloud.SyncBadgeState
+import com.example.data.cloud.extractFirestoreRootError
+import com.example.data.cloud.isPermissionDeniedOrOffline
+import com.example.data.export.PdfWorksheetOptions
+import com.example.data.export.PdfWorksheetWriter
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.data.model.CategoryStat
@@ -22,10 +35,10 @@ import com.example.data.model.QuestionSourceType
 import com.example.data.model.SubjectCatalog
 import com.example.data.model.SubjectStat
 import com.example.data.model.Topic
-import com.example.data.export.PdfWorksheetOptions
-import com.example.data.export.PdfWorksheetWriter
 import com.example.data.parser.BulkQuestionParser
 import com.example.data.repository.NursingPrepRepository
+import com.google.firebase.firestore.FirebaseFirestoreException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -34,6 +47,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -175,10 +189,22 @@ data class DashboardDerivedState(
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class MainViewModel(application: Application) : AndroidViewModel(application) {
-    private val db = AppDatabase.getInstance(application)
-    private val repository = NursingPrepRepository(application, db.questionDao())
-    private val settings = SettingsPreferences(application)
+class MainViewModel(
+    private val repository: NursingPrepRepository,
+    private val settings: SettingsPreferences,
+    private val cloudSync: CloudSyncRepository,
+    private val currentUserId: String,
+    accountDisplayName: String = "",
+    accountEmail: String = "",
+    accountPhotoUrl: String? = null
+) : ViewModel() {
+
+    val signedInAccount: SignedInAccountInfo = SignedInAccountInfo(
+        uid = currentUserId,
+        displayName = accountDisplayName,
+        email = accountEmail,
+        photoUrl = accountPhotoUrl
+    )
 
     val themePreference: StateFlow<ThemePreference> = settings.themePreference
     val negativeMarking: StateFlow<Boolean> = settings.negativeMarking
@@ -190,6 +216,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val secondsPerQuestion: StateFlow<Int> = settings.secondsPerQuestion
     val keepScreenOn: StateFlow<Boolean> = settings.keepScreenOn
     val activeExamId: StateFlow<String> = settings.activeExamId
+
+    private val _cloudSyncState = MutableStateFlow(CloudSyncUiState())
+    val cloudSyncState: StateFlow<CloudSyncUiState> = _cloudSyncState.asStateFlow()
 
     private val _flashcards = MutableStateFlow<List<Flashcard>>(emptyList())
     private val _isSeeded = MutableStateFlow(false)
@@ -333,14 +362,307 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
     private var timerJob: Job? = null
+    private var syncListenerJobs: List<Job> = emptyList()
+    private var profilePushJob: Job? = null
+    private var applyingCloudProfile = false
+    private var isSigningOut = false
 
     init {
         viewModelScope.launch {
+            val previousUid = settings.getLastSignedInUid()
+            if (previousUid.isNotBlank() && previousUid != currentUserId) {
+                repository.clearUserSpecificLocalDataForAccountSwitch()
+            }
+            settings.setLastSignedInUid(currentUserId)
+            if (settings.profileName.value.isBlank() && signedInAccount.displayName.isNotBlank()) {
+                settings.setProfileName(signedInAccount.displayName)
+            }
+
             repository.ensureSeeded(settings.getSeededVersion()) { newVer ->
                 settings.setSeededVersion(newVer)
             }
             _flashcards.value = repository.loadFlashcards()
             _isSeeded.value = true
+
+            if (currentUserId.isNotBlank()) {
+                performBidirectionalSync(showFeedbackToast = false)
+                startRealtimeCloudObservers()
+            }
+        }
+    }
+
+    fun syncNow() {
+        if (currentUserId.isBlank() || isSigningOut) return
+        viewModelScope.launch {
+            performBidirectionalSync(showFeedbackToast = true)
+        }
+    }
+
+    fun detachCloudSyncForSignOut() {
+        isSigningOut = true
+        profilePushJob?.cancel()
+        profilePushJob = null
+        syncListenerJobs.forEach { it.cancel() }
+        syncListenerJobs = emptyList()
+    }
+
+    private fun startRealtimeCloudObservers() {
+        if (currentUserId.isBlank() || isSigningOut) return
+        syncListenerJobs.forEach { it.cancel() }
+
+        val profileJob = viewModelScope.launch {
+            cloudSync.observeProfile(currentUserId)
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    if (!isSigningOut) {
+                        val rootError = firestoreError ?: error
+                        Log.w(TAG, "Profile sync stream interrupted", rootError)
+                        recordSyncFailure(rootError)
+                    }
+                }
+                .collect { remoteProfile ->
+                    if (remoteProfile != null && !isSigningOut) {
+                        applyRemoteProfileToLocal(remoteProfile)
+                        markSynced()
+                    }
+                }
+        }
+
+        val progressJob = viewModelScope.launch {
+            cloudSync.observeProgress(currentUserId)
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    if (!isSigningOut) {
+                        val rootError = firestoreError ?: error
+                        Log.w(TAG, "Progress sync stream interrupted", rootError)
+                        recordSyncFailure(rootError)
+                    }
+                }
+                .collect { remoteProgress ->
+                    if (!isSigningOut && remoteProgress.isNotEmpty()) {
+                        mergeCloudProgressIntoLocal(remoteProgress)
+                        markSynced()
+                    }
+                }
+        }
+
+        val mockJob = viewModelScope.launch {
+            cloudSync.observeMockHistory(currentUserId)
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    if (!isSigningOut) {
+                        val rootError = firestoreError ?: error
+                        Log.w(TAG, "Mock history sync stream interrupted", rootError)
+                        recordSyncFailure(rootError)
+                    }
+                }
+                .collect { remoteMocks ->
+                    if (!isSigningOut && remoteMocks.isNotEmpty()) {
+                        mergeCloudMocksIntoLocal(remoteMocks)
+                        markSynced()
+                    }
+                }
+        }
+
+        val customJob = viewModelScope.launch {
+            cloudSync.observeCustomQuestions(currentUserId)
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    if (!isSigningOut) {
+                        val rootError = firestoreError ?: error
+                        Log.w(TAG, "Custom questions sync stream interrupted", rootError)
+                        recordSyncFailure(rootError)
+                    }
+                }
+                .collect { remoteCustom ->
+                    if (!isSigningOut && remoteCustom.isNotEmpty()) {
+                        mergeCloudCustomQuestionsIntoLocal(remoteCustom)
+                        markSynced()
+                    }
+                }
+        }
+
+        syncListenerJobs = listOf(profileJob, progressJob, mockJob, customJob)
+    }
+
+    private suspend fun performBidirectionalSync(showFeedbackToast: Boolean) {
+        if (currentUserId.isBlank() || isSigningOut) return
+        _cloudSyncState.update {
+            it.copy(status = SyncBadgeState.SYNCING, detailMessage = "Syncing with your Google account...")
+        }
+        val snapshotResult = cloudSync.fetchAccountSnapshot(currentUserId)
+        val snapshot = snapshotResult.getOrElse { err ->
+            recordSyncFailure(err)
+            if (showFeedbackToast) {
+                showMessage("Offline or sync unavailable — local study data is safe.")
+            }
+            return
+        }
+
+        mergeSnapshotBidirectionally(snapshot)
+        markSynced()
+        if (showFeedbackToast) {
+            showMessage("Synced with your Google account!")
+        }
+    }
+
+    private suspend fun mergeSnapshotBidirectionally(snapshot: CloudAccountSnapshot) {
+        // 1. Profile & Preferences
+        if (snapshot.profile != null) {
+            applyRemoteProfileToLocal(snapshot.profile)
+        } else {
+            pushCurrentProfileToCloud()
+        }
+
+        // 2. Question Progress & Bookmarks
+        val localProgress = repository.getAllProgressSnapshot()
+        val localMap = localProgress.associateBy { it.questionId }
+        val cloudMap = snapshot.progress.associateBy { it.questionId.ifBlank { it.id } }
+
+        mergeCloudProgressIntoLocal(snapshot.progress)
+
+        val toPush = localProgress.filter { local ->
+            CloudMergeLogic.shouldPushLocalProgress(local, cloudMap[local.questionId])
+        }
+        if (toPush.isNotEmpty()) {
+            cloudSync.upsertProgressBatch(currentUserId, toPush).onFailure { recordSyncFailure(it) }
+        }
+
+        // 3. Mock History
+        mergeCloudMocksIntoLocal(snapshot.mockHistory)
+        val cloudMockKeys = snapshot.mockHistory.map { "${it.completedAtMs}_${it.examId}_${it.title}" }.toSet()
+        val localMocks = repository.getAllMockHistorySnapshot()
+        localMocks.forEach { localMock ->
+            val key = "${localMock.timestamp}_${localMock.examId}_${localMock.title}"
+            if (key !in cloudMockKeys) {
+                cloudSync.upsertMockHistory(currentUserId, localMock).onFailure { recordSyncFailure(it) }
+            }
+        }
+
+        // 4. Custom Questions
+        mergeCloudCustomQuestionsIntoLocal(snapshot.customQuestions)
+        val cloudCustomIds = snapshot.customQuestions.map { it.id }.toSet()
+        val (localCustom, localExamMap) = repository.getCustomQuestionsWithExamIds()
+        val missingInCloud = localCustom.filter { it.id !in cloudCustomIds }
+        if (missingInCloud.isNotEmpty()) {
+            cloudSync.upsertCustomQuestions(currentUserId, missingInCloud, localExamMap)
+                .onFailure { recordSyncFailure(it) }
+        }
+    }
+
+    private fun applyRemoteProfileToLocal(remote: CloudUserProfile) {
+        applyingCloudProfile = true
+        try {
+            val resolvedName = remote.displayName.ifBlank { signedInAccount.displayName }
+            settings.applySyncedProfile(
+                displayName = resolvedName,
+                role = remote.role,
+                targetYear = remote.targetYear.ifBlank { SettingsPreferences.DEFAULT_TARGET_YEAR },
+                focusSubject = remote.focusSubject,
+                activeExamId = remote.activeExamId,
+                themePreference = CloudMergeLogic.parseThemeSafe(remote.themePreference),
+                negativeMarking = remote.negativeMarking,
+                useTimeLimit = remote.useTimeLimit,
+                secondsPerQuestion = remote.secondsPerQuestion.toInt(),
+                keepScreenOn = remote.keepScreenOn
+            )
+        } finally {
+            applyingCloudProfile = false
+        }
+    }
+
+    private suspend fun mergeCloudProgressIntoLocal(remoteList: List<CloudQuestionProgress>) {
+        if (remoteList.isEmpty()) return
+        val localMap = repository.getAllProgressSnapshot().associateBy { it.questionId }
+        val mergedUpdates = remoteList.mapNotNull { cloud ->
+            val qId = cloud.questionId.ifBlank { cloud.id }
+            if (qId.isBlank()) return@mapNotNull null
+            val local = localMap[qId]
+            val merged = CloudMergeLogic.mergeProgress(local, cloud)
+            if (merged != local) merged else null
+        }
+        if (mergedUpdates.isNotEmpty()) {
+            repository.upsertProgressList(mergedUpdates)
+        }
+    }
+
+    private suspend fun mergeCloudMocksIntoLocal(remoteMocks: List<CloudMockHistory>) {
+        remoteMocks.forEach { cloud ->
+            repository.insertMockHistoryIfMissing(CloudMergeLogic.toLocalMockHistory(cloud))
+        }
+    }
+
+    private suspend fun mergeCloudCustomQuestionsIntoLocal(remoteCustom: List<CloudCustomQuestion>) {
+        if (remoteCustom.isEmpty()) return
+        val domainQuestions = remoteCustom.mapNotNull { CloudMergeLogic.toDomainQuestion(it) }
+        if (domainQuestions.isEmpty()) return
+        val examMap = remoteCustom.associate { it.id to it.examIds }
+        repository.saveCustomQuestions(
+            questions = domainQuestions,
+            examIds = listOf(settings.activeExamId.value),
+            customExamMap = examMap
+        )
+    }
+
+    private fun scheduleProfileCloudPush() {
+        if (applyingCloudProfile || currentUserId.isBlank() || isSigningOut) return
+        profilePushJob?.cancel()
+        profilePushJob = viewModelScope.launch {
+            delay(650L)
+            pushCurrentProfileToCloud()
+        }
+    }
+
+    private suspend fun pushCurrentProfileToCloud() {
+        if (currentUserId.isBlank() || isSigningOut) return
+        val result = cloudSync.upsertProfile(
+            userId = currentUserId,
+            displayName = settings.profileName.value,
+            role = settings.profileRole.value,
+            targetYear = settings.targetYear.value,
+            focusSubject = settings.focusSubject.value,
+            activeExamId = settings.activeExamId.value,
+            themePreference = settings.themePreference.value.name,
+            negativeMarking = settings.negativeMarking.value,
+            useTimeLimit = settings.useTimeLimit.value,
+            secondsPerQuestion = settings.secondsPerQuestion.value,
+            keepScreenOn = settings.keepScreenOn.value
+        )
+        result.onSuccess { markSynced() }.onFailure { recordSyncFailure(it) }
+    }
+
+    private fun markSynced() {
+        _cloudSyncState.value = CloudSyncUiState(
+            status = SyncBadgeState.SYNCED,
+            lastSyncedAtMs = System.currentTimeMillis(),
+            detailMessage = "All study progress backed up to cloud"
+        )
+    }
+
+    private fun recordSyncFailure(error: Throwable) {
+        val root = extractFirestoreRootError(error)
+        val offline = isPermissionDeniedOrOffline(root)
+        _cloudSyncState.update { prev ->
+            prev.copy(
+                status = if (offline) SyncBadgeState.OFFLINE else SyncBadgeState.ERROR,
+                detailMessage = if (offline) {
+                    "Offline — saved locally, will sync when online"
+                } else {
+                    root.localizedMessage ?: "Cloud sync paused — local data safe"
+                }
+            )
         }
     }
 
@@ -384,6 +706,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         settings.setActiveExamId(examId)
         _isExamPickerOpen.value = false
         if (changed) {
+            scheduleProfileCloudPush()
             stopActiveTimer()
             _practiceSession.value = null
             _cbtSession.value = null
@@ -415,46 +738,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleTheme(currentlyDark: Boolean) {
         settings.cycleTheme(currentlyDark)
+        scheduleProfileCloudPush()
     }
 
     fun setThemePreference(preference: ThemePreference) {
         settings.setThemePreference(preference)
+        scheduleProfileCloudPush()
     }
 
     fun setProfileName(name: String) {
         settings.setProfileName(name)
+        scheduleProfileCloudPush()
     }
 
     fun setProfileRole(role: String) {
         settings.setProfileRole(role)
+        scheduleProfileCloudPush()
     }
 
     fun setTargetYear(year: String) {
         settings.setTargetYear(year)
+        scheduleProfileCloudPush()
     }
 
     fun setFocusSubject(subjectCode: String) {
         settings.setFocusSubject(subjectCode)
+        scheduleProfileCloudPush()
     }
 
     fun setUseTimeLimit(enabled: Boolean) {
         settings.setUseTimeLimit(enabled)
+        scheduleProfileCloudPush()
     }
 
     fun setSecondsPerQuestion(seconds: Int) {
         settings.setSecondsPerQuestion(seconds)
+        scheduleProfileCloudPush()
     }
 
     fun setKeepScreenOn(enabled: Boolean) {
         settings.setKeepScreenOn(enabled)
+        scheduleProfileCloudPush()
     }
 
     fun setNegativeMarking(enabled: Boolean) {
         settings.setNegativeMarking(enabled)
+        scheduleProfileCloudPush()
     }
 
     fun toggleNegativeMarking() {
         settings.setNegativeMarking(!settings.negativeMarking.value)
+        scheduleProfileCloudPush()
     }
 
     fun clearSnackbar() {
@@ -533,7 +867,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
 
         viewModelScope.launch {
-            repository.recordAttempt(qItem.id, isCorrect)
+            val savedProgress = repository.recordAttempt(qItem.id, isCorrect)
+            if (currentUserId.isNotBlank() && !isSigningOut) {
+                cloudSync.upsertProgress(currentUserId, savedProgress)
+                    .onSuccess { markSynced() }
+                    .onFailure { recordSyncFailure(it) }
+            }
         }
     }
 
@@ -921,8 +1260,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
 
         viewModelScope.launch {
-            repository.recordBatchAttempts(batchResults)
-            repository.saveMockHistory(
+            val savedProgress = repository.recordBatchAttempts(batchResults)
+            val savedMock = repository.saveMockHistory(
                 title = sess.title,
                 totalQuestions = sess.questions.size,
                 correctCount = right,
@@ -932,6 +1271,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 accuracyPercent = acc,
                 examId = settings.activeExamId.value
             )
+            if (currentUserId.isNotBlank() && !isSigningOut) {
+                cloudSync.upsertProgressBatch(currentUserId, savedProgress)
+                    .onFailure { recordSyncFailure(it) }
+                cloudSync.upsertMockHistory(currentUserId, savedMock)
+                    .onSuccess { markSynced() }
+                    .onFailure { recordSyncFailure(it) }
+            }
         }
     }
 
@@ -944,13 +1290,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ------------------------------------------------------------------------
     fun toggleBookmark(questionId: String) {
         viewModelScope.launch {
-            repository.toggleBookmark(questionId)
+            val saved = repository.toggleBookmark(questionId)
+            if (currentUserId.isNotBlank() && !isSigningOut) {
+                cloudSync.upsertProgress(currentUserId, saved)
+                    .onSuccess { markSynced() }
+                    .onFailure { recordSyncFailure(it) }
+            }
         }
     }
 
     fun clearAllStatistics() {
         viewModelScope.launch {
-            repository.clearStatistics()
+            val resetList = repository.clearStatistics()
+            if (currentUserId.isNotBlank() && !isSigningOut && resetList.isNotEmpty()) {
+                cloudSync.upsertProgressBatch(currentUserId, resetList)
+                    .onSuccess { markSynced() }
+                    .onFailure { recordSyncFailure(it) }
+            }
             showMessage("Attempt statistics cleared. Bookmarks preserved.")
         }
     }
@@ -1007,11 +1363,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             emptyMap()
         }
         viewModelScope.launch {
+            val activeExam = settings.activeExamId.value
             repository.saveCustomQuestions(
                 questions = list,
-                examIds = listOf(settings.activeExamId.value),
+                examIds = listOf(activeExam),
                 topicLabelOverrides = topicLabelOverrides
             )
+            if (currentUserId.isNotBlank() && !isSigningOut) {
+                val examMap = list.associate { it.id to listOf(activeExam) }
+                cloudSync.upsertCustomQuestions(currentUserId, list, examMap)
+                    .onSuccess { markSynced() }
+                    .onFailure { recordSyncFailure(it) }
+            }
             _importerState.update {
                 it.copy(
                     isVisible = false,
@@ -1023,7 +1386,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     hasPreviewed = false
                 )
             }
-            showMessage("Saved ${list.size} questions permanently offline!")
+            showMessage("Saved ${list.size} questions offline & synced to cloud!")
         }
     }
 
@@ -1037,10 +1400,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         viewModelScope.launch {
+            val activeExam = settings.activeExamId.value
             repository.saveCustomQuestions(
                 questions = parsed,
-                examIds = listOf(settings.activeExamId.value)
+                examIds = listOf(activeExam)
             )
+            if (currentUserId.isNotBlank() && !isSigningOut) {
+                val examMap = parsed.associate { it.id to listOf(activeExam) }
+                cloudSync.upsertCustomQuestions(currentUserId, parsed, examMap)
+                    .onSuccess { markSynced() }
+                    .onFailure { recordSyncFailure(it) }
+            }
             _importerState.update { it.copy(isVisible = false, jsonText = "") }
             showMessage("Imported ${parsed.size} JSON questions!")
         }
@@ -1063,6 +1433,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching { repository.restoreBackup(jsonText, defaultExamId = settings.activeExamId.value) }
                 .onSuccess { count ->
                     _importerState.update { it.copy(isVisible = false) }
+                    if (currentUserId.isNotBlank() && !isSigningOut) {
+                        performBidirectionalSync(showFeedbackToast = false)
+                    }
                     showMessage("Backup restored ($count custom questions + progress synced).")
                 }
                 .onFailure {
@@ -1074,6 +1447,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearCustomQuestions() {
         viewModelScope.launch {
             repository.clearCustomQuestions()
+            if (currentUserId.isNotBlank() && !isSigningOut) {
+                cloudSync.deleteAllCustomQuestions(currentUserId)
+                    .onSuccess { markSynced() }
+                    .onFailure { recordSyncFailure(it) }
+            }
             showMessage("Deleted all custom imported questions. Built-in MCQs remain safe.")
         }
     }
@@ -1180,5 +1558,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         stopActiveTimer()
+        detachCloudSyncForSignOut()
+    }
+
+    private companion object {
+        const val TAG = "MainViewModel"
     }
 }

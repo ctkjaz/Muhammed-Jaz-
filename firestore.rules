@@ -1,0 +1,272 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 0: Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global hardened primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    // Validation Helper 1: UserProfile
+    function isValidUserProfile(data, userId) {
+      return data.userId is string &&
+             data.userId == userId &&
+             data.userId == request.auth.uid &&
+             data.displayName is string && data.displayName.size() <= 40 &&
+             data.role is string && data.role.size() <= 40 &&
+             data.targetYear is string && data.targetYear.size() <= 10 &&
+             data.focusSubject is string && data.focusSubject.size() <= 32 &&
+             data.activeExamId is string && data.activeExamId.size() >= 1 && data.activeExamId.size() <= 64 &&
+             data.themePreference is string && data.themePreference in ['LIGHT', 'DARK', 'SYSTEM'] &&
+             data.negativeMarking is bool &&
+             data.useTimeLimit is bool &&
+             data.secondsPerQuestion is int && data.secondsPerQuestion >= 20 && data.secondsPerQuestion <= 120 &&
+             data.keepScreenOn is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // Validation Helper 2: QuestionProgressRecord
+    function isValidQuestionProgress(data, userId, questionId) {
+      return data.userId is string &&
+             data.userId == userId &&
+             data.userId == request.auth.uid &&
+             data.questionId is string &&
+             data.questionId == questionId &&
+             isValidId(data.questionId) &&
+             data.bookmarked is bool &&
+             data.attemptsCount is int && data.attemptsCount >= 0 && data.attemptsCount <= 100000 &&
+             data.correctCount is int && data.correctCount >= 0 && data.correctCount <= 100000 &&
+             data.wrongCount is int && data.wrongCount >= 0 && data.wrongCount <= 100000 &&
+             (!('lastOutcome' in data) || (data.lastOutcome is string && data.lastOutcome in ['right', 'wrong'])) &&
+             data.clientUpdatedAtMs is int && data.clientUpdatedAtMs >= 0 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // Validation Helper 3: MockHistoryRecord
+    function isValidMockHistory(data, userId) {
+      return data.userId is string &&
+             data.userId == userId &&
+             data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.examId is string && data.examId.size() >= 1 && data.examId.size() <= 64 &&
+             data.totalQuestions is int && data.totalQuestions >= 1 && data.totalQuestions <= 500 &&
+             data.correctCount is int && data.correctCount >= 0 && data.correctCount <= 500 &&
+             data.wrongCount is int && data.wrongCount >= 0 && data.wrongCount <= 500 &&
+             data.skippedCount is int && data.skippedCount >= 0 && data.skippedCount <= 500 &&
+             data.netScore is number && data.netScore >= -500 && data.netScore <= 500 &&
+             data.accuracyPercent is int && data.accuracyPercent >= 0 && data.accuracyPercent <= 100 &&
+             data.completedAtMs is int && data.completedAtMs >= 0 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // Validation Helper 4: CustomQuestionRecord
+    function isValidCustomQuestion(data, userId) {
+      return data.userId is string &&
+             data.userId == userId &&
+             data.userId == request.auth.uid &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 32 &&
+             data.shiftYear is string && data.shiftYear.size() <= 40 &&
+             data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 40 &&
+             data.difficulty is string && data.difficulty in ['Easy', 'Medium', 'Hard'] &&
+             data.questionText is string && data.questionText.size() >= 1 && data.questionText.size() <= 2000 &&
+             data.options is list && data.options.size() >= 2 && data.options.size() <= 6 && data.options[0] is string &&
+             data.correctIndex is int && data.correctIndex >= 0 && data.correctIndex < data.options.size() &&
+             data.explanation is string && data.explanation.size() <= 4000 &&
+             data.sourceStatus is string && data.sourceStatus in ['verified', 'unverified'] &&
+             data.sourceNote is string && data.sourceNote.size() <= 200 &&
+             data.topicId is string && data.topicId.size() <= 80 &&
+             data.sourceType is string && data.sourceType.size() >= 1 && data.sourceType.size() <= 40 &&
+             data.examYear is string && data.examYear.size() <= 20 &&
+             data.examShift is string && data.examShift.size() <= 32 &&
+             data.examIds is list && data.examIds.size() >= 1 && data.examIds.size() <= 10 && data.examIds[0] is string &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // ------------------------------------------------------------------------
+    // /users/{userId} — Owner-only profile & preferences (no list scraping)
+    // ------------------------------------------------------------------------
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'displayName', 'role', 'targetYear', 'focusSubject',
+                         'activeExamId', 'themePreference', 'negativeMarking', 'useTimeLimit',
+                         'secondsPerQuestion', 'keepScreenOn', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'role', 'targetYear', 'focusSubject',
+                         'activeExamId', 'themePreference', 'negativeMarking', 'useTimeLimit',
+                         'secondsPerQuestion', 'keepScreenOn', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidUserProfile(incoming(), userId);
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt && (
+                         // Action: Update learner profile & study preferences
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'displayName', 'role', 'targetYear', 'focusSubject',
+                           'activeExamId', 'themePreference', 'negativeMarking',
+                           'useTimeLimit', 'secondsPerQuestion', 'keepScreenOn', 'updatedAt'
+                         ])
+                       );
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // ----------------------------------------------------------------------
+      // /users/{userId}/progress/{questionId}
+      // ----------------------------------------------------------------------
+      match /progress/{questionId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(questionId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(questionId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'questionId', 'bookmarked', 'attemptsCount',
+                           'correctCount', 'wrongCount', 'clientUpdatedAtMs',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'questionId', 'bookmarked', 'attemptsCount',
+                           'correctCount', 'wrongCount', 'lastOutcome',
+                           'clientUpdatedAtMs', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidQuestionProgress(incoming(), userId, questionId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(questionId) &&
+                         isValidQuestionProgress(incoming(), userId, questionId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().questionId == existing().questionId &&
+                         incoming().createdAt == existing().createdAt && (
+                           // Action: Sync question attempt, bookmark, or stats reset
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'bookmarked', 'attemptsCount', 'correctCount', 'wrongCount',
+                             'lastOutcome', 'clientUpdatedAtMs', 'updatedAt'
+                           ])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(questionId);
+      }
+
+      // ----------------------------------------------------------------------
+      // /users/{userId}/mockHistory/{mockId}
+      // ----------------------------------------------------------------------
+      match /mockHistory/{mockId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(mockId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(mockId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'title', 'examId', 'totalQuestions',
+                           'correctCount', 'wrongCount', 'skippedCount',
+                           'netScore', 'accuracyPercent', 'completedAtMs',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'title', 'examId', 'totalQuestions',
+                           'correctCount', 'wrongCount', 'skippedCount',
+                           'netScore', 'accuracyPercent', 'completedAtMs',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidMockHistory(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(mockId) &&
+                         isValidMockHistory(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt && (
+                           // Action: Refresh mock history record metadata
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'title', 'examId', 'totalQuestions', 'correctCount',
+                             'wrongCount', 'skippedCount', 'netScore',
+                             'accuracyPercent', 'completedAtMs', 'updatedAt'
+                           ])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(mockId);
+      }
+
+      // ----------------------------------------------------------------------
+      // /users/{userId}/customQuestions/{questionId}
+      // ----------------------------------------------------------------------
+      match /customQuestions/{questionId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(questionId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(questionId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'category', 'shiftYear', 'subject', 'difficulty',
+                           'questionText', 'options', 'correctIndex', 'explanation',
+                           'sourceStatus', 'sourceNote', 'topicId', 'sourceType',
+                           'examYear', 'examShift', 'examIds', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'category', 'shiftYear', 'subject', 'difficulty',
+                           'questionText', 'options', 'correctIndex', 'explanation',
+                           'sourceStatus', 'sourceNote', 'topicId', 'sourceType',
+                           'examYear', 'examShift', 'examIds', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidCustomQuestion(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(questionId) &&
+                         isValidCustomQuestion(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt && (
+                           // Action: Edit custom question metadata or exam links
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'category', 'shiftYear', 'subject', 'difficulty',
+                             'questionText', 'options', 'correctIndex', 'explanation',
+                             'sourceStatus', 'sourceNote', 'topicId', 'sourceType',
+                             'examYear', 'examShift', 'examIds', 'updatedAt'
+                           ])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(questionId);
+      }
+    }
+  }
+}

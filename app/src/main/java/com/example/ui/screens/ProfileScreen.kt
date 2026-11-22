@@ -28,16 +28,22 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -58,6 +64,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.data.cloud.CloudSyncUiState
+import com.example.data.cloud.SignedInAccountInfo
+import com.example.data.cloud.SyncBadgeState
 import com.example.data.local.SettingsPreferences
 import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectCatalog
@@ -74,12 +83,16 @@ fun ProfileDrawerContent(
     profileRole: String,
     targetYear: String,
     focusSubject: String,
+    account: SignedInAccountInfo,
+    cloudSyncState: CloudSyncUiState,
     state: DashboardDerivedState,
     onOpenFullProfile: () -> Unit,
     onOpenExamPicker: () -> Unit,
     onOpenSubjectSection: (SubjectHubSection) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenImporter: () -> Unit,
+    onSyncNow: () -> Unit,
+    onSignOut: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val displayName = profileName.trim().ifBlank { "ClinEdge Learner" }
@@ -150,6 +163,15 @@ fun ProfileDrawerContent(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            if (account.email.isNotBlank()) {
+                                Text(
+                                    text = account.email,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                             if (targetYear.isNotBlank()) {
                                 Text(
                                     text = "Target $targetYear",
@@ -347,6 +369,17 @@ fun ProfileDrawerContent(
 
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 DrawerActionRow(
+                    icon = if (cloudSyncState.status == SyncBadgeState.OFFLINE) Icons.Filled.CloudOff else Icons.Filled.CloudSync,
+                    label = when (cloudSyncState.status) {
+                        SyncBadgeState.SYNCING -> "Syncing to cloud..."
+                        SyncBadgeState.SYNCED -> "Cloud Synced • Sync Now"
+                        SyncBadgeState.OFFLINE -> "Offline • Tap to Sync"
+                        else -> "Sync Cloud Progress"
+                    },
+                    onClick = onSyncNow,
+                    testTag = "drawer_sync_now_btn"
+                )
+                DrawerActionRow(
                     icon = Icons.Filled.AddCircleOutline,
                     label = "Import & Backup",
                     onClick = onOpenImporter,
@@ -357,6 +390,12 @@ fun ProfileDrawerContent(
                     label = "Settings & Appearance",
                     onClick = onOpenSettings,
                     testTag = "drawer_settings_btn"
+                )
+                DrawerActionRow(
+                    icon = Icons.AutoMirrored.Filled.Logout,
+                    label = "Sign Out",
+                    onClick = onSignOut,
+                    testTag = "drawer_sign_out_btn"
                 )
             }
         }
@@ -409,6 +448,8 @@ fun ProfileScreen(
     profileRole: String,
     targetYear: String,
     focusSubject: String,
+    account: SignedInAccountInfo,
+    cloudSyncState: CloudSyncUiState,
     state: DashboardDerivedState,
     onProfileNameChange: (String) -> Unit,
     onProfileRoleChange: (String) -> Unit,
@@ -417,6 +458,8 @@ fun ProfileScreen(
     onOpenExamPicker: () -> Unit,
     onPracticeSubject: (List<QuestionItem>, String) -> Unit,
     onOpenSettings: () -> Unit,
+    onSyncNow: () -> Unit,
+    onSignOut: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -537,6 +580,111 @@ fun ProfileScreen(
                                 value = "${state.overall.bookmarkCount}",
                                 modifier = Modifier.weight(1f)
                             )
+                        }
+                    }
+                }
+            }
+
+            // 0. Google Account & Cloud Sync
+            item {
+                ProfileSectionCard(
+                    title = "Google Account & Cloud Sync",
+                    icon = if (cloudSyncState.status == SyncBadgeState.OFFLINE) Icons.Filled.CloudOff else Icons.Filled.CloudDone,
+                    cardTag = "profile_card_cloud_account"
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = account.email.ifBlank { "Google Account Connected" },
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = cloudSyncState.detailMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        val badgeLabel = when (cloudSyncState.status) {
+                            SyncBadgeState.SYNCING -> "Syncing"
+                            SyncBadgeState.SYNCED -> "Synced"
+                            SyncBadgeState.OFFLINE -> "Offline"
+                            SyncBadgeState.ERROR -> "Paused"
+                            SyncBadgeState.IDLE -> "Ready"
+                        }
+                        val badgeColor = when (cloudSyncState.status) {
+                            SyncBadgeState.SYNCED -> editorial.correctText
+                            SyncBadgeState.ERROR -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.primary
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = badgeColor.copy(alpha = 0.14f),
+                            border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.35f))
+                        ) {
+                            Text(
+                                text = badgeLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = badgeColor,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = onSyncNow,
+                            enabled = cloudSyncState.status != SyncBadgeState.SYNCING,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("profile_sync_now_btn")
+                        ) {
+                            if (cloudSyncState.status == SyncBadgeState.SYNCING) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Syncing...")
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Filled.Sync,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Sync Now", fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = onSignOut,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("profile_sign_out_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Logout,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Sign Out")
                         }
                     }
                 }
