@@ -914,10 +914,10 @@ class RrbNursingLogicTest {
             // RRB stays completely intact (1,223 questions)
             assertEquals(1223, rrbQuestions.size)
 
-            // NORCET contains all 160 dedicated N_* questions + shared Nursing & GK/Aptitude (excluding Railways)
+            // NORCET contains all 320 dedicated N_* questions + shared Nursing & GK/Aptitude (excluding Railways)
             val dedicatedNorcet = norcetQuestions.filter { it.id.startsWith("N_") }
-            assertEquals(160, dedicatedNorcet.size)
-            assertTrue(norcetQuestions.size > 1000)
+            assertEquals(320, dedicatedNorcet.size)
+            assertTrue(norcetQuestions.size > 1400)
             assertTrue(norcetQuestions.none { it.question.subject == "Railways" })
 
             // Every dedicated NORCET question has 4 options, valid answer index, and non-blank rationale
@@ -928,13 +928,16 @@ class RrbNursingLogicTest {
                 assertFalse(item.question.isVerifiedSource) // Honest memory-based / practice labeling
             }
 
-            // PYQ shift isolation: NORCET PYQs must ONLY contain NORCET-5..9, never RRB shifts like 2025-S1
+            // PYQ shift isolation: NORCET PYQs must ONLY contain NORCET-5..10, never RRB shifts like 2025-S1
             val norcetPyqShifts = norcetQuestions
                 .filter { it.question.isPyqTagged }
                 .map { it.question.shiftYear }
                 .distinct()
                 .toSet()
-            assertEquals(setOf("NORCET-9", "NORCET-8", "NORCET-7", "NORCET-6", "NORCET-5"), norcetPyqShifts)
+            assertEquals(
+                setOf("NORCET-10", "NORCET-9", "NORCET-8", "NORCET-7", "NORCET-6", "NORCET-5"),
+                norcetPyqShifts
+            )
 
             // RRB PYQ shifts remain intact and never show NORCET shifts
             val rrbPyqShifts = rrbQuestions

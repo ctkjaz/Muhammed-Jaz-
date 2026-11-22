@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -96,6 +97,10 @@ fun CbtExamScreen(
     onConfirmSubmit: () -> Unit,
     onChangeReviewFilter: (CbtReviewFilter) -> Unit,
     onExit: () -> Unit,
+    onRequestNextSection: () -> Unit = {},
+    onDismissNextSection: () -> Unit = {},
+    onConfirmNextSection: () -> Unit = {},
+    onDismissSectionNotice: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var paletteSheetOpen by remember { mutableStateOf(false) }
@@ -164,9 +169,14 @@ fun CbtExamScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (session.hasCountdown) {
+                            val activeTimerSec = if (session.hasSectionLock) {
+                                session.sectionRemainingSeconds
+                            } else {
+                                session.remainingSeconds
+                            }
                             val timerBg = when {
-                                session.remainingSeconds <= 60 -> MutedCrimsonFill
-                                session.remainingSeconds <= 300 -> WarmOchreFill
+                                activeTimerSec <= 60 -> MutedCrimsonFill
+                                activeTimerSec <= 300 -> WarmOchreFill
                                 else -> EditorialBannerSurface
                             }
                             Surface(
@@ -186,7 +196,11 @@ fun CbtExamScreen(
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Text(
-                                        text = formatTimer(session.remainingSeconds),
+                                        text = if (session.hasSectionLock) {
+                                            "S${session.currentSectionIndex + 1} ${formatTimer(activeTimerSec)}"
+                                        } else {
+                                            formatTimer(activeTimerSec)
+                                        },
                                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
                                         color = WarmWhite,
                                         fontWeight = FontWeight.Bold
@@ -219,6 +233,89 @@ fun CbtExamScreen(
                             modifier = Modifier.testTag("cbt_submit_header_btn")
                         ) {
                             Text("Submit", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            if (session.hasSectionLock) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("cbt_section_lock_bar")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Lock,
+                                contentDescription = "Section locked mode",
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "${session.currentSectionLabel} (${session.currentSectionIndex + 1}/${session.totalSections})",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Q${session.activeSectionRange.first + 1}–Q${session.activeSectionRange.last + 1} active • Total left ${formatTimer(session.remainingSeconds)}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
+                                )
+                            }
+                        }
+                        if (!session.isLastSection) {
+                            OutlinedButton(
+                                onClick = onRequestNextSection,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.testTag("cbt_next_section_btn")
+                            ) {
+                                Text("Next Sec", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            session.sectionAutoAdvanceNotice?.let { notice ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = notice,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = onDismissSectionNotice) {
+                            Text("OK", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -374,7 +471,11 @@ fun CbtExamScreen(
                                 .testTag("cbt_save_next_btn")
                         ) {
                             Text(
-                                if (session.currentIndex < session.questions.lastIndex) "Save & Next" else "Save & Finish",
+                                when {
+                                    session.currentIndex < session.activeSectionRange.last -> "Save & Next"
+                                    session.hasSectionLock && !session.isLastSection -> "Lock & Next Sec"
+                                    else -> "Save & Finish"
+                                },
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1
@@ -440,6 +541,35 @@ fun CbtExamScreen(
                     )
                 ) {
                     Text("View Score Card")
+                }
+            }
+        )
+    }
+
+    if (session.showSectionAdvanceConfirm && session.hasSectionLock && !session.isLastSection && !session.showTimeoutDialog) {
+        val secRange = session.activeSectionRange
+        val secAnswered = secRange.count { session.selectedAnswers.containsKey(it) }
+        val secTotal = secRange.count()
+        AlertDialog(
+            onDismissRequest = onDismissNextSection,
+            title = { Text("Lock Section ${session.currentSectionIndex + 1} & Continue?") },
+            text = {
+                Text(
+                    "You have answered $secAnswered of $secTotal questions in ${session.currentSectionLabel}. " +
+                        "Per AIIMS NORCET CBT rules, once you advance to Section ${session.currentSectionIndex + 2}, this section is locked and cannot be revisited."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = onConfirmNextSection,
+                    modifier = Modifier.testTag("cbt_confirm_next_section_btn")
+                ) {
+                    Text("Lock & Next Section")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissNextSection) {
+                    Text("Stay in Section")
                 }
             }
         )
@@ -523,6 +653,13 @@ private fun CbtPaletteContent(
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Question Palette", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        if (session.hasSectionLock) {
+            Text(
+                text = "${session.currentSectionLabel} (Q${session.activeSectionRange.first + 1}–Q${session.activeSectionRange.last + 1}) • Other sections locked",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             LegendChip(color = CalmSageFill, text = "Ans (${counts.getValue(CbtPaletteStatus.ANSWERED)})", modifier = Modifier.weight(1f))
@@ -543,17 +680,20 @@ private fun CbtPaletteContent(
                 .heightIn(max = 260.dp)
         ) {
             items(session.questions.size) { idx ->
+                val inActiveSection = session.isIndexInActiveSection(idx)
                 val st = session.paletteStatuses[idx] ?: CbtPaletteStatus.NOT_VISITED
-                val bg = when (st) {
+                val baseBg = when (st) {
                     CbtPaletteStatus.ANSWERED -> CalmSageFill
                     CbtPaletteStatus.NOT_ANSWERED -> MutedCrimsonFill
                     CbtPaletteStatus.MARKED, CbtPaletteStatus.ANSWERED_MARKED -> MutedPlumFill
                     CbtPaletteStatus.NOT_VISITED -> MaterialTheme.colorScheme.surfaceVariant
                 }
-                val fg = if (st == CbtPaletteStatus.NOT_VISITED) MaterialTheme.colorScheme.onSurface else WarmWhite
+                val bg = if (inActiveSection) baseBg else baseBg.copy(alpha = 0.28f)
+                val baseFg = if (st == CbtPaletteStatus.NOT_VISITED) MaterialTheme.colorScheme.onSurface else WarmWhite
+                val fg = if (inActiveSection) baseFg else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
                 val border = when {
                     idx == session.currentIndex -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-                    st == CbtPaletteStatus.ANSWERED_MARKED -> BorderStroke(2.dp, CalmSageFill)
+                    st == CbtPaletteStatus.ANSWERED_MARKED && inActiveSection -> BorderStroke(2.dp, CalmSageFill)
                     else -> null
                 }
 
@@ -564,7 +704,7 @@ private fun CbtPaletteContent(
                     modifier = Modifier
                         .size(42.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .clickable { onSelectQuestion(idx) }
+                        .clickable(enabled = inActiveSection) { onSelectQuestion(idx) }
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(

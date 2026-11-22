@@ -131,8 +131,39 @@ data class CbtSessionState(
     val isSubmitted: Boolean = false,
     val showSubmitConfirm: Boolean = false,
     val showTimeoutDialog: Boolean = false,
-    val reviewFilter: CbtReviewFilter = CbtReviewFilter.ALL
-)
+    val reviewFilter: CbtReviewFilter = CbtReviewFilter.ALL,
+    val sectionSize: Int = 0,
+    val sectionDurationSeconds: Int = 0,
+    val sectionLabels: List<String> = emptyList(),
+    val currentSectionIndex: Int = 0,
+    val sectionRemainingSeconds: Int = 0,
+    val showSectionAdvanceConfirm: Boolean = false,
+    val sectionAutoAdvanceNotice: String? = null
+) {
+    val hasSectionLock: Boolean
+        get() = sectionSize > 0 && sectionDurationSeconds > 0 && questions.size > sectionSize
+
+    val totalSections: Int
+        get() = if (!hasSectionLock) 1 else ((questions.size + sectionSize - 1) / sectionSize)
+
+    val activeSectionRange: IntRange
+        get() {
+            if (!hasSectionLock) return questions.indices
+            val start = (currentSectionIndex * sectionSize).coerceIn(0, questions.lastIndex.coerceAtLeast(0))
+            val end = ((currentSectionIndex + 1) * sectionSize - 1).coerceAtMost(questions.lastIndex.coerceAtLeast(0))
+            return start..end
+        }
+
+    val currentSectionLabel: String
+        get() = sectionLabels.getOrNull(currentSectionIndex)
+            ?: "Section ${currentSectionIndex + 1} of $totalSections"
+
+    val isLastSection: Boolean
+        get() = !hasSectionLock || currentSectionIndex >= totalSections - 1
+
+    fun isIndexInActiveSection(index: Int): Boolean =
+        !hasSectionLock || index in activeSectionRange
+}
 
 data class TimedPracticeConfigState(
     val isVisible: Boolean = false,
@@ -1440,7 +1471,11 @@ class MainViewModel(
     ) {
         val all = mainState.value.questions
         if (all.isEmpty()) return
-        val nursingPct = PlatformCatalogDefaults.nursingWeightagePercent(settings.activeExamId.value)
+        val activeExamId = settings.activeExamId.value
+        val isNorcetFullPrelims = isOfficialFullMock &&
+            PlatformCatalogDefaults.isNorcetExam(activeExamId) &&
+            totalQuestions == 100
+        val nursingPct = PlatformCatalogDefaults.nursingWeightagePercent(activeExamId)
         val nursingCount = (totalQuestions * nursingPct) / 100
         val nonNursingCount = totalQuestions - nursingCount
         val nurPool = all.filter { SubjectCatalog.isNursing(it.question) }.shuffled()
@@ -1454,7 +1489,20 @@ class MainViewModel(
             items = selected,
             title = title,
             durationMinutes = durationMinutes,
-            isOfficialFullMock = isOfficialFullMock
+            isOfficialFullMock = isOfficialFullMock,
+            sectionSize = if (isNorcetFullPrelims && selected.size >= 100) 20 else 0,
+            sectionDurationMinutes = if (isNorcetFullPrelims && selected.size >= 100) 18 else 0,
+            sectionLabels = if (isNorcetFullPrelims && selected.size >= 100) {
+                listOf(
+                    "Section 1 • Nursing I (20Q)",
+                    "Section 2 • Nursing II (20Q)",
+                    "Section 3 • Nursing III (20Q)",
+                    "Section 4 • Nursing IV (20Q)",
+                    "Section 5 • GK & Aptitude (20Q)"
+                )
+            } else {
+                emptyList()
+            }
         )
     }
 
@@ -1462,17 +1510,33 @@ class MainViewModel(
         val all = mainState.value.questions
         if (all.isEmpty()) return
         val nursingPool = all.filter { SubjectCatalog.isNursing(it.question) }
-        // Prioritize clinical scenario & Hard nursing questions first for authentic NORCET Stage II Mains
-        val mainsPriority = nursingPool.filter {
-            it.id.startsWith("N_") || it.question.difficulty == QuestionDifficulty.HARD
+        // Prioritize dedicated NORCET clinical scenarios & Hard nursing questions for authentic Stage II Mains
+        val dedicatedNorcetNur = nursingPool.filter { it.id.startsWith("N_") }.shuffled()
+        val hardClinicalExtra = nursingPool.filter {
+            !it.id.startsWith("N_") && it.question.difficulty == QuestionDifficulty.HARD
         }.shuffled()
-        val remainingNursing = nursingPool.filter { q -> mainsPriority.none { it.id == q.id } }.shuffled()
-        val selected = (mainsPriority + remainingNursing).take(160)
+        val remainingNursing = nursingPool.filter { q ->
+            !q.id.startsWith("N_") && q.question.difficulty != QuestionDifficulty.HARD
+        }.shuffled()
+        val selected = (dedicatedNorcetNur + hardClinicalExtra + remainingNursing).take(160)
+        val useSectionLock = selected.size >= 160
         startCbtCustom(
             items = selected,
             title = "NORCET Stage II Mains (160Q Clinical CBT)",
             durationMinutes = 180,
-            isOfficialFullMock = false
+            isOfficialFullMock = true,
+            sectionSize = if (useSectionLock) 40 else 0,
+            sectionDurationMinutes = if (useSectionLock) 45 else 0,
+            sectionLabels = if (useSectionLock) {
+                listOf(
+                    "Section 1 • Clinical Nursing I (40Q)",
+                    "Section 2 • Clinical Nursing II (40Q)",
+                    "Section 3 • Clinical Nursing III (40Q)",
+                    "Section 4 • Clinical Nursing IV (40Q)"
+                )
+            } else {
+                emptyList()
+            }
         )
     }
 
@@ -1480,7 +1544,10 @@ class MainViewModel(
         items: List<QuestionItem>,
         title: String,
         durationMinutes: Int? = null,
-        isOfficialFullMock: Boolean = false
+        isOfficialFullMock: Boolean = false,
+        sectionSize: Int = 0,
+        sectionDurationMinutes: Int = 0,
+        sectionLabels: List<String> = emptyList()
     ) {
         if (items.isEmpty()) {
             showMessage("No questions available for this CBT test.")
@@ -1489,17 +1556,24 @@ class MainViewModel(
         stopActiveTimer()
         _practiceSession.value = null
         val activeExam = mainState.value.activeExam
-        val hasCountdown = isOfficialFullMock || settings.useTimeLimit.value
+        val useSectionLock = sectionSize > 0 && sectionDurationMinutes > 0 && items.size > sectionSize
+        val hasCountdown = isOfficialFullMock || useSectionLock || settings.useTimeLimit.value
+        val sectionDurationSec = if (useSectionLock) sectionDurationMinutes * 60 else 0
+        val totalSections = if (useSectionLock) ((items.size + sectionSize - 1) / sectionSize) else 1
         val totalSec = if (hasCountdown) {
-            val mins = if (isOfficialFullMock) {
-                activeExam?.defaultMockMinutes ?: 90
+            if (useSectionLock) {
+                totalSections * sectionDurationSec
             } else {
-                durationMinutes ?: SettingsPreferences.calculateSuggestedMinutes(
-                    questionCount = items.size,
-                    secondsPerQuestion = settings.secondsPerQuestion.value
-                ).coerceAtLeast(1)
+                val mins = durationMinutes ?: if (isOfficialFullMock) {
+                    activeExam?.defaultMockMinutes ?: 90
+                } else {
+                    SettingsPreferences.calculateSuggestedMinutes(
+                        questionCount = items.size,
+                        secondsPerQuestion = settings.secondsPerQuestion.value
+                    ).coerceAtLeast(1)
+                }
+                mins * 60
             }
-            mins * 60
         } else {
             0
         }
@@ -1514,7 +1588,12 @@ class MainViewModel(
             paletteStatuses = initialStatuses,
             hasCountdown = hasCountdown,
             totalSeconds = totalSec,
-            remainingSeconds = totalSec
+            remainingSeconds = totalSec,
+            sectionSize = if (useSectionLock) sectionSize else 0,
+            sectionDurationSeconds = sectionDurationSec,
+            sectionLabels = if (useSectionLock) sectionLabels else emptyList(),
+            currentSectionIndex = 0,
+            sectionRemainingSeconds = sectionDurationSec
         )
         if (hasCountdown) {
             startCbtTimer()
@@ -1528,15 +1607,101 @@ class MainViewModel(
                 delay(1000L)
                 val current = _cbtSession.value ?: break
                 if (!current.hasCountdown || current.isSubmitted || current.showTimeoutDialog) break
-                val nextSec = (current.remainingSeconds - 1).coerceAtLeast(0)
-                if (nextSec == 0) {
-                    _cbtSession.update { it?.copy(remainingSeconds = 0, showTimeoutDialog = true) }
-                    break
+
+                if (current.hasSectionLock) {
+                    val nextSectionSec = (current.sectionRemainingSeconds - 1).coerceAtLeast(0)
+                    val nextTotalSec = (current.remainingSeconds - 1).coerceAtLeast(0)
+                    if (nextSectionSec == 0) {
+                        if (!current.isLastSection) {
+                            advanceCbtSectionLocked(
+                                session = current.copy(remainingSeconds = nextTotalSec),
+                                triggeredByTimeout = true
+                            )
+                        } else {
+                            _cbtSession.update {
+                                it?.copy(
+                                    remainingSeconds = 0,
+                                    sectionRemainingSeconds = 0,
+                                    showSectionAdvanceConfirm = false,
+                                    showTimeoutDialog = true
+                                )
+                            }
+                            break
+                        }
+                    } else {
+                        _cbtSession.update {
+                            it?.copy(
+                                remainingSeconds = nextTotalSec,
+                                sectionRemainingSeconds = nextSectionSec
+                            )
+                        }
+                    }
                 } else {
-                    _cbtSession.update { it?.copy(remainingSeconds = nextSec) }
+                    val nextSec = (current.remainingSeconds - 1).coerceAtLeast(0)
+                    if (nextSec == 0) {
+                        _cbtSession.update { it?.copy(remainingSeconds = 0, showTimeoutDialog = true) }
+                        break
+                    } else {
+                        _cbtSession.update { it?.copy(remainingSeconds = nextSec) }
+                    }
                 }
             }
         }
+    }
+
+    private fun advanceCbtSectionLocked(
+        session: CbtSessionState,
+        triggeredByTimeout: Boolean
+    ) {
+        if (!session.hasSectionLock || session.isLastSection) return
+        val prevSectionNum = session.currentSectionIndex + 1
+        val nextSectionIdx = session.currentSectionIndex + 1
+        val nextStartIdx = (nextSectionIdx * session.sectionSize)
+            .coerceIn(0, session.questions.lastIndex.coerceAtLeast(0))
+        val updatedStatuses = if (session.paletteStatuses[nextStartIdx] == CbtPaletteStatus.NOT_VISITED) {
+            session.paletteStatuses + (nextStartIdx to CbtPaletteStatus.NOT_ANSWERED)
+        } else {
+            session.paletteStatuses
+        }
+        val remainingSectionsCount = (session.totalSections - nextSectionIdx).coerceAtLeast(1)
+        val syncedTotalRemaining = remainingSectionsCount * session.sectionDurationSeconds
+        val notice = if (triggeredByTimeout) {
+            "Section $prevSectionNum time ended and was locked. Now in Section ${nextSectionIdx + 1} of ${session.totalSections}."
+        } else {
+            "Section $prevSectionNum locked. Now in Section ${nextSectionIdx + 1} of ${session.totalSections}."
+        }
+        _cbtSession.value = session.copy(
+            currentSectionIndex = nextSectionIdx,
+            currentIndex = nextStartIdx,
+            paletteStatuses = updatedStatuses,
+            sectionRemainingSeconds = session.sectionDurationSeconds,
+            remainingSeconds = syncedTotalRemaining,
+            showSectionAdvanceConfirm = false,
+            sectionAutoAdvanceNotice = notice
+        )
+    }
+
+    fun requestCbtNextSection() {
+        val sess = _cbtSession.value ?: return
+        if (!sess.hasSectionLock || sess.isLastSection) return
+        _cbtSession.value = sess.copy(showSectionAdvanceConfirm = true)
+    }
+
+    fun dismissCbtNextSection() {
+        _cbtSession.update { it?.copy(showSectionAdvanceConfirm = false) }
+    }
+
+    fun confirmCbtNextSection() {
+        val sess = _cbtSession.value ?: return
+        if (!sess.hasSectionLock || sess.isLastSection) return
+        val hasAns = sess.selectedAnswers.containsKey(sess.currentIndex)
+        val curStatus = if (hasAns) CbtPaletteStatus.ANSWERED else CbtPaletteStatus.NOT_ANSWERED
+        val synced = sess.copy(paletteStatuses = sess.paletteStatuses + (sess.currentIndex to curStatus))
+        advanceCbtSectionLocked(synced, triggeredByTimeout = false)
+    }
+
+    fun dismissCbtSectionNotice() {
+        _cbtSession.update { it?.copy(sectionAutoAdvanceNotice = null) }
     }
 
     fun cbtSelectOption(optionIndex: Int) {
@@ -1562,6 +1727,9 @@ class MainViewModel(
         _cbtSession.update { sess ->
             sess?.let {
                 val safeIdx = index.coerceIn(0, it.questions.lastIndex.coerceAtLeast(0))
+                if (!it.isIndexInActiveSection(safeIdx)) {
+                    return@let it
+                }
                 val nextStatus = if (it.paletteStatuses[safeIdx] == CbtPaletteStatus.NOT_VISITED) {
                     it.paletteStatuses + (safeIdx to CbtPaletteStatus.NOT_ANSWERED)
                 } else {
@@ -1577,7 +1745,8 @@ class MainViewModel(
         val hasAns = sess.selectedAnswers.containsKey(sess.currentIndex)
         val status = if (hasAns) CbtPaletteStatus.ANSWERED else CbtPaletteStatus.NOT_ANSWERED
         val updatedStatuses = sess.paletteStatuses + (sess.currentIndex to status)
-        if (sess.currentIndex < sess.questions.lastIndex) {
+        val sectionEnd = sess.activeSectionRange.last
+        if (sess.currentIndex < sectionEnd) {
             val nextIdx = sess.currentIndex + 1
             val finalStatuses = if (updatedStatuses[nextIdx] == CbtPaletteStatus.NOT_VISITED) {
                 updatedStatuses + (nextIdx to CbtPaletteStatus.NOT_ANSWERED)
@@ -1587,6 +1756,11 @@ class MainViewModel(
             _cbtSession.value = sess.copy(
                 currentIndex = nextIdx,
                 paletteStatuses = finalStatuses
+            )
+        } else if (sess.hasSectionLock && !sess.isLastSection) {
+            _cbtSession.value = sess.copy(
+                paletteStatuses = updatedStatuses,
+                showSectionAdvanceConfirm = true
             )
         } else {
             _cbtSession.value = sess.copy(paletteStatuses = updatedStatuses, showSubmitConfirm = true)
@@ -1598,7 +1772,8 @@ class MainViewModel(
         val hasAns = sess.selectedAnswers.containsKey(sess.currentIndex)
         val status = if (hasAns) CbtPaletteStatus.ANSWERED_MARKED else CbtPaletteStatus.MARKED
         val updatedStatuses = sess.paletteStatuses + (sess.currentIndex to status)
-        if (sess.currentIndex < sess.questions.lastIndex) {
+        val sectionEnd = sess.activeSectionRange.last
+        if (sess.currentIndex < sectionEnd) {
             val nextIdx = sess.currentIndex + 1
             val finalStatuses = if (updatedStatuses[nextIdx] == CbtPaletteStatus.NOT_VISITED) {
                 updatedStatuses + (nextIdx to CbtPaletteStatus.NOT_ANSWERED)

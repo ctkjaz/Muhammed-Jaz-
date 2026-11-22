@@ -280,7 +280,7 @@ class NursingPrepRepository(
     }
 
     companion object {
-        const val CURRENT_SEED_VERSION = 6
+        const val CURRENT_SEED_VERSION = 7
     }
 
     suspend fun loadFlashcards(): List<Flashcard> = withContext(Dispatchers.IO) {

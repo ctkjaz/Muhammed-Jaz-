@@ -571,7 +571,11 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     onDismissSubmitConfirm = vm::dismissCbtSubmitConfirm,
                                     onConfirmSubmit = vm::submitCbtExam,
                                     onChangeReviewFilter = vm::setCbtReviewFilter,
-                                    onExit = vm::exitPracticeOrCbt
+                                    onExit = vm::exitPracticeOrCbt,
+                                    onRequestNextSection = vm::requestCbtNextSection,
+                                    onDismissNextSection = vm::dismissCbtNextSection,
+                                    onConfirmNextSection = vm::confirmCbtNextSection,
+                                    onDismissSectionNotice = vm::dismissCbtSectionNotice
                                 )
                             }
 

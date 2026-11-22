@@ -73,7 +73,6 @@ fun CbtHubScreen(
     val mini30Mins = SettingsPreferences.calculateSuggestedMinutes(30, secondsPerQuestion)
     val nur50Mins = SettingsPreferences.calculateSuggestedMinutes(50, secondsPerQuestion)
     val non30Mins = SettingsPreferences.calculateSuggestedMinutes(30, secondsPerQuestion)
-    val gk20Mins = SettingsPreferences.calculateSuggestedMinutes(20, secondsPerQuestion)
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val columns = if (maxWidth >= 640.dp) 2 else 1
@@ -114,19 +113,25 @@ fun CbtHubScreen(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = "AIIMS NORCET Two-Stage Exam Blueprint",
+                                text = "AIIMS NORCET Two-Stage Exam Blueprint (Official Pattern)",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "• Stage I (Prelims — Qualifying): 100 MCQs • 90 min (5 sections × 18 min) • 80 Nursing + 20 GK & Aptitude • +1 / -0.33.",
+                                text = "• Stage I (Prelims — Qualifying): 100 MCQs • 90 min • 5 time-locked sequential sections (20Q / 18m each) • 80 Nursing + 20 GK & Aptitude • +1 / -0.33.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = "• Stage II (Mains — Final Merit): 160 MCQs • 180 min (4 sections × 45 min) • 100% Clinical & Priority Nursing • +1 / -0.33.",
+                                text = "• Stage II (Mains — Final Merit): 160 MCQs • 180 min • 4 time-locked sequential sections (40Q / 45m each) • 100% Clinical & Priority Nursing • +1 / -0.33.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "• Qualifying Cut-off: 50th percentile UR/EWS, 45th OBC, 40th SC/ST (1:5 shortlist for Stage II Mains).",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
@@ -172,10 +177,10 @@ fun CbtHubScreen(
             val cbtOptions = if (isNorcet) {
                 listOf(
                     CbtOptionData(
-                        badge = "Stage I • Prelims",
+                        badge = "Stage I • 5×18m Lock",
                         durationLabel = "$fullMins Minutes",
                         title = "NORCET Prelims Full Mock ($fullQ Qs)",
-                        desc = "Exact 80:20 ratio (80 Nursing + 20 GK & Aptitude). Official +1 / -$negMark marking.",
+                        desc = "Official 5 time-locked sections × 20Q (18m each): 4 Nursing sections + 1 GK/Aptitude section. +1 / -$negMark.",
                         badgeColor = primaryColor,
                         btnLabel = "Start Prelims Mock ($fullQ Qs)",
                         isPrimary = true,
@@ -183,15 +188,37 @@ fun CbtHubScreen(
                         onClick = { onStartStandardMock(fullQ, fullMins, "NORCET Stage I Prelims (${fullQ}Q)", true) }
                     ),
                     CbtOptionData(
-                        badge = "Stage II • Mains",
+                        badge = "Stage II • 4×45m Lock",
                         durationLabel = "180 Minutes",
                         title = "NORCET Mains Clinical CBT (160 Qs)",
-                        desc = "100% Clinical & Priority Nursing scenarios prioritized from Mains & Hard clinical sets. +1 / -$negMark.",
+                        desc = "Official 4 time-locked sections × 40Q (45m each): 100% Clinical Scenarios, ICU/ER, OBG, Peds & Dosage Math. +1 / -$negMark.",
                         badgeColor = editorial.wrongText,
                         btnLabel = "Start Mains Mock (160 Qs)",
                         isPrimary = true,
                         tag = "cbt_norcet_mains_btn",
                         onClick = onStartNorcetMainsMock
+                    ),
+                    CbtOptionData(
+                        badge = "Mains 1 Section",
+                        durationLabel = "45 Minutes",
+                        title = "40Q Stage II Clinical Section Drill",
+                        desc = "Simulate ONE exact 45-minute NORCET Mains clinical block (bedside priority, ABG, ECG, high-alert meds).",
+                        badgeColor = editorial.warningText,
+                        btnLabel = "Start 40Q Mains Section",
+                        isPrimary = false,
+                        tag = "cbt_norcet_mains_sec_btn",
+                        onClick = { onStartCustomCbt(hardClinicalPool.shuffled().take(40), "NORCET Mains 40Q Section (45m)", 45) }
+                    ),
+                    CbtOptionData(
+                        badge = "Prelims 1 Section",
+                        durationLabel = "18 Minutes",
+                        title = "20Q Stage I Speed Section Sprint",
+                        desc = "Simulate ONE exact 18-minute NORCET Prelims nursing section to sharpen time-locked pacing.",
+                        badgeColor = editorial.correctText,
+                        btnLabel = "Start 20Q Prelims Section",
+                        isPrimary = false,
+                        tag = "cbt_norcet_prelims_sec_btn",
+                        onClick = { onStartCustomCbt(nurPool.shuffled().take(20), "NORCET Prelims 20Q Section (18m)", 18) }
                     ),
                     CbtOptionData(
                         badge = "80:20 Express",
@@ -205,26 +232,15 @@ fun CbtHubScreen(
                         onClick = { onStartStandardMock(30, null, "NORCET Mini 30Q Drill", false) }
                     ),
                     CbtOptionData(
-                        badge = "Mains Priority",
-                        durationLabel = if (useTimeLimit) "$nur50Mins Minutes" else "Untimed",
-                        title = "50Q Clinical Scenario Speed CBT",
-                        desc = "High-yield bedside priority, ICU/ER, OBG, Peds & pharmacology dosage vignettes.",
-                        badgeColor = editorial.warningText,
-                        btnLabel = "Start 50Q Clinical CBT",
-                        isPrimary = false,
-                        tag = "cbt_50q_nur_btn",
-                        onClick = { onStartCustomCbt(hardClinicalPool.shuffled().take(50), "50Q NORCET Clinical CBT", null) }
-                    ),
-                    CbtOptionData(
                         badge = "Prelims 20%",
-                        durationLabel = if (useTimeLimit) "$gk20Mins Minutes" else "Untimed",
+                        durationLabel = if (useTimeLimit) "18 Minutes" else "Untimed",
                         title = "20Q Prelims GK & Aptitude Block",
                         desc = "Exact 20-question General Knowledge, Health Programs, Quantitative Aptitude & Reasoning section.",
                         badgeColor = editorial.accentDustyRoseText,
                         btnLabel = "Start 20Q GK & Aptitude",
                         isPrimary = false,
                         tag = "cbt_30q_gen_btn",
-                        onClick = { onStartCustomCbt(nonPool.shuffled().take(20), "20Q NORCET GK & Aptitude CBT", null) }
+                        onClick = { onStartCustomCbt(nonPool.shuffled().take(20), "20Q NORCET GK & Aptitude CBT", 18) }
                     )
                 )
             } else {
