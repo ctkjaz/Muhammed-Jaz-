@@ -54,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.model.DifficultyFilter
+import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectCatalog
 import com.example.ui.components.DifficultyFilterBar
@@ -101,6 +102,15 @@ fun DashboardScreen(
     val nurCount = all.count { SubjectCatalog.isNursing(it.question) }
     val caCount = all.count { SubjectCatalog.isCa(it.question) }
     val genCount = all.count { SubjectCatalog.isGen(it.question) }
+    val activeExam = state.activeExam
+    val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExam?.id)
+    val examFullName = activeExam?.name ?: "RRB Nursing Superintendent & Staff Nurse"
+    val examPatternSubtitle = if (isNorcet) {
+        "80:20 Prelims & 160Q Mains • +1 / -0.33 Marking • Clinical CBT"
+    } else {
+        "70:30 Exam Pattern • +1 / -0.33 Marking • Study Anytime"
+    }
+    val mockCtaLabel = if (isNorcet) "100Q Prelims Mock" else "100Q CBT Mock"
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val columns = when {
@@ -153,7 +163,7 @@ fun DashboardScreen(
                                 border = BorderStroke(1.dp, DustyRoseSecondary.copy(alpha = 0.55f))
                             ) {
                                 Text(
-                                    text = "RRB Nursing Superintendent & Staff Nurse",
+                                    text = examFullName,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = EditorialBannerTitle,
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
@@ -168,7 +178,7 @@ fun DashboardScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "70:30 Exam Pattern • +1 / -0.33 Marking • Study Anytime",
+                                    text = examPatternSubtitle,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = EditorialBannerSubtext
                                 )
@@ -189,7 +199,7 @@ fun DashboardScreen(
                                         .weight(1f)
                                         .testTag("launch_100q_mock_btn")
                                 ) {
-                                    Text("100Q CBT Mock", fontWeight = FontWeight.Bold)
+                                    Text(mockCtaLabel, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.widthIn(min = 6.dp))
                                     Icon(
                                         Icons.AutoMirrored.Filled.ArrowForward,
@@ -340,50 +350,66 @@ fun DashboardScreen(
 
             val moduleCards = listOf(
                 ModuleCardData(
-                    badge = "Memory-Based & PYQ",
+                    badge = if (isNorcet) "Memory-Based 5–9" else "Memory-Based & PYQ",
                     countLabel = "$pyqCount Qs",
-                    title = "Previous Year Papers",
-                    desc = "Shift-wise exam practice sets (2015–2026) organized by year and shift.",
+                    title = if (isNorcet) "NORCET Previous Papers" else "Previous Year Papers",
+                    desc = if (isNorcet) {
+                        "Memory-based NORCET 5–9 Prelims & Mains clinical recall sets."
+                    } else {
+                        "Shift-wise exam practice sets (2015–2026) organized by year and shift."
+                    },
                     badgeColor = editorial.warningText,
                     icon = Icons.Filled.History,
                     tag = "module_pyq",
                     onClick = { onOpenSubjectSection(SubjectHubSection.PYQ) }
                 ),
                 ModuleCardData(
-                    badge = "70% Weightage",
+                    badge = if (isNorcet) "80% + Mains 100%" else "70% Weightage",
                     countLabel = "$nurCount Qs",
                     title = "Subject-Wise Nursing",
-                    desc = "MSN, Pharmacology, OBG, Peds, CHN, Psychiatry, FON, Anatomy & Admin.",
+                    desc = if (isNorcet) {
+                        "MSN, Pharm, OBG, Peds, CHN, Psych, FON, Anatomy, Admin & Mains clinical cases."
+                    } else {
+                        "MSN, Pharmacology, OBG, Peds, CHN, Psychiatry, FON, Anatomy & Admin."
+                    },
                     badgeColor = primaryTone,
                     icon = Icons.Filled.Favorite,
                     tag = "module_nursing",
                     onClick = { onOpenSubjectSection(SubjectHubSection.NURSING) }
                 ),
                 ModuleCardData(
-                    badge = "2025–26 + Cards",
+                    badge = if (isNorcet) "Prelims GK + Cards" else "2025–26 + Cards",
                     countLabel = "$caCount Qs + ${state.flashcards.size}",
-                    title = "Current Affairs & Static GK",
-                    desc = "Union Budget 2026–27, Kavach 4.0, HPV Drive, Padma/Nobel/Sports & Polity.",
+                    title = if (isNorcet) "GK & Health Programs" else "Current Affairs & Static GK",
+                    desc = if (isNorcet) {
+                        "National health initiatives (LaQshya, SUMAN, NTEP), static GK & rapid fact cards."
+                    } else {
+                        "Union Budget 2026–27, Kavach 4.0, HPV Drive, Padma/Nobel/Sports & Polity."
+                    },
                     badgeColor = editorial.accentDustyRoseText,
                     icon = Icons.Filled.Public,
                     tag = "module_ca",
                     onClick = { onOpenSubjectSection(SubjectHubSection.CA_GK) }
                 ),
                 ModuleCardData(
-                    badge = "30% Non-Tech",
+                    badge = if (isNorcet) "20% Aptitude" else "30% Non-Tech",
                     countLabel = "$genCount Qs",
-                    title = "Science, Math & Reasoning",
-                    desc = "NCERT Physics/Chem/Bio, dosage & aptitude formulas, worked reasoning.",
+                    title = if (isNorcet) "Aptitude, Math & Science" else "Science, Math & Reasoning",
+                    desc = "Dosage calculations, quantitative aptitude, logical reasoning & general science.",
                     badgeColor = tertiaryTone,
                     icon = Icons.Filled.Calculate,
                     tag = "module_gen",
                     onClick = { onOpenSubjectSection(SubjectHubSection.NON_TECH) }
                 ),
                 ModuleCardData(
-                    badge = "Configurable Timer",
-                    countLabel = "15 / 30 / 50 Qs",
+                    badge = if (isNorcet) "Prelims & Mains" else "Configurable Timer",
+                    countLabel = if (isNorcet) "100Q & 160Q" else "15 / 30 / 50 Qs",
                     title = "Timed Practice & CBT",
-                    desc = "Select any subject or mixed set with custom minutes, or full-length CBT mock.",
+                    desc = if (isNorcet) {
+                        "Full 100Q Prelims (80:20) & 160Q Mains Clinical CBT mocks plus custom timed drills."
+                    } else {
+                        "Select any subject or mixed set with custom minutes, or full-length CBT mock."
+                    },
                     badgeColor = editorial.correctText,
                     icon = Icons.Filled.Quiz,
                     tag = "module_cbt",

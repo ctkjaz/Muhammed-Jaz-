@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.Flashcard
+import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectCatalog
 import com.example.data.model.SubjectMeta
@@ -66,6 +67,8 @@ fun SubjectsHubScreen(
     modifier: Modifier = Modifier
 ) {
     val sections = SubjectHubSection.entries
+    val activeExamId = state.activeExam?.id
+    val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExamId)
     val filteredPool = remember(state.questions, difficultyFilter) {
         difficultyFilter.difficulty?.let { d ->
             state.questions.filter { it.question.difficulty == d }
@@ -82,7 +85,7 @@ fun SubjectsHubScreen(
                 Tab(
                     selected = sec == activeSection,
                     onClick = { onSelectSection(sec) },
-                    text = { Text(sec.label, fontWeight = FontWeight.SemiBold) },
+                    text = { Text(sec.labelFor(activeExamId), fontWeight = FontWeight.SemiBold) },
                     modifier = Modifier.testTag("subject_tab_${sec.name}")
                 )
             }
@@ -117,8 +120,16 @@ fun SubjectsHubScreen(
 
             when (activeSection) {
                 SubjectHubSection.NURSING -> SubjectListGrid(
-                    title = "Subject-Wise Nursing (70% Weightage)",
-                    subtitle = "Core clinical & nursing subjects aligned with INC & RRB syllabus",
+                    title = if (isNorcet) {
+                        "Nursing Core & Mains Clinical (80% / 100%)"
+                    } else {
+                        "Subject-Wise Nursing (70% Weightage)"
+                    },
+                    subtitle = if (isNorcet) {
+                        "Core clinical nursing subjects & scenario-based priority questions for AIIMS NORCET"
+                    } else {
+                        "Core clinical & nursing subjects aligned with INC & RRB syllabus"
+                    },
                     subjects = SubjectCatalog.NURSING_SUBJS,
                     allQuestions = filteredPool,
                     diffSuffix = diffSuffix,
@@ -130,6 +141,7 @@ fun SubjectsHubScreen(
 
                 SubjectHubSection.PYQ -> PyqShiftList(
                     allQuestions = filteredPool,
+                    isNorcet = isNorcet,
                     diffSuffix = diffSuffix,
                     columns = columns,
                     onStartPractice = onStartPractice,
@@ -139,6 +151,7 @@ fun SubjectsHubScreen(
 
                 SubjectHubSection.CA_GK -> CaAndFlashcardsList(
                     allQuestions = filteredPool,
+                    isNorcet = isNorcet,
                     diffSuffix = diffSuffix,
                     flashcards = state.flashcards,
                     columns = columns,
@@ -147,8 +160,12 @@ fun SubjectsHubScreen(
                 )
 
                 SubjectHubSection.NON_TECH -> SubjectListGrid(
-                    title = "Science, Arithmetic & Reasoning (30%)",
-                    subtitle = "NCERT Science, clinical dosage & aptitude math, and logical reasoning",
+                    title = if (isNorcet) {
+                        "Aptitude, Dosage Math & Science (20%)"
+                    } else {
+                        "Science, Arithmetic & Reasoning (30%)"
+                    },
+                    subtitle = "Dosage calculations, quantitative aptitude, logical reasoning & general science",
                     subjects = SubjectCatalog.GEN_SUBJS,
                     allQuestions = filteredPool,
                     diffSuffix = diffSuffix,
@@ -244,6 +261,7 @@ private fun SubjectListGrid(
 @Composable
 private fun PyqShiftList(
     allQuestions: List<QuestionItem>,
+    isNorcet: Boolean,
     diffSuffix: String,
     columns: Int,
     onStartPractice: (List<QuestionItem>, String) -> Unit,
@@ -271,9 +289,16 @@ private fun PyqShiftList(
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Previous Year Papers", style = MaterialTheme.typography.titleLarge)
                 Text(
-                    "Shift-wise exam sets (2015–2026). Memory-based papers are clearly marked alongside official papers.",
+                    text = if (isNorcet) "AIIMS NORCET Memory-Based Papers" else "Previous Year Papers",
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Text(
+                    text = if (isNorcet) {
+                        "NORCET 5–9 Prelims & Mains recall sets. AIIMS does not publish official CBT keys, so recalled papers are labeled Memory-Based."
+                    } else {
+                        "Shift-wise exam sets (2015–2026). Memory-based papers are clearly marked alongside official papers."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -430,6 +455,7 @@ private fun PyqShiftList(
 @Composable
 private fun CaAndFlashcardsList(
     allQuestions: List<QuestionItem>,
+    isNorcet: Boolean,
     diffSuffix: String,
     flashcards: List<Flashcard>,
     columns: Int,
@@ -442,7 +468,14 @@ private fun CaAndFlashcardsList(
     val visibleCards = remember(flashcards, selectedTag) {
         if (selectedTag == "All") flashcards else flashcards.filter { it.tag == selectedTag }
     }
-    val caRows = SubjectCatalog.CA_SUBJS.chunked(columns)
+    val visibleCaSubjs = remember(isNorcet) {
+        if (isNorcet) {
+            SubjectCatalog.CA_SUBJS.filter { PlatformCatalogDefaults.isNorcetSharedSubject(it.code) }
+        } else {
+            SubjectCatalog.CA_SUBJS
+        }
+    }
+    val caRows = visibleCaSubjs.chunked(columns)
     val cardRows = visibleCards.chunked(columns)
 
     LazyColumn(
@@ -459,9 +492,16 @@ private fun CaAndFlashcardsList(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Current Affairs (2025–26) & Static GK", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        "Union Budget 2026–27, Kavach 4.0, HPV Drive, Awards & Polity",
+                        text = if (isNorcet) "General Knowledge & Health Programs" else "Current Affairs (2025–26) & Static GK",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    Text(
+                        text = if (isNorcet) {
+                            "National health missions (LaQshya, SUMAN, NTEP, UIP), Static GK & 2025–26 awareness"
+                        } else {
+                            "Union Budget 2026–27, Kavach 4.0, HPV Drive, Awards & Polity"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -85,6 +85,7 @@ import com.example.ui.viewmodel.TimedPracticeConfigState
 fun TimedPracticeConfigDialog(
     state: TimedPracticeConfigState,
     allQuestions: List<QuestionItem>,
+    activeExamId: String = "rrb_nursing",
     useTimeLimit: Boolean,
     negativeMarking: Boolean,
     onToggleNegativeMarking: () -> Unit,
@@ -98,14 +99,20 @@ fun TimedPracticeConfigDialog(
 ) {
     if (!state.isVisible) return
 
-    val sourceOptions = remember {
+    val isNorcet = activeExamId == "aiims_norcet"
+    val sourceOptions = remember(isNorcet) {
+        val visibleSubjs = if (isNorcet) {
+            SubjectCatalog.ALL_SUBJS.filter { it.code != "Railways" }
+        } else {
+            SubjectCatalog.ALL_SUBJS
+        }
         listOf(
             "MIXED" to "Mixed (All)",
-            "PYQ" to "PYQs Only",
-            "NURSING" to "Nursing (70%)",
-            "CA" to "CA & GK",
-            "GEN" to "Sci/Math/Reas (30%)"
-        ) + SubjectCatalog.ALL_SUBJS.map { it.code to "${it.code} (${it.name})" }
+            "PYQ" to if (isNorcet) "NORCET PYQs" else "PYQs Only",
+            "NURSING" to if (isNorcet) "Nursing (80%)" else "Nursing (70%)",
+            "CA" to if (isNorcet) "GK & Health" else "CA & GK",
+            "GEN" to if (isNorcet) "Aptitude & Sci (20%)" else "Sci/Math/Reas (30%)"
+        ) + visibleSubjs.map { it.code to "${it.code} (${it.name})" }
     }
     val availableCount = filterCountProvider(state.sourceKey, state.difficultyFilter)
     val effectiveCount = if (state.questionCount == 0) availableCount else minOf(state.questionCount, availableCount)
@@ -247,7 +254,7 @@ fun TimedPracticeConfigDialog(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Negative Marking (-0.33)", style = MaterialTheme.typography.labelLarge)
                         Text(
-                            text = "RRB official +1 / -0.33 scoring",
+                            text = "Standard +1 / -0.33 exam scoring",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -412,7 +419,7 @@ private fun PdfTextImportPane(
     onPreviewPdf: () -> Unit,
     onCommitPdf: () -> Unit
 ) {
-    val categories = listOf("pyq" to "PYQ", "nur" to "Nursing 70%", "ca" to "CA / GK", "gen" to "Sci/Math 30%")
+    val categories = listOf("pyq" to "PYQ", "nur" to "Nursing Core", "ca" to "GK & Health", "gen" to "Aptitude / Sci")
     val subjects = SubjectCatalog.ALL_SUBJS.map { it.code }
     var catExpanded by remember { mutableStateOf(false) }
     var subjExpanded by remember { mutableStateOf(false) }
@@ -792,9 +799,9 @@ fun PdfExportModalSheet(
             "MISTAKES" to "Mistakes",
             "LOWEST_ACCURACY" to "Lowest Accuracy",
             "PYQ" to "PYQs",
-            "NURSING" to "Nursing 70%",
-            "CA" to "CA & GK",
-            "GEN" to "Sci/Math 30%"
+            "NURSING" to "Nursing Core",
+            "CA" to "GK & Health",
+            "GEN" to "Aptitude & Sci"
         ) + SubjectCatalog.ALL_SUBJS.map { it.code to it.code }
     }
     val limits = listOf(15 to "15 Qs", 30 to "30 Qs", 50 to "50 Qs", 100 to "100 Qs", 0 to "All")
@@ -1120,6 +1127,17 @@ fun ExamPickerModalSheet(
                                                 MaterialTheme.colorScheme.onSurfaceVariant
                                             }
                                         )
+                                        if (exam.description.isNotBlank()) {
+                                            Text(
+                                                text = exam.description,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (isSelected) {
+                                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                }
+                                            )
+                                        }
                                     }
                                     if (isSelected) {
                                         Icon(
@@ -1142,7 +1160,7 @@ fun ExamPickerModalSheet(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
             ) {
                 Text(
-                    text = "More healthcare exams are coming soon. Your progress and bookmarks stay synced across exams.",
+                    text = "Switch tracks anytime — your mastery progress and saved bookmarks stay synced across shared nursing subjects.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(14.dp)

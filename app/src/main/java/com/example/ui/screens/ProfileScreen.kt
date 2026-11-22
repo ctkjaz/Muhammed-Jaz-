@@ -333,7 +333,7 @@ fun ProfileDrawerContent(
                         icon = Icons.AutoMirrored.Filled.MenuBook,
                         label = when (section) {
                             SubjectHubSection.PYQ -> "Previous Year Papers"
-                            else -> section.label
+                            else -> section.labelFor(activeExam?.id)
                         },
                         onClick = { onOpenSubjectSection(section) },
                         testTag = "drawer_section_${section.name}"

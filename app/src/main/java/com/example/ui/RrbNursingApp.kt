@@ -479,10 +479,15 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                                         onLaunchFullMock = {
                                             val fullQ = state.activeExam?.defaultMockQuestions ?: 100
                                             val fullMins = state.activeExam?.defaultMockMinutes ?: 90
+                                            val mockTitle = if (activeExamId == "aiims_norcet") {
+                                                "NORCET Stage I Prelims (${fullQ}Q)"
+                                            } else {
+                                                "Full Official ${fullQ}Q CBT Mock"
+                                            }
                                             vm.startCbtStandardMock(
                                                 totalQuestions = fullQ,
                                                 durationMinutes = fullMins,
-                                                title = "Full Official ${fullQ}Q CBT Mock",
+                                                title = mockTitle,
                                                 isOfficialFullMock = true
                                             )
                                         },
@@ -511,6 +516,7 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
                                         useTimeLimit = useTimeLimit,
                                         secondsPerQuestion = secondsPerQuestion,
                                         onStartStandardMock = vm::startCbtStandardMock,
+                                        onStartNorcetMainsMock = vm::startNorcetMainsMock,
                                         onStartCustomCbt = { list, title, mins -> vm.startCbtCustom(list, title, mins) },
                                         onOpenTimedPracticeConfig = { vm.openTimedPracticeConfig() }
                                     )
@@ -540,6 +546,7 @@ fun RrbNursingApp(vm: MainViewModel = viewModel()) {
             TimedPracticeConfigDialog(
                 state = timedConfig,
                 allQuestions = state.questions,
+                activeExamId = activeExamId,
                 useTimeLimit = useTimeLimit,
                 negativeMarking = negMarking,
                 onToggleNegativeMarking = vm::toggleNegativeMarking,

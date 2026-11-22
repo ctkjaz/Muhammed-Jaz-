@@ -881,6 +881,74 @@ class RrbNursingLogicTest {
         assertEquals("2,000+ Qs", formatApproxQuestionCount(2450))
         assertEquals("500+ Qs", formatApproxQuestionCount(707))
     }
+
+    @Test
+    fun `aiims norcet asset parses cleanly seeds shared bank without railways and isolates pyq shifts`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val dao = db.questionDao()
+            val repo = NursingPrepRepository(context, dao)
+            repo.ensureSeeded(currentSeedVersion = 0)
+
+            val exams = repo.exams.first()
+            assertTrue(exams.any { it.id == PlatformCatalogDefaults.EXAM_RRB_NURSING })
+            assertTrue(exams.any { it.id == PlatformCatalogDefaults.EXAM_AIIMS_NORCET })
+
+            val rrbQuestions = repo.observeQuestionsForExam(PlatformCatalogDefaults.EXAM_RRB_NURSING).first()
+            val norcetQuestions = repo.observeQuestionsForExam(PlatformCatalogDefaults.EXAM_AIIMS_NORCET).first()
+
+            // RRB stays completely intact (1,223 questions)
+            assertEquals(1223, rrbQuestions.size)
+
+            // NORCET contains all 160 dedicated N_* questions + shared Nursing & GK/Aptitude (excluding Railways)
+            val dedicatedNorcet = norcetQuestions.filter { it.id.startsWith("N_") }
+            assertEquals(160, dedicatedNorcet.size)
+            assertTrue(norcetQuestions.size > 1000)
+            assertTrue(norcetQuestions.none { it.question.subject == "Railways" })
+
+            // Every dedicated NORCET question has 4 options, valid answer index, and non-blank rationale
+            dedicatedNorcet.forEach { item ->
+                assertEquals(4, item.question.options.size)
+                assertTrue(item.question.correctIndex in 0..3)
+                assertTrue(item.question.explanation.isNotBlank())
+                assertFalse(item.question.isVerifiedSource) // Honest memory-based / practice labeling
+            }
+
+            // PYQ shift isolation: NORCET PYQs must ONLY contain NORCET-5..9, never RRB shifts like 2025-S1
+            val norcetPyqShifts = norcetQuestions
+                .filter { it.question.isPyqTagged }
+                .map { it.question.shiftYear }
+                .distinct()
+                .toSet()
+            assertEquals(setOf("NORCET-9", "NORCET-8", "NORCET-7", "NORCET-6", "NORCET-5"), norcetPyqShifts)
+
+            // RRB PYQ shifts remain intact and never show NORCET shifts
+            val rrbPyqShifts = rrbQuestions
+                .filter { it.question.isPyqTagged }
+                .map { it.question.shiftYear }
+                .distinct()
+                .toSet()
+            assertTrue("2025-S1" in rrbPyqShifts)
+            assertTrue(rrbPyqShifts.none { it.startsWith("NORCET") })
+
+            // Shared progress syncs between RRB and NORCET
+            val sharedId = "4" // MSN question shared across both exams
+            repo.recordAttempt(sharedId, isCorrect = true)
+            repo.toggleBookmark(sharedId)
+            val inNorcet = repo.observeQuestionsForExam(PlatformCatalogDefaults.EXAM_AIIMS_NORCET)
+                .first()
+                .first { it.id == sharedId }
+            assertTrue(inNorcet.isBookmarked)
+            assertEquals(1, inNorcet.attemptsCount)
+            assertEquals("right", inNorcet.lastOutcome)
+        } finally {
+            db.close()
+        }
+    }
 }
+
 
 

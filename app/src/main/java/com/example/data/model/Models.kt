@@ -131,10 +131,14 @@ data class ExamQuestionLink(
 object PlatformCatalogDefaults {
     const val PROFESSION_NURSING = "nursing"
     const val EXAM_RRB_NURSING = "rrb_nursing"
+    const val EXAM_AIIMS_NORCET = "aiims_norcet"
 
     const val SECTION_RRB_NURSING_CORE = "rrb_nursing_core"
     const val SECTION_RRB_CA_GK = "rrb_nursing_ca_gk"
     const val SECTION_RRB_NON_TECH = "rrb_nursing_nontech"
+
+    const val SECTION_NORCET_NURSING = "norcet_nursing_core"
+    const val SECTION_NORCET_GK_APTITUDE = "norcet_gk_aptitude"
 
     val DEFAULT_PROFESSIONS = listOf(
         Profession(
@@ -158,6 +162,19 @@ object PlatformCatalogDefaults {
             positiveMarks = 1.0,
             negativeMarks = 0.33,
             sortOrder = 0,
+            isActive = true
+        ),
+        Exam(
+            id = EXAM_AIIMS_NORCET,
+            professionId = PROFESSION_NURSING,
+            name = "AIIMS NORCET (Prelims & Mains)",
+            shortName = "AIIMS NORCET",
+            description = "Prelims: 100Q / 90m (80% Nursing, 20% GK & Aptitude, 5×18m) • Mains: 160Q / 180m (100% Clinical Nursing) • +1 / -0.33",
+            defaultMockQuestions = 100,
+            defaultMockMinutes = 90,
+            positiveMarks = 1.0,
+            negativeMarks = 0.33,
+            sortOrder = 1,
             isActive = true
         )
     )
@@ -183,8 +200,29 @@ object PlatformCatalogDefaults {
             name = "Science, Arithmetic & Reasoning (30%)",
             weightagePercent = 20,
             sortOrder = 2
+        ),
+        ExamSection(
+            id = SECTION_NORCET_NURSING,
+            examId = EXAM_AIIMS_NORCET,
+            name = "Nursing Core & Clinical Scenarios (80%)",
+            weightagePercent = 80,
+            sortOrder = 0
+        ),
+        ExamSection(
+            id = SECTION_NORCET_GK_APTITUDE,
+            examId = EXAM_AIIMS_NORCET,
+            name = "General Knowledge & Aptitude (20%)",
+            weightagePercent = 20,
+            sortOrder = 1
         )
     )
+
+    fun isNorcetExam(examId: String?): Boolean = examId == EXAM_AIIMS_NORCET
+
+    fun nursingWeightagePercent(examId: String?): Int =
+        if (isNorcetExam(examId)) 80 else 70
+
+    fun isNorcetSharedSubject(subjectCode: String): Boolean = subjectCode != "Railways"
 
     fun defaultTopicIdFor(subjectCode: String): String {
         val clean = subjectCode.trim().lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_')
@@ -195,6 +233,14 @@ object PlatformCatalogDefaults {
         SubjectCatalog.isNursingCode(subjectCode) -> SECTION_RRB_NURSING_CORE
         SubjectCatalog.isCaCode(subjectCode) -> SECTION_RRB_CA_GK
         else -> SECTION_RRB_NON_TECH
+    }
+
+    fun sectionIdForNorcetSubject(subjectCode: String): String =
+        if (SubjectCatalog.isNursingCode(subjectCode)) SECTION_NORCET_NURSING else SECTION_NORCET_GK_APTITUDE
+
+    fun sectionIdForExam(examId: String, subjectCode: String): String = when (examId) {
+        EXAM_AIIMS_NORCET -> sectionIdForNorcetSubject(subjectCode)
+        else -> sectionIdForRrbSubject(subjectCode)
     }
 }
 
@@ -402,6 +448,11 @@ object SubjectCatalog {
         "2019-S1" to "2019 RRB Staff Nurse — Shift 1",
         "2019-S2" to "2019 RRB Staff Nurse — Shift 2",
         "2019-S3" to "2019 RRB Staff Nurse — Shift 3",
-        "2015" to "2015 RRB Staff Nurse PYQ"
+        "2015" to "2015 RRB Staff Nurse PYQ",
+        "NORCET-9" to "AIIMS NORCET-9 (Prelims & Mains)",
+        "NORCET-8" to "AIIMS NORCET-8 (Prelims & Mains)",
+        "NORCET-7" to "AIIMS NORCET-7 (Prelims & Mains)",
+        "NORCET-6" to "AIIMS NORCET-6 (Prelims & Mains)",
+        "NORCET-5" to "AIIMS NORCET-5 (Prelims & Mains)"
     )
 }

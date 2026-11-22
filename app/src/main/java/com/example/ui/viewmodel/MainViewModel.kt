@@ -54,7 +54,18 @@ enum class SubjectHubSection(val label: String) {
     NURSING("Nursing 70%"),
     PYQ("PYQs"),
     CA_GK("CA & GK"),
-    NON_TECH("Sci/Math 30%")
+    NON_TECH("Sci/Math 30%");
+
+    fun labelFor(examId: String?): String = if (PlatformCatalogDefaults.isNorcetExam(examId)) {
+        when (this) {
+            NURSING -> "Nursing 80%"
+            PYQ -> "NORCET PYQs"
+            CA_GK -> "GK & Health"
+            NON_TECH -> "Aptitude & Sci"
+        }
+    } else {
+        label
+    }
 }
 
 enum class CbtPaletteStatus {
@@ -279,7 +290,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 customCount = items.count { it.question.isCustom }
             ),
             subjectStats = repository.computeSubjectStats(items),
-            categoryStats = repository.computeCategoryStats(items),
+            categoryStats = repository.computeCategoryStats(items, activeExam.id),
             lowestAccuracyQuestions = repository.findLowestAccuracyQuestions(items),
             flashcards = cards,
             mockHistory = history,
@@ -369,8 +380,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectActiveExam(examId: String) {
+        val changed = settings.activeExamId.value != examId
         settings.setActiveExamId(examId)
         _isExamPickerOpen.value = false
+        if (changed) {
+            stopActiveTimer()
+            _practiceSession.value = null
+            _cbtSession.value = null
+            val targetName = mainState.value.availableExams.firstOrNull { it.id == examId }?.shortName
+                ?: PlatformCatalogDefaults.DEFAULT_EXAMS.firstOrNull { it.id == examId }?.shortName
+            if (targetName != null) {
+                showMessage("Switched exam track to $targetName")
+            }
+        }
     }
 
     fun selectSubjectSection(section: SubjectHubSection) {
@@ -651,12 +673,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val picked = if (cfg.questionCount <= 0) pool else pool.take(cfg.questionCount)
+        val activeExamId = settings.activeExamId.value
+        val nursingPct = PlatformCatalogDefaults.nursingWeightagePercent(activeExamId)
         val sourceLabel = when (cfg.sourceKey) {
             "MIXED" -> "Mixed Set"
-            "PYQ" -> "PYQs"
-            "NURSING" -> "Nursing (70%)"
-            "CA" -> "CA & Static GK"
-            "GEN" -> "Sci/Math/Reas"
+            "PYQ" -> if (PlatformCatalogDefaults.isNorcetExam(activeExamId)) "NORCET PYQs" else "PYQs"
+            "NURSING" -> "Nursing ($nursingPct%)"
+            "CA" -> if (PlatformCatalogDefaults.isNorcetExam(activeExamId)) "GK & Health" else "CA & Static GK"
+            "GEN" -> if (PlatformCatalogDefaults.isNorcetExam(activeExamId)) "Aptitude & Science" else "Sci/Math/Reas"
             else -> SubjectCatalog.displayNameFor(cfg.sourceKey)
         }
         val diffSuffix = cfg.difficultyFilter.difficulty?.let { " • ${it.label}" } ?: ""
@@ -683,7 +707,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         val all = mainState.value.questions
         if (all.isEmpty()) return
-        val nursingCount = (totalQuestions * 0.7).toInt()
+        val nursingPct = PlatformCatalogDefaults.nursingWeightagePercent(settings.activeExamId.value)
+        val nursingCount = (totalQuestions * nursingPct) / 100
         val nonNursingCount = totalQuestions - nursingCount
         val nurPool = all.filter { SubjectCatalog.isNursing(it.question) }.shuffled()
         val nonPool = all.filter { !SubjectCatalog.isNursing(it.question) }.shuffled()
@@ -697,6 +722,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             title = title,
             durationMinutes = durationMinutes,
             isOfficialFullMock = isOfficialFullMock
+        )
+    }
+
+    fun startNorcetMainsMock() {
+        val all = mainState.value.questions
+        if (all.isEmpty()) return
+        val nursingPool = all.filter { SubjectCatalog.isNursing(it.question) }
+        // Prioritize clinical scenario & Hard nursing questions first for authentic NORCET Stage II Mains
+        val mainsPriority = nursingPool.filter {
+            it.id.startsWith("N_") || it.question.difficulty == QuestionDifficulty.HARD
+        }.shuffled()
+        val remainingNursing = nursingPool.filter { q -> mainsPriority.none { it.id == q.id } }.shuffled()
+        val selected = (mainsPriority + remainingNursing).take(160)
+        startCbtCustom(
+            items = selected,
+            title = "NORCET Stage II Mains (160Q Clinical CBT)",
+            durationMinutes = 180,
+            isOfficialFullMock = false
         )
     }
 
@@ -916,7 +959,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // BULK IMPORTER & BACKUP
     // ------------------------------------------------------------------------
     fun openImporter() {
-        _importerState.update { it.copy(isVisible = true) }
+        val defaultShift = if (PlatformCatalogDefaults.isNorcetExam(settings.activeExamId.value)) {
+            "NORCET-9"
+        } else {
+            "2025-S1"
+        }
+        _importerState.update {
+            it.copy(
+                isVisible = true,
+                shiftYear = if (it.rawText.isBlank()) defaultShift else it.shiftYear
+            )
+        }
     }
 
     fun closeImporter() {

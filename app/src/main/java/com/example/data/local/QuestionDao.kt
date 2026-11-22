@@ -64,6 +64,9 @@ interface QuestionDao {
     @Query("SELECT * FROM exam_question_links")
     fun observeAllExamLinks(): Flow<List<ExamQuestionLinkEntity>>
 
+    @Query("SELECT * FROM exam_question_links WHERE examId = :examId")
+    fun observeExamLinksForExam(examId: String): Flow<List<ExamQuestionLinkEntity>>
+
     @Query("SELECT * FROM exam_question_links WHERE questionId = :questionId")
     suspend fun getLinksForQuestion(questionId: String): List<ExamQuestionLinkEntity>
 
