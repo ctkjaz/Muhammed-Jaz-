@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.MonitorHeart
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.Button
@@ -60,8 +62,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.data.local.SettingsPreferences
+import com.example.data.model.AccountSessionLogic
 import com.example.data.model.Exam
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.StudyGoalLogic
@@ -78,6 +82,7 @@ fun OnboardingScreen(
     initialRole: String,
     initialTargetYear: String,
     initialFocusSubject: String,
+    initialPhoneNumber: String,
     initialDailyGoal: Int,
     secondsPerQuestion: Int,
     onComplete: (
@@ -86,6 +91,7 @@ fun OnboardingScreen(
         role: String,
         targetYear: String,
         focusSubject: String,
+        phoneNumber: String,
         dailyGoalQuestions: Int
     ) -> Unit,
     onSkip: () -> Unit,
@@ -104,6 +110,9 @@ fun OnboardingScreen(
         mutableStateOf(initialTargetYear.ifBlank { SettingsPreferences.DEFAULT_TARGET_YEAR })
     }
     var focusSubject by rememberSaveable { mutableStateOf(initialFocusSubject) }
+    var phoneNumber by rememberSaveable {
+        mutableStateOf(initialPhoneNumber.take(AccountSessionLogic.MAX_PHONE_LENGTH))
+    }
     var dailyGoal by rememberSaveable {
         mutableIntStateOf(
             initialDailyGoal.coerceIn(StudyGoalLogic.MIN_DAILY_GOAL, StudyGoalLogic.MAX_DAILY_GOAL)
@@ -169,6 +178,7 @@ fun OnboardingScreen(
                                         role.trim(),
                                         targetYear.trim().ifBlank { SettingsPreferences.DEFAULT_TARGET_YEAR },
                                         focusSubject,
+                                        AccountSessionLogic.sanitizePhoneNumber(phoneNumber),
                                         dailyGoal
                                     )
                                 }
@@ -454,6 +464,40 @@ fun OnboardingScreen(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .testTag("onboarding_name_input")
+                                        )
+
+                                        val phoneInvalid = phoneNumber.isNotBlank() &&
+                                            !AccountSessionLogic.isPhoneNumberValidOrEmpty(phoneNumber)
+                                        OutlinedTextField(
+                                            value = phoneNumber,
+                                            onValueChange = { raw ->
+                                                phoneNumber = raw
+                                                    .filter { it.isDigit() || it == '+' || it == ' ' || it == '-' }
+                                                    .take(AccountSessionLogic.MAX_PHONE_LENGTH)
+                                            },
+                                            label = { Text("Mobile Number (Optional)") },
+                                            placeholder = { Text("e.g. +91 98765 43210") },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Phone,
+                                                    contentDescription = null
+                                                )
+                                            },
+                                            isError = phoneInvalid,
+                                            supportingText = {
+                                                Text(
+                                                    text = if (phoneInvalid) {
+                                                        "Enter a valid 10-digit mobile number or leave blank."
+                                                    } else {
+                                                        "Optional • Saved privately to your profile (no OTP required)."
+                                                    }
+                                                )
+                                            },
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                            singleLine = true,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .testTag("onboarding_phone_input")
                                         )
 
                                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -150,10 +150,11 @@ test("User profile: owner create, partial update, get succeed; list, shadow fiel
   // Listing /users is always forbidden (no user directory scraping)
   await assertFails(aliceDb.collection("users").get());
 
-  // Valid partial update preserving createdAt & userId (including onboarding & daily goal streak)
+  // Valid partial update preserving createdAt & userId (including onboarding, phoneNumber & daily goal streak)
   await assertSucceeds(
     aliceDb.collection("users").doc(ALICE_UID).update({
       displayName: "Jaz Saleem",
+      phoneNumber: "+91 98765 43210",
       activeExamId: "rrb_nursing",
       themePreference: "DARK",
       onboardingCompleted: true,
@@ -164,6 +165,41 @@ test("User profile: owner create, partial update, get succeed; list, shadow fiel
       todayStudyDate: "2026-11-22",
       todayAnsweredCount: 52,
       updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Valid single-device session claim update (Action 2)
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      activeSessionId: "550e8400-e29b-41d4-a716-446655440000",
+      activeDeviceName: "OnePlus CPH2447",
+      sessionUpdatedAt: new Date(Date.now() - 900),
+      updatedAt: new Date(Date.now() - 900),
+    })
+  );
+
+  // Reject oversized phoneNumber (>20 chars) and future sessionUpdatedAt
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      phoneNumber: "+91 98765 43210 999999",
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      activeSessionId: "550e8400-e29b-41d4-a716-446655440001",
+      activeDeviceName: "Future Phone",
+      sessionUpdatedAt: new Date(Date.now() + 60000),
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Reject mixing profile edit with session takeover in a single update
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      displayName: "Mixed Mutation",
+      activeSessionId: "550e8400-e29b-41d4-a716-446655440002",
+      updatedAt: new Date(Date.now() - 500),
     })
   );
 

@@ -5,6 +5,7 @@ import com.example.R
 import com.example.data.local.MockHistoryEntity
 import com.example.data.local.QuestionProgressEntity
 import com.example.data.local.SettingsPreferences
+import com.example.data.model.AccountSessionLogic
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.Question
 import com.google.firebase.Firebase
@@ -15,6 +16,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.Source
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -208,15 +210,44 @@ class CloudSyncRepository(
         }
     }
 
+    /**
+     * Reads /users/{uid} directly from the Firestore server (bypassing stale local cache)
+     * so single-device session validation detects logins from another phone immediately on resume/launch.
+     */
+    suspend fun fetchProfileFromServer(userId: String): Result<CloudUserProfile?> {
+        val docPath = "users/$userId"
+        return try {
+            val uid = requireUserId(userId)
+            val snap = userDoc(uid).get(Source.SERVER).await()
+            val profile = if (snap.exists()) {
+                snap.toObject(
+                    CloudUserProfile::class.java,
+                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                )
+            } else {
+                null
+            }
+            Result.success(profile)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.GET, docPath)
+            Result.failure(e)
+        }
+    }
+
     // ------------------------------------------------------------------------
     // CRASH-SAFE MUTATIONS (Validated against firestore.rules, Result<Unit>)
     // ------------------------------------------------------------------------
-    suspend fun upsertProfile(
+    suspend fun claimActiveSession(
         userId: String,
+        sessionId: String,
+        deviceName: String,
         displayName: String,
         role: String,
         targetYear: String,
         focusSubject: String,
+        phoneNumber: String,
         activeExamId: String,
         themePreference: String,
         negativeMarking: Boolean,
@@ -234,10 +265,83 @@ class CloudSyncRepository(
         val docPath = "users/$userId"
         return try {
             val uid = requireUserId(userId)
+            val safeSessionId = sessionId.trim().take(AccountSessionLogic.MAX_SESSION_ID_LENGTH)
+            val safeDevice = deviceName.trim().ifBlank { "Android Phone" }.take(AccountSessionLogic.MAX_DEVICE_NAME_LENGTH)
+            val docRef = userDoc(uid)
+            val exists = docRef.get().await().exists()
+            if (exists) {
+                val claimPayload = mapOf<String, Any>(
+                    "activeSessionId" to safeSessionId,
+                    "activeDeviceName" to safeDevice,
+                    "sessionUpdatedAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                docRef.update(claimPayload).await()
+                Result.success(Unit)
+            } else {
+                upsertProfile(
+                    userId = uid,
+                    displayName = displayName,
+                    role = role,
+                    targetYear = targetYear,
+                    focusSubject = focusSubject,
+                    phoneNumber = phoneNumber,
+                    activeExamId = activeExamId,
+                    themePreference = themePreference,
+                    negativeMarking = negativeMarking,
+                    useTimeLimit = useTimeLimit,
+                    secondsPerQuestion = secondsPerQuestion,
+                    keepScreenOn = keepScreenOn,
+                    onboardingCompleted = onboardingCompleted,
+                    dailyGoalQuestions = dailyGoalQuestions,
+                    currentStreakDays = currentStreakDays,
+                    longestStreakDays = longestStreakDays,
+                    lastGoalMetDate = lastGoalMetDate,
+                    todayStudyDate = todayStudyDate,
+                    todayAnsweredCount = todayAnsweredCount,
+                    initialActiveSessionId = safeSessionId,
+                    initialActiveDeviceName = safeDevice
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun upsertProfile(
+        userId: String,
+        displayName: String,
+        role: String,
+        targetYear: String,
+        focusSubject: String,
+        phoneNumber: String,
+        activeExamId: String,
+        themePreference: String,
+        negativeMarking: Boolean,
+        useTimeLimit: Boolean,
+        secondsPerQuestion: Int,
+        keepScreenOn: Boolean,
+        onboardingCompleted: Boolean,
+        dailyGoalQuestions: Int,
+        currentStreakDays: Int,
+        longestStreakDays: Int,
+        lastGoalMetDate: String,
+        todayStudyDate: String,
+        todayAnsweredCount: Int,
+        initialActiveSessionId: String = "",
+        initialActiveDeviceName: String = ""
+    ): Result<Unit> {
+        val docPath = "users/$userId"
+        return try {
+            val uid = requireUserId(userId)
             val safeName = displayName.take(SettingsPreferences.MAX_PROFILE_NAME_LENGTH)
             val safeRole = role.take(SettingsPreferences.MAX_PROFILE_ROLE_LENGTH)
             val safeYear = targetYear.trim().take(SettingsPreferences.MAX_TARGET_YEAR_LENGTH)
             val safeFocus = focusSubject.trim().take(32)
+            val safePhone = AccountSessionLogic.sanitizePhoneNumber(phoneNumber)
             val safeExam = activeExamId.trim().ifBlank { PlatformCatalogDefaults.EXAM_RRB_NURSING }.take(64)
             val safeTheme = CloudMergeLogic.parseThemeSafe(themePreference).name
             val safeSec = secondsPerQuestion.coerceIn(
@@ -262,6 +366,7 @@ class CloudSyncRepository(
                     "role" to safeRole,
                     "targetYear" to safeYear,
                     "focusSubject" to safeFocus,
+                    "phoneNumber" to safePhone,
                     "activeExamId" to safeExam,
                     "themePreference" to safeTheme,
                     "negativeMarking" to negativeMarking,
@@ -279,12 +384,13 @@ class CloudSyncRepository(
                 )
                 docRef.update(updatePayload).await()
             } else {
-                val createPayload = mapOf<String, Any>(
+                val createPayload = mutableMapOf<String, Any>(
                     "userId" to uid,
                     "displayName" to safeName,
                     "role" to safeRole,
                     "targetYear" to safeYear,
                     "focusSubject" to safeFocus,
+                    "phoneNumber" to safePhone,
                     "activeExamId" to safeExam,
                     "themePreference" to safeTheme,
                     "negativeMarking" to negativeMarking,
@@ -301,6 +407,14 @@ class CloudSyncRepository(
                     "createdAt" to FieldValue.serverTimestamp(),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
+                val cleanSessionId = initialActiveSessionId.trim().take(AccountSessionLogic.MAX_SESSION_ID_LENGTH)
+                if (cleanSessionId.isNotBlank()) {
+                    createPayload["activeSessionId"] = cleanSessionId
+                    createPayload["activeDeviceName"] = initialActiveDeviceName.trim()
+                        .ifBlank { "Android Phone" }
+                        .take(AccountSessionLogic.MAX_DEVICE_NAME_LENGTH)
+                    createPayload["sessionUpdatedAt"] = FieldValue.serverTimestamp()
+                }
                 docRef.set(createPayload).await()
             }
             Result.success(Unit)

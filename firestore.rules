@@ -53,6 +53,10 @@ service cloud.firestore {
              (!('lastGoalMetDate' in data) || (data.lastGoalMetDate is string && data.lastGoalMetDate.size() <= 16)) &&
              (!('todayStudyDate' in data) || (data.todayStudyDate is string && data.todayStudyDate.size() <= 16)) &&
              (!('todayAnsweredCount' in data) || (data.todayAnsweredCount is int && data.todayAnsweredCount >= 0 && data.todayAnsweredCount <= 10000)) &&
+             (!('phoneNumber' in data) || (data.phoneNumber is string && data.phoneNumber.size() <= 20)) &&
+             (!('activeSessionId' in data) || (data.activeSessionId is string && data.activeSessionId.size() <= 64)) &&
+             (!('activeDeviceName' in data) || (data.activeDeviceName is string && data.activeDeviceName.size() <= 64)) &&
+             (!('sessionUpdatedAt' in data) || isValidTimestamp(data.sessionUpdatedAt)) &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
     }
@@ -133,11 +137,12 @@ service cloud.firestore {
                        ]) &&
                        incoming().keys().hasOnly([
                          'userId', 'displayName', 'role', 'targetYear', 'focusSubject',
-                         'activeExamId', 'themePreference', 'negativeMarking', 'useTimeLimit',
-                         'secondsPerQuestion', 'keepScreenOn', 'onboardingCompleted',
-                         'dailyGoalQuestions', 'currentStreakDays', 'longestStreakDays',
-                         'lastGoalMetDate', 'todayStudyDate', 'todayAnsweredCount',
-                         'createdAt', 'updatedAt'
+                         'phoneNumber', 'activeExamId', 'themePreference', 'negativeMarking',
+                         'useTimeLimit', 'secondsPerQuestion', 'keepScreenOn',
+                         'onboardingCompleted', 'dailyGoalQuestions', 'currentStreakDays',
+                         'longestStreakDays', 'lastGoalMetDate', 'todayStudyDate',
+                         'todayAnsweredCount', 'activeSessionId', 'activeDeviceName',
+                         'sessionUpdatedAt', 'createdAt', 'updatedAt'
                        ]) &&
                        isValidUserProfile(incoming(), userId);
 
@@ -146,14 +151,18 @@ service cloud.firestore {
                        isValidUserProfile(incoming(), userId) &&
                        incoming().userId == existing().userId &&
                        incoming().createdAt == existing().createdAt && (
-                         // Action: Update learner profile, study preferences, onboarding & daily goal streak
+                         // Action 1: Update learner profile, phone number, study preferences, onboarding & daily goal streak
                          incoming().diff(existing()).affectedKeys().hasOnly([
-                           'displayName', 'role', 'targetYear', 'focusSubject',
+                           'displayName', 'role', 'targetYear', 'focusSubject', 'phoneNumber',
                            'activeExamId', 'themePreference', 'negativeMarking',
                            'useTimeLimit', 'secondsPerQuestion', 'keepScreenOn',
                            'onboardingCompleted', 'dailyGoalQuestions', 'currentStreakDays',
                            'longestStreakDays', 'lastGoalMetDate', 'todayStudyDate',
                            'todayAnsweredCount', 'updatedAt'
+                         ]) ||
+                         // Action 2: Claim or refresh single-device active session lock
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'activeSessionId', 'activeDeviceName', 'sessionUpdatedAt', 'updatedAt'
                          ])
                        );
 

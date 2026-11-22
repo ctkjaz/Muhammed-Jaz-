@@ -15,6 +15,7 @@ import com.example.data.local.ExamSectionEntity
 import com.example.data.local.QuestionProgressEntity
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
+import com.example.data.model.AccountSessionLogic
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.PlatformCatalogDefaults
@@ -23,6 +24,7 @@ import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
 import com.example.data.model.QuestionProgress
 import com.example.data.model.QuestionSourceType
+import com.example.data.model.SessionCheckResult
 import com.example.data.model.StudyGoalLogic
 import com.example.data.parser.BulkQuestionParser
 import com.example.data.repository.NursingPrepRepository
@@ -1131,7 +1133,68 @@ class RrbNursingLogicTest {
         assertEquals(5, reloaded.studyGoalState.value.longestStreakDays)
         assertEquals(day4, reloaded.studyGoalState.value.lastGoalMetDate)
     }
+
+    @Test
+    fun `single-device session enforcement and optional phone number validation work cleanly`() {
+        // 1. Remote session blank -> needs initial claim (e.g., v1.4 upgrade)
+        assertEquals(
+            SessionCheckResult.ClaimNeeded,
+            AccountSessionLogic.evaluateRemoteSession("sess-A", "", "Pixel 8")
+        )
+        assertEquals(
+            SessionCheckResult.ClaimNeeded,
+            AccountSessionLogic.evaluateRemoteSession("sess-A", null, null)
+        )
+
+        // 2. Remote session matches local -> valid
+        assertEquals(
+            SessionCheckResult.Valid,
+            AccountSessionLogic.evaluateRemoteSession("sess-A", "sess-A", "Pixel 8")
+        )
+
+        // 3. Remote session differs -> revoked with remote device label
+        val revoked = AccountSessionLogic.evaluateRemoteSession("sess-A", "sess-B", "OnePlus CPH2447")
+        assertTrue(revoked is SessionCheckResult.Revoked)
+        assertEquals("OnePlus CPH2447", (revoked as SessionCheckResult.Revoked).activeDeviceName)
+        assertTrue(
+            AccountSessionLogic.buildForcedSignOutMessage(revoked.activeDeviceName)
+                .contains("OnePlus CPH2447")
+        )
+
+        // 4. Device label avoids duplicating manufacturer prefix
+        assertEquals("Samsung SM-S918B", AccountSessionLogic.buildDeviceLabel("samsung", "SM-S918B"))
+        assertEquals("Pixel 8", AccountSessionLogic.buildDeviceLabel("Google", "Pixel 8").removePrefix("Google "))
+        assertEquals("Samsung Galaxy S24", AccountSessionLogic.buildDeviceLabel("samsung", "Samsung Galaxy S24"))
+
+        // 5. Optional phone number sanitization & validation
+        assertTrue(AccountSessionLogic.isPhoneNumberValidOrEmpty(""))
+        assertTrue(AccountSessionLogic.isPhoneNumberValidOrEmpty("+91 98765 43210"))
+        assertTrue(AccountSessionLogic.isPhoneNumberValidOrEmpty("9876543210"))
+        assertFalse(AccountSessionLogic.isPhoneNumberValidOrEmpty("12345"))
+        assertEquals("+91 98765-43210", AccountSessionLogic.sanitizePhoneNumber("  +91 98765-43210abc  "))
+
+        // 6. SettingsPreferences persists session lock & phone number cleanly
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.getSharedPreferences("rrb_nursing_settings", Context.MODE_PRIVATE).edit().clear().commit()
+        val prefs = SettingsPreferences(context)
+        prefs.setPhoneNumber("+91 98765 43210")
+        prefs.saveLocalSession("uid_1", "sess-A")
+        prefs.markFreshSignInPending()
+        prefs.setForcedSignOutNotice("Signed out on Phone B")
+
+        val reloaded = SettingsPreferences(context)
+        assertEquals("+91 98765 43210", reloaded.phoneNumber.value)
+        assertEquals("uid_1", reloaded.getLocalSessionUid())
+        assertEquals("sess-A", reloaded.getLocalSessionId())
+        assertTrue(reloaded.consumeFreshSignInPending())
+        assertFalse(reloaded.consumeFreshSignInPending())
+        assertEquals("Signed out on Phone B", reloaded.getForcedSignOutNotice())
+
+        reloaded.resetGoalStateForAccountSwitch()
+        assertEquals("", reloaded.phoneNumber.value)
+    }
 }
+
 
 
 

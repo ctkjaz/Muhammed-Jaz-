@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -38,6 +39,8 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.PhonelinkLock
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
@@ -64,12 +67,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.cloud.CloudSyncUiState
 import com.example.data.cloud.SignedInAccountInfo
 import com.example.data.cloud.SyncBadgeState
 import com.example.data.local.SettingsPreferences
+import com.example.data.model.AccountSessionLogic
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.QuestionItem
 import com.example.data.model.StudyGoalLogic
@@ -468,6 +473,8 @@ fun ProfileScreen(
     profileRole: String,
     targetYear: String,
     focusSubject: String,
+    phoneNumber: String,
+    currentDeviceName: String,
     account: SignedInAccountInfo,
     cloudSyncState: CloudSyncUiState,
     studyGoal: DailyStudyGoalState,
@@ -476,6 +483,7 @@ fun ProfileScreen(
     onProfileRoleChange: (String) -> Unit,
     onTargetYearChange: (String) -> Unit,
     onFocusSubjectChange: (String) -> Unit,
+    onPhoneNumberChange: (String) -> Unit,
     onDailyGoalChange: (Int) -> Unit,
     onStartDailyGoalDrill: () -> Unit,
     onOpenExamPicker: () -> Unit,
@@ -736,6 +744,42 @@ fun ProfileScreen(
                         }
                     }
 
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("profile_single_device_status")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PhonelinkLock,
+                                contentDescription = "Single-device lock active",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "1-Phone Active Lock • $currentDeviceName",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Signing in on another phone automatically logs this device out.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -803,6 +847,36 @@ fun ProfileScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("profile_name_input")
+                    )
+
+                    val phoneInvalid = phoneNumber.isNotBlank() &&
+                        !AccountSessionLogic.isPhoneNumberValidOrEmpty(phoneNumber)
+                    OutlinedTextField(
+                        value = phoneNumber,
+                        onValueChange = { onPhoneNumberChange(it) },
+                        label = { Text("Mobile Number (Optional)") },
+                        placeholder = { Text("e.g. +91 98765 43210") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.Phone,
+                                contentDescription = null
+                            )
+                        },
+                        isError = phoneInvalid,
+                        supportingText = {
+                            Text(
+                                text = if (phoneInvalid) {
+                                    "Enter a valid 10-digit mobile number or leave blank."
+                                } else {
+                                    "Optional contact number synced privately to your profile."
+                                }
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("profile_phone_input")
                     )
 
                     OutlinedTextField(

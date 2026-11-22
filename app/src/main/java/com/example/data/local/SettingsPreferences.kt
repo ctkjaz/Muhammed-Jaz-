@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.example.data.model.AccountSessionLogic
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.StudyGoalLogic
@@ -45,6 +46,11 @@ class SettingsPreferences(context: Context) {
         prefs.getString(KEY_FOCUS_SUBJECT, "") ?: ""
     )
     val focusSubject: StateFlow<String> = _focusSubject.asStateFlow()
+
+    private val _phoneNumber = MutableStateFlow(
+        (prefs.getString(KEY_PHONE_NUMBER, "") ?: "").take(AccountSessionLogic.MAX_PHONE_LENGTH)
+    )
+    val phoneNumber: StateFlow<String> = _phoneNumber.asStateFlow()
 
     private val _useTimeLimit = MutableStateFlow(prefs.getBoolean(KEY_USE_TIME_LIMIT, true))
     val useTimeLimit: StateFlow<Boolean> = _useTimeLimit.asStateFlow()
@@ -132,6 +138,13 @@ class SettingsPreferences(context: Context) {
         _focusSubject.value = clean
     }
 
+    fun setPhoneNumber(phone: String) {
+        val filtered = phone.filter { it.isDigit() || it == '+' || it == ' ' || it == '-' }
+            .take(AccountSessionLogic.MAX_PHONE_LENGTH)
+        prefs.edit().putString(KEY_PHONE_NUMBER, filtered).apply()
+        _phoneNumber.value = filtered
+    }
+
     fun setUseTimeLimit(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_USE_TIME_LIMIT, enabled).apply()
         _useTimeLimit.value = enabled
@@ -185,6 +198,7 @@ class SettingsPreferences(context: Context) {
     fun resetGoalStateForAccountSwitch() {
         setOnboardingCompleted(false)
         setStudyGoalState(DailyStudyGoalState())
+        setPhoneNumber("")
     }
 
     fun getSeededVersion(): Int = prefs.getInt(KEY_SEEDED_VERSION, 0)
@@ -199,6 +213,63 @@ class SettingsPreferences(context: Context) {
         prefs.edit().putString(KEY_LAST_SIGNED_IN_UID, uid).apply()
     }
 
+    fun getLocalSessionUid(): String = prefs.getString(KEY_LOCAL_SESSION_UID, "") ?: ""
+
+    fun getLocalSessionId(): String = prefs.getString(KEY_LOCAL_SESSION_ID, "") ?: ""
+
+    fun saveLocalSession(uid: String, sessionId: String) {
+        prefs.edit()
+            .putString(KEY_LOCAL_SESSION_UID, uid)
+            .putString(KEY_LOCAL_SESSION_ID, sessionId.take(AccountSessionLogic.MAX_SESSION_ID_LENGTH))
+            .apply()
+    }
+
+    fun clearLocalSession() {
+        prefs.edit()
+            .remove(KEY_LOCAL_SESSION_UID)
+            .remove(KEY_LOCAL_SESSION_ID)
+            .apply()
+    }
+
+    fun markFreshSignInPending() {
+        prefs.edit().putBoolean(KEY_FRESH_SIGN_IN_PENDING, true).apply()
+    }
+
+    fun clearFreshSignInPending() {
+        prefs.edit().putBoolean(KEY_FRESH_SIGN_IN_PENDING, false).apply()
+    }
+
+    fun consumeFreshSignInPending(): Boolean {
+        val pending = prefs.getBoolean(KEY_FRESH_SIGN_IN_PENDING, false)
+        if (pending) {
+            prefs.edit().putBoolean(KEY_FRESH_SIGN_IN_PENDING, false).apply()
+        }
+        return pending
+    }
+
+    fun markManualSignOut() {
+        prefs.edit().putBoolean(KEY_SKIP_AUTO_SIGN_IN_ONCE, true).apply()
+    }
+
+    fun consumeSkipAutoSignInOnce(): Boolean {
+        val skip = prefs.getBoolean(KEY_SKIP_AUTO_SIGN_IN_ONCE, false)
+        if (skip) {
+            prefs.edit().putBoolean(KEY_SKIP_AUTO_SIGN_IN_ONCE, false).apply()
+        }
+        return skip
+    }
+
+    fun getForcedSignOutNotice(): String? =
+        prefs.getString(KEY_FORCED_SIGN_OUT_NOTICE, null)?.takeIf { it.isNotBlank() }
+
+    fun setForcedSignOutNotice(message: String?) {
+        if (message.isNullOrBlank()) {
+            prefs.edit().remove(KEY_FORCED_SIGN_OUT_NOTICE).apply()
+        } else {
+            prefs.edit().putString(KEY_FORCED_SIGN_OUT_NOTICE, message).apply()
+        }
+    }
+
     fun applySyncedProfile(
         displayName: String,
         role: String,
@@ -211,7 +282,8 @@ class SettingsPreferences(context: Context) {
         secondsPerQuestion: Int,
         keepScreenOn: Boolean,
         onboardingCompleted: Boolean? = null,
-        mergedGoalState: DailyStudyGoalState? = null
+        mergedGoalState: DailyStudyGoalState? = null,
+        phoneNumber: String? = null
     ) {
         val cleanName = displayName.take(MAX_PROFILE_NAME_LENGTH)
         val cleanRole = role.take(MAX_PROFILE_ROLE_LENGTH)
@@ -221,12 +293,14 @@ class SettingsPreferences(context: Context) {
         val cleanSec = secondsPerQuestion.coerceIn(MIN_SECONDS_PER_QUESTION, MAX_SECONDS_PER_QUESTION)
         val resolvedOnboarding = onboardingCompleted ?: _onboardingCompleted.value
         val resolvedGoal = mergedGoalState ?: _studyGoalState.value
+        val resolvedPhone = phoneNumber?.let { AccountSessionLogic.sanitizePhoneNumber(it) } ?: _phoneNumber.value
 
         prefs.edit()
             .putString(KEY_PROFILE_NAME, cleanName)
             .putString(KEY_PROFILE_ROLE, cleanRole)
             .putString(KEY_TARGET_YEAR, cleanYear)
             .putString(KEY_FOCUS_SUBJECT, cleanFocus)
+            .putString(KEY_PHONE_NUMBER, resolvedPhone)
             .putString(KEY_ACTIVE_EXAM_ID, cleanExam)
             .putString(KEY_THEME, themePreference.name)
             .putBoolean(KEY_NEG_MARKING, negativeMarking)
@@ -246,6 +320,7 @@ class SettingsPreferences(context: Context) {
         _profileRole.value = cleanRole
         _targetYear.value = cleanYear
         _focusSubject.value = cleanFocus
+        _phoneNumber.value = resolvedPhone
         _activeExamId.value = cleanExam
         _themePreference.value = themePreference
         _negativeMarking.value = negativeMarking
@@ -285,6 +360,12 @@ class SettingsPreferences(context: Context) {
         private const val KEY_CURRENT_STREAK_DAYS = "current_streak_days"
         private const val KEY_LONGEST_STREAK_DAYS = "longest_streak_days"
         private const val KEY_LAST_GOAL_MET_DATE = "last_goal_met_date"
+        private const val KEY_PHONE_NUMBER = "profile_phone_number"
+        private const val KEY_LOCAL_SESSION_UID = "local_session_uid"
+        private const val KEY_LOCAL_SESSION_ID = "local_session_id"
+        private const val KEY_FRESH_SIGN_IN_PENDING = "fresh_sign_in_pending"
+        private const val KEY_SKIP_AUTO_SIGN_IN_ONCE = "skip_auto_sign_in_once"
+        private const val KEY_FORCED_SIGN_OUT_NOTICE = "forced_sign_out_notice"
 
         fun calculateSuggestedMinutes(questionCount: Int, secondsPerQuestion: Int): Int {
             if (questionCount <= 0 || secondsPerQuestion <= 0) return 0

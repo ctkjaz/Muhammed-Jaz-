@@ -75,7 +75,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -127,6 +130,9 @@ fun ClinEdgeRootApp(auth: FirebaseAuth = Firebase.auth) {
     val user = currentUser
 
     if (user == null) {
+        val settings = remember(context) { SettingsPreferences(context) }
+        val forcedNotice = remember(user) { settings.getForcedSignOutNotice() }
+        val skipAuto = remember(user) { settings.consumeSkipAutoSignInOnce() }
         val systemDark = isSystemInDarkTheme()
         val isDark = when (initialTheme) {
             ThemePreference.SYSTEM -> systemDark
@@ -134,7 +140,11 @@ fun ClinEdgeRootApp(auth: FirebaseAuth = Firebase.auth) {
             ThemePreference.LIGHT -> false
         }
         RrbNursingTheme(darkTheme = isDark) {
-            AuthScreen(onAuthSuccess = { /* AuthStateListener drives navigation reactively */ })
+            AuthScreen(
+                onAuthSuccess = { /* AuthStateListener drives navigation reactively */ },
+                forcedSignOutNotice = forcedNotice,
+                skipAutoSignIn = skipAuto
+            )
         }
     } else {
         key(user.uid) {
@@ -209,6 +219,7 @@ fun RrbNursingApp(vm: MainViewModel) {
         val profileRole by vm.profileRole.collectAsStateWithLifecycle()
         val targetYear by vm.targetYear.collectAsStateWithLifecycle()
         val focusSubject by vm.focusSubject.collectAsStateWithLifecycle()
+        val phoneNumber by vm.phoneNumber.collectAsStateWithLifecycle()
         val useTimeLimit by vm.useTimeLimit.collectAsStateWithLifecycle()
         val secondsPerQuestion by vm.secondsPerQuestion.collectAsStateWithLifecycle()
         val keepScreenOn by vm.keepScreenOn.collectAsStateWithLifecycle()
@@ -216,20 +227,44 @@ fun RrbNursingApp(vm: MainViewModel) {
         val studyGoal by vm.studyGoalState.collectAsStateWithLifecycle()
         val snackbarMessage by vm.snackbarMessage.collectAsStateWithLifecycle()
         val cloudSyncState by vm.cloudSyncState.collectAsStateWithLifecycle()
+        val forcedSignOutEvent by vm.forcedSignOutEvent.collectAsStateWithLifecycle()
         val signedInAccount = vm.signedInAccount
 
         val snackbarHostState = remember { SnackbarHostState() }
         val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
         val scope = rememberCoroutineScope()
         val context = LocalContext.current
+        val lifecycleOwner = LocalLifecycleOwner.current
         val credentialManager = remember(context) { CredentialManager.create(context) }
 
         val performSignOut: () -> Unit = {
             signOut(
                 credentialManager = credentialManager,
                 scope = scope,
-                onBeforeSignOut = { vm.detachCloudSyncForSignOut() }
+                onBeforeSignOut = { vm.detachCloudSyncForSignOut(isForcedByOtherDevice = false) }
             )
+        }
+
+        LaunchedEffect(forcedSignOutEvent) {
+            if (forcedSignOutEvent != null) {
+                signOut(
+                    credentialManager = credentialManager,
+                    scope = scope,
+                    onBeforeSignOut = { vm.detachCloudSyncForSignOut(isForcedByOtherDevice = true) }
+                )
+            }
+        }
+
+        DisposableEffect(lifecycleOwner, vm) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    vm.verifyActiveSessionOnResume()
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+            }
         }
 
         LaunchedEffect(snackbarMessage) {
@@ -312,6 +347,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                 initialRole = profileRole,
                 initialTargetYear = targetYear,
                 initialFocusSubject = focusSubject,
+                initialPhoneNumber = phoneNumber,
                 initialDailyGoal = studyGoal.dailyGoalQuestions,
                 secondsPerQuestion = secondsPerQuestion,
                 onComplete = vm::completeOnboarding,
@@ -581,6 +617,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     profileRole = profileRole,
                                     targetYear = targetYear,
                                     focusSubject = focusSubject,
+                                    phoneNumber = phoneNumber,
+                                    currentDeviceName = vm.currentDeviceName,
                                     account = signedInAccount,
                                     cloudSyncState = cloudSyncState,
                                     studyGoal = studyGoal,
@@ -589,6 +627,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     onProfileRoleChange = vm::setProfileRole,
                                     onTargetYearChange = vm::setTargetYear,
                                     onFocusSubjectChange = vm::setFocusSubject,
+                                    onPhoneNumberChange = vm::setPhoneNumber,
                                     onDailyGoalChange = vm::setDailyGoalQuestions,
                                     onStartDailyGoalDrill = {
                                         vm.closeProfile()

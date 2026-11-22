@@ -36,6 +36,10 @@ data class CloudUserProfile(
     val lastGoalMetDate: String = "",
     val todayStudyDate: String = "",
     val todayAnsweredCount: Long = 0L,
+    val phoneNumber: String = "",
+    val activeSessionId: String = "",
+    val activeDeviceName: String = "",
+    @ServerTimestamp val sessionUpdatedAt: Timestamp? = null,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )

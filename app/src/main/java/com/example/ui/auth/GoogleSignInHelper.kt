@@ -10,6 +10,7 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.example.R
+import com.example.data.local.SettingsPreferences
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -81,6 +82,9 @@ fun attemptAutoSignIn(
             val cred = credentialManager.getCredential(activityContext, request).credential
             if (cred is CustomCredential && cred.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val token = GoogleIdTokenCredential.createFrom(cred.data).idToken
+                val settings = SettingsPreferences(context)
+                settings.markFreshSignInPending()
+                settings.setForcedSignOutNotice(null)
                 Firebase.auth.signInWithCredential(
                     GoogleAuthProvider.getCredential(token, null)
                 ).await()
@@ -89,8 +93,10 @@ fun attemptAutoSignIn(
                 onUnauthenticated()
             }
         } catch (e: CancellationException) {
+            SettingsPreferences(context).clearFreshSignInPending()
             throw e
         } catch (_: Exception) {
+            SettingsPreferences(context).clearFreshSignInPending()
             onUnauthenticated()
         }
     }
@@ -129,6 +135,9 @@ fun onGoogleSignInClicked(
             val cred = credentialManager.getCredential(activity, request).credential
             if (cred is CustomCredential && cred.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val token = GoogleIdTokenCredential.createFrom(cred.data).idToken
+                val settings = SettingsPreferences(context)
+                settings.markFreshSignInPending()
+                settings.setForcedSignOutNotice(null)
                 Firebase.auth.signInWithCredential(
                     GoogleAuthProvider.getCredential(token, null)
                 ).await()
@@ -137,11 +146,14 @@ fun onGoogleSignInClicked(
                 onAuthError("Unexpected credential type received.")
             }
         } catch (e: GetCredentialCancellationException) {
+            SettingsPreferences(context).clearFreshSignInPending()
             Log.w(AUTH_TAG, "Google Sign-In flow cancelled or dismissed: ${e.message}", e)
             onAuthCancelled()
         } catch (e: CancellationException) {
+            SettingsPreferences(context).clearFreshSignInPending()
             throw e
         } catch (e: Exception) {
+            SettingsPreferences(context).clearFreshSignInPending()
             Log.e(AUTH_TAG, "Google Sign-In failed", e)
             onAuthError(e.localizedMessage ?: "Sign in failed. Please try again.")
         }

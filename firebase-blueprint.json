@@ -78,6 +78,23 @@
           "type": "integer",
           "description": "Optional number of questions answered on todayStudyDate."
         },
+        "phoneNumber": {
+          "type": "string",
+          "description": "Optional learner mobile number for profile contact (max 20 chars, no OTP required)."
+        },
+        "activeSessionId": {
+          "type": "string",
+          "description": "Optional active single-device session UUID used to enforce 1 phone at a time (max 64 chars)."
+        },
+        "activeDeviceName": {
+          "type": "string",
+          "description": "Optional display label of the currently active device (max 64 chars)."
+        },
+        "sessionUpdatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Optional server timestamp when the active device session was last claimed."
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",

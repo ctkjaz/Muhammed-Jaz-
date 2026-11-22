@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.MonitorHeart
+import androidx.compose.material.icons.filled.PhonelinkLock
 import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Button
@@ -62,16 +63,23 @@ import com.example.ui.theme.MonoFontFamily
 @Composable
 fun AuthScreen(
     onAuthSuccess: () -> Unit,
+    forcedSignOutNotice: String? = null,
+    skipAutoSignIn: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val credentialManager = remember(context) { CredentialManager.create(context) }
 
-    var isCheckingSession by remember { mutableStateOf(true) }
+    val shouldSkipAuto = !forcedSignOutNotice.isNullOrBlank() || skipAutoSignIn
+    var isCheckingSession by remember(shouldSkipAuto) { mutableStateOf(!shouldSkipAuto) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(shouldSkipAuto) {
+        if (shouldSkipAuto) {
+            isCheckingSession = false
+            return@LaunchedEffect
+        }
         attemptAutoSignIn(
             context = context,
             credentialManager = credentialManager,
@@ -186,14 +194,52 @@ fun AuthScreen(
                         subtitle = "Practice RRB Nursing & AIIMS NORCET Prelims/Mains offline anytime — syncs when online."
                     )
                     AuthFeatureRow(
-                        icon = Icons.Filled.VerifiedUser,
-                        title = "Private Per-User Storage",
-                        subtitle = "Your study data is strictly tied to your Google account with zero-trust rules."
+                        icon = Icons.Filled.PhonelinkLock,
+                        title = "Single-Device Account Protection",
+                        subtitle = "Each account stays active on 1 phone at a time — signing in on a new phone signs out the previous one."
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            if (!forcedSignOutNotice.isNullOrBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f),
+                    border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.55f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 14.dp)
+                        .testTag("auth_forced_signout_banner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.PhonelinkLock,
+                            contentDescription = "Signed out on another device",
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = "Active on Another Device",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Text(
+                                text = forcedSignOutNotice,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                    }
+                }
+            }
 
             if (errorMessage != null) {
                 Surface(

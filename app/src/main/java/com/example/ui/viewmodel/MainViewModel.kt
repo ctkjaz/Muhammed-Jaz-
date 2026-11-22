@@ -19,6 +19,7 @@ import com.example.data.export.PdfWorksheetOptions
 import com.example.data.export.PdfWorksheetWriter
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
+import com.example.data.model.AccountSessionLogic
 import com.example.data.model.CategoryStat
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.DifficultyFilter
@@ -33,6 +34,7 @@ import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
 import com.example.data.model.QuestionSourceType
+import com.example.data.model.SessionCheckResult
 import com.example.data.model.StudyGoalLogic
 import com.example.data.model.SubjectCatalog
 import com.example.data.model.SubjectStat
@@ -214,12 +216,18 @@ class MainViewModel(
     val profileRole: StateFlow<String> = settings.profileRole
     val targetYear: StateFlow<String> = settings.targetYear
     val focusSubject: StateFlow<String> = settings.focusSubject
+    val phoneNumber: StateFlow<String> = settings.phoneNumber
     val useTimeLimit: StateFlow<Boolean> = settings.useTimeLimit
     val secondsPerQuestion: StateFlow<Int> = settings.secondsPerQuestion
     val keepScreenOn: StateFlow<Boolean> = settings.keepScreenOn
     val activeExamId: StateFlow<String> = settings.activeExamId
     val onboardingCompleted: StateFlow<Boolean> = settings.onboardingCompleted
     val studyGoalState: StateFlow<DailyStudyGoalState> = settings.studyGoalState
+
+    val currentDeviceName: String = AccountSessionLogic.buildDeviceLabel()
+
+    private val _forcedSignOutEvent = MutableStateFlow<String?>(null)
+    val forcedSignOutEvent: StateFlow<String?> = _forcedSignOutEvent.asStateFlow()
 
     private val _cloudSyncState = MutableStateFlow(CloudSyncUiState())
     val cloudSyncState: StateFlow<CloudSyncUiState> = _cloudSyncState.asStateFlow()
@@ -370,6 +378,9 @@ class MainViewModel(
     private var profilePushJob: Job? = null
     private var applyingCloudProfile = false
     private var isSigningOut = false
+    private var localSessionId: String = ""
+    private var sessionGuardArmed = false
+    private var pendingSessionClaimRetry = false
 
     init {
         viewModelScope.launch {
@@ -377,6 +388,7 @@ class MainViewModel(
             if (previousUid.isNotBlank() && previousUid != currentUserId) {
                 repository.clearUserSpecificLocalDataForAccountSwitch()
                 settings.resetGoalStateForAccountSwitch()
+                settings.clearLocalSession()
             }
             settings.setLastSignedInUid(currentUserId)
             if (settings.profileName.value.isBlank() && signedInAccount.displayName.isNotBlank()) {
@@ -390,25 +402,157 @@ class MainViewModel(
             _isSeeded.value = true
 
             if (currentUserId.isNotBlank()) {
-                performBidirectionalSync(showFeedbackToast = false)
-                startRealtimeCloudObservers()
+                val allowed = initializeSingleDeviceSession()
+                if (allowed && !isSigningOut) {
+                    performBidirectionalSync(showFeedbackToast = false)
+                    startRealtimeCloudObservers()
+                }
             }
         }
+    }
+
+    private suspend fun initializeSingleDeviceSession(): Boolean {
+        val isFreshSignIn = settings.consumeFreshSignInPending()
+        val storedUid = settings.getLocalSessionUid()
+        val storedSessionId = settings.getLocalSessionId()
+
+        val mustClaim = isFreshSignIn || storedUid != currentUserId || storedSessionId.isBlank()
+        if (mustClaim) {
+            val newId = AccountSessionLogic.generateSessionId()
+            localSessionId = newId
+            settings.saveLocalSession(currentUserId, newId)
+            val claimResult = claimCurrentDeviceSessionOnCloud(newId)
+            if (claimResult.isSuccess) {
+                sessionGuardArmed = true
+                pendingSessionClaimRetry = false
+            } else {
+                pendingSessionClaimRetry = true
+            }
+            return true
+        }
+
+        // Cold restart on an already signed-in device: verify against live Firestore server
+        localSessionId = storedSessionId
+        val serverProfileResult = cloudSync.fetchProfileFromServer(currentUserId)
+        val serverProfile = serverProfileResult.getOrNull()
+        if (serverProfileResult.isSuccess) {
+            when (val verdict = AccountSessionLogic.evaluateRemoteSession(
+                localSessionId = localSessionId,
+                remoteSessionId = serverProfile?.activeSessionId,
+                remoteDeviceName = serverProfile?.activeDeviceName
+            )) {
+                is SessionCheckResult.Revoked -> {
+                    triggerForcedSignOut(verdict.activeDeviceName)
+                    return false
+                }
+                SessionCheckResult.ClaimNeeded -> {
+                    val claimResult = claimCurrentDeviceSessionOnCloud(localSessionId)
+                    pendingSessionClaimRetry = claimResult.isFailure
+                    sessionGuardArmed = claimResult.isSuccess
+                }
+                SessionCheckResult.Valid -> {
+                    sessionGuardArmed = true
+                    pendingSessionClaimRetry = false
+                }
+            }
+        } else {
+            // Offline cold start: allow local study, arm guard so reconnection immediately enforces lock
+            sessionGuardArmed = true
+        }
+        return true
+    }
+
+    fun verifyActiveSessionOnResume() {
+        if (currentUserId.isBlank() || isSigningOut) return
+        viewModelScope.launch {
+            if (pendingSessionClaimRetry && localSessionId.isNotBlank()) {
+                val retry = claimCurrentDeviceSessionOnCloud(localSessionId)
+                if (retry.isSuccess) {
+                    pendingSessionClaimRetry = false
+                    sessionGuardArmed = true
+                }
+                return@launch
+            }
+            if (!sessionGuardArmed || localSessionId.isBlank()) return@launch
+
+            val serverProfileResult = cloudSync.fetchProfileFromServer(currentUserId)
+            if (serverProfileResult.isSuccess && !isSigningOut) {
+                val remote = serverProfileResult.getOrNull()
+                when (val verdict = AccountSessionLogic.evaluateRemoteSession(
+                    localSessionId = localSessionId,
+                    remoteSessionId = remote?.activeSessionId,
+                    remoteDeviceName = remote?.activeDeviceName
+                )) {
+                    is SessionCheckResult.Revoked -> triggerForcedSignOut(verdict.activeDeviceName)
+                    SessionCheckResult.ClaimNeeded -> claimCurrentDeviceSessionOnCloud(localSessionId)
+                    SessionCheckResult.Valid -> Unit
+                }
+            }
+        }
+    }
+
+    private suspend fun claimCurrentDeviceSessionOnCloud(sessionId: String): Result<Unit> {
+        val goal = settings.studyGoalState.value
+        return cloudSync.claimActiveSession(
+            userId = currentUserId,
+            sessionId = sessionId,
+            deviceName = currentDeviceName,
+            displayName = settings.profileName.value,
+            role = settings.profileRole.value,
+            targetYear = settings.targetYear.value,
+            focusSubject = settings.focusSubject.value,
+            phoneNumber = settings.phoneNumber.value,
+            activeExamId = settings.activeExamId.value,
+            themePreference = settings.themePreference.value.name,
+            negativeMarking = settings.negativeMarking.value,
+            useTimeLimit = settings.useTimeLimit.value,
+            secondsPerQuestion = settings.secondsPerQuestion.value,
+            keepScreenOn = settings.keepScreenOn.value,
+            onboardingCompleted = settings.onboardingCompleted.value,
+            dailyGoalQuestions = goal.dailyGoalQuestions,
+            currentStreakDays = goal.currentStreakDays,
+            longestStreakDays = goal.longestStreakDays,
+            lastGoalMetDate = goal.lastGoalMetDate,
+            todayStudyDate = goal.todayStudyDate,
+            todayAnsweredCount = goal.todayAnsweredCount
+        )
+    }
+
+    private fun triggerForcedSignOut(otherDeviceName: String) {
+        if (isSigningOut) return
+        val notice = AccountSessionLogic.buildForcedSignOutMessage(otherDeviceName)
+        settings.setForcedSignOutNotice(notice)
+        detachCloudSyncForSignOut(isForcedByOtherDevice = true)
+        _forcedSignOutEvent.value = notice
     }
 
     fun syncNow() {
         if (currentUserId.isBlank() || isSigningOut) return
         viewModelScope.launch {
+            if (pendingSessionClaimRetry && localSessionId.isNotBlank()) {
+                val retry = claimCurrentDeviceSessionOnCloud(localSessionId)
+                if (retry.isSuccess) {
+                    pendingSessionClaimRetry = false
+                    sessionGuardArmed = true
+                }
+            }
             performBidirectionalSync(showFeedbackToast = true)
         }
     }
 
-    fun detachCloudSyncForSignOut() {
+    fun detachCloudSyncForSignOut(isForcedByOtherDevice: Boolean = false) {
         isSigningOut = true
+        sessionGuardArmed = false
+        stopActiveTimer()
         profilePushJob?.cancel()
         profilePushJob = null
         syncListenerJobs.forEach { it.cancel() }
         syncListenerJobs = emptyList()
+        settings.clearLocalSession()
+        if (!isForcedByOtherDevice) {
+            settings.markManualSignOut()
+            settings.setForcedSignOutNotice(null)
+        }
     }
 
     private fun startRealtimeCloudObservers() {
@@ -430,6 +574,17 @@ class MainViewModel(
                 }
                 .collect { remoteProfile ->
                     if (remoteProfile != null && !isSigningOut) {
+                        if (sessionGuardArmed && localSessionId.isNotBlank()) {
+                            val verdict = AccountSessionLogic.evaluateRemoteSession(
+                                localSessionId = localSessionId,
+                                remoteSessionId = remoteProfile.activeSessionId,
+                                remoteDeviceName = remoteProfile.activeDeviceName
+                            )
+                            if (verdict is SessionCheckResult.Revoked) {
+                                triggerForcedSignOut(verdict.activeDeviceName)
+                                return@collect
+                            }
+                        }
                         applyRemoteProfileToLocal(remoteProfile)
                         markSynced()
                     }
@@ -600,6 +755,9 @@ class MainViewModel(
                 settings.studyGoalState.value
             }
 
+            val resolvedPhone = remote.phoneNumber.takeIf { it.isNotBlank() }
+                ?: settings.phoneNumber.value
+
             settings.applySyncedProfile(
                 displayName = resolvedName,
                 role = remote.role,
@@ -612,7 +770,8 @@ class MainViewModel(
                 secondsPerQuestion = remote.secondsPerQuestion.toInt(),
                 keepScreenOn = remote.keepScreenOn,
                 onboardingCompleted = resolvedOnboarding,
-                mergedGoalState = mergedGoal
+                mergedGoalState = mergedGoal,
+                phoneNumber = resolvedPhone
             )
         } finally {
             applyingCloudProfile = false
@@ -670,6 +829,7 @@ class MainViewModel(
             role = settings.profileRole.value,
             targetYear = settings.targetYear.value,
             focusSubject = settings.focusSubject.value,
+            phoneNumber = settings.phoneNumber.value,
             activeExamId = settings.activeExamId.value,
             themePreference = settings.themePreference.value.name,
             negativeMarking = settings.negativeMarking.value,
@@ -682,7 +842,9 @@ class MainViewModel(
             longestStreakDays = goal.longestStreakDays,
             lastGoalMetDate = goal.lastGoalMetDate,
             todayStudyDate = goal.todayStudyDate,
-            todayAnsweredCount = goal.todayAnsweredCount
+            todayAnsweredCount = goal.todayAnsweredCount,
+            initialActiveSessionId = localSessionId,
+            initialActiveDeviceName = currentDeviceName
         )
         result.onSuccess { markSynced() }.onFailure { recordSyncFailure(it) }
     }
@@ -810,6 +972,11 @@ class MainViewModel(
         scheduleProfileCloudPush()
     }
 
+    fun setPhoneNumber(phone: String) {
+        settings.setPhoneNumber(phone)
+        scheduleProfileCloudPush()
+    }
+
     fun setUseTimeLimit(enabled: Boolean) {
         settings.setUseTimeLimit(enabled)
         scheduleProfileCloudPush()
@@ -844,6 +1011,7 @@ class MainViewModel(
         role: String,
         targetYear: String,
         focusSubject: String,
+        phoneNumber: String,
         dailyGoalQuestions: Int
     ) {
         settings.setActiveExamId(examId)
@@ -853,6 +1021,7 @@ class MainViewModel(
         settings.setProfileRole(role)
         settings.setTargetYear(targetYear)
         settings.setFocusSubject(focusSubject)
+        settings.setPhoneNumber(AccountSessionLogic.sanitizePhoneNumber(phoneNumber))
         val goalResult = StudyGoalLogic.updateDailyGoalTarget(
             current = settings.studyGoalState.value,
             newTarget = dailyGoalQuestions
