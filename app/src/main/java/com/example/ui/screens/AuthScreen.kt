@@ -25,10 +25,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.PhonelinkLock
 import androidx.compose.material.icons.filled.Quiz
-import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -48,7 +46,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -58,7 +55,9 @@ import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
 import com.example.ui.auth.attemptAutoSignIn
 import com.example.ui.auth.onGoogleSignInClicked
+import com.example.ui.components.ClinEdgeLogoMark
 import com.example.ui.theme.MonoFontFamily
+import com.example.ui.theme.editorialColors
 
 @Composable
 fun AuthScreen(
@@ -70,6 +69,7 @@ fun AuthScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val credentialManager = remember(context) { CredentialManager.create(context) }
+    val editorial = MaterialTheme.editorialColors
 
     val shouldSkipAuto = !forcedSignOutNotice.isNullOrBlank() || skipAutoSignIn
     var isCheckingSession by remember(shouldSkipAuto) { mutableStateOf(!shouldSkipAuto) }
@@ -97,65 +97,44 @@ fun AuthScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                        MaterialTheme.colorScheme.background
-                    )
-                )
-            )
+            .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .testTag("auth_screen")
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .widthIn(max = 520.dp)
+                .widthIn(max = 480.dp)
                 .align(Alignment.Center)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Editorial Brand Emblem
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
-                modifier = Modifier.size(76.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Filled.MonitorHeart,
-                        contentDescription = "ClinEdge emblem",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(40.dp)
-                    )
-                }
-            }
+            // Custom Monochrome + Acid Lime Brand Mark
+            ClinEdgeLogoMark(size = 76.dp)
 
             Spacer(modifier = Modifier.height(18.dp))
 
             Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                shape = RoundedCornerShape(50),
+                color = editorial.elevatedSurface,
+                border = BorderStroke(1.dp, editorial.borderSubtle)
             ) {
                 Text(
-                    text = "RRB NURSING  •  AIIMS NORCET",
+                    text = "RRB NURSING  ·  AIIMS NORCET  ·  PGIMER",
                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Text(
                 text = "ClinEdge",
-                style = MaterialTheme.typography.headlineLarge,
+                style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
                 textAlign = TextAlign.Center
@@ -164,7 +143,7 @@ fun AuthScreen(
             Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = "Sign in with Google to sync your progress, bookmarks, CBT mock scores, and custom question sets across devices.",
+                text = "Focused exam prep with cloud sync across PYQs, CBT mocks, and subject analytics.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -172,11 +151,12 @@ fun AuthScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Value Pillars Card
+            // Minimal Value Pillars Card
             Card(
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                border = BorderStroke(1.dp, editorial.borderSubtle),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -184,19 +164,19 @@ fun AuthScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     AuthFeatureRow(
-                        icon = Icons.Filled.CloudDone,
-                        title = "Automatic Cloud Sync",
-                        subtitle = "Keep your accuracy stats, revision deck & mock history safe even if you switch phones."
+                        icon = Icons.Filled.Quiz,
+                        title = "Exam & Subject Pathways",
+                        subtitle = "RRB, NORCET Prelims/Mains & PGIMER banks with cross-exam subject drills."
                     )
                     AuthFeatureRow(
-                        icon = Icons.Filled.Quiz,
-                        title = "1,000+ Questions & Official CBT Mocks",
-                        subtitle = "Practice RRB Nursing & AIIMS NORCET Prelims/Mains offline anytime — syncs when online."
+                        icon = Icons.Filled.CloudDone,
+                        title = "Automatic Cloud Sync",
+                        subtitle = "Progress, bookmarks, and CBT scores stay backed up to your account."
                     )
                     AuthFeatureRow(
                         icon = Icons.Filled.PhonelinkLock,
-                        title = "Single-Device Account Protection",
-                        subtitle = "Each account stays active on 1 phone at a time — signing in on a new phone signs out the previous one."
+                        title = "Single-Device Lock",
+                        subtitle = "Active on one phone at a time for account security."
                     )
                 }
             }
@@ -206,8 +186,8 @@ fun AuthScreen(
             if (!forcedSignOutNotice.isNullOrBlank()) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f),
-                    border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.55f)),
+                    color = editorial.elevatedSurface,
+                    border = BorderStroke(1.dp, editorial.acidLime),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 14.dp)
@@ -221,20 +201,20 @@ fun AuthScreen(
                         Icon(
                             imageVector = Icons.Filled.PhonelinkLock,
                             contentDescription = "Signed out on another device",
-                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                            modifier = Modifier.size(22.dp)
+                            tint = if (editorial.isDark) editorial.acidLime else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp)
                         )
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
                                 text = "Active on Another Device",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
                                 text = forcedSignOutNotice,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -244,8 +224,8 @@ fun AuthScreen(
             if (errorMessage != null) {
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f)),
+                    color = editorial.wrongBg,
+                    border = BorderStroke(1.dp, editorial.wrongText.copy(alpha = 0.4f)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 14.dp)
@@ -259,13 +239,13 @@ fun AuthScreen(
                         Icon(
                             imageVector = Icons.Filled.ErrorOutline,
                             contentDescription = "Sign-in error",
-                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            tint = editorial.wrongText,
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
                             text = errorMessage.orEmpty(),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer
+                            color = editorial.wrongText
                         )
                     }
                 }
@@ -278,11 +258,12 @@ fun AuthScreen(
                     modifier = Modifier.padding(vertical = 12.dp)
                 ) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = if (editorial.isDark) editorial.acidLime else MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Checking existing Google session...",
+                        text = "Checking session...",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -303,7 +284,7 @@ fun AuthScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "Already practised on this phone? Your local bookmarks, accuracy & imported questions merge automatically after sign-in.",
+                text = "Local study progress merges automatically after sign-in.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -355,7 +336,7 @@ fun GoogleSignInButton(
     ) {
         if (isLoading) {
             CircularProgressIndicator(
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(20.dp),
                 color = MaterialTheme.colorScheme.onPrimary,
                 strokeWidth = 2.dp
             )
@@ -396,6 +377,7 @@ private fun AuthFeatureRow(
     title: String,
     subtitle: String
 ) {
+    val editorial = MaterialTheme.editorialColors
     Row(
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -404,14 +386,14 @@ private fun AuthFeatureRow(
             modifier = Modifier
                 .size(36.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.primaryContainer),
+                .background(editorial.elevatedSurface),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
+                tint = if (editorial.isDark) editorial.acidLime else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(18.dp)
             )
         }
         Column(

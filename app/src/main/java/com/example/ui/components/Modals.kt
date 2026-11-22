@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,12 +13,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Backup
@@ -40,8 +40,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -50,10 +48,10 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -71,16 +69,18 @@ import com.example.data.backup.BackupFolderSummary
 import com.example.data.export.PdfWorksheetWriter
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.Exam
+import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.Profession
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
 import com.example.data.model.QuestionSourceType
 import com.example.data.model.SubjectCatalog
 import com.example.data.update.AppUpdateUiState
-import com.example.ui.theme.CalmSageFill
+import com.example.ui.theme.AcidLime
 import com.example.ui.theme.MonoFontFamily
-import com.example.ui.theme.MutedCrimsonFill
-import com.example.ui.theme.WarmWhite
+import com.example.ui.theme.PureBlack
+import com.example.ui.theme.PureWhite
+import com.example.ui.theme.SemanticWrongFill
 import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.ImporterUiState
 import com.example.ui.viewmodel.PdfExportConfigState
@@ -90,7 +90,7 @@ import com.example.ui.viewmodel.TimedPracticeConfigState
 @Composable
 fun TimedPracticeConfigDialog(
     state: TimedPracticeConfigState,
-    allQuestions: List<QuestionItem>,
+    @Suppress("UNUSED_PARAMETER") allQuestions: List<QuestionItem>,
     activeExamId: String = "rrb_nursing",
     useTimeLimit: Boolean,
     negativeMarking: Boolean,
@@ -105,16 +105,23 @@ fun TimedPracticeConfigDialog(
 ) {
     if (!state.isVisible) return
 
-    val isNorcet = activeExamId == "aiims_norcet"
-    val isPgimer = activeExamId == "pgimer_nursing"
-    val negLabel = if (isPgimer) "0.25" else "0.33"
-    val sourceOptions = remember(isNorcet, isPgimer) {
+    val editorial = MaterialTheme.editorialColors
+    val isNorcet = activeExamId == PlatformCatalogDefaults.EXAM_AIIMS_NORCET
+    val isPgimer = activeExamId == PlatformCatalogDefaults.EXAM_PGIMER_NURSING
+    val negLabel = if (isPgimer && !state.useCrossExamPool) "0.25" else "0.33"
+    val sourceOptions = remember(isNorcet, isPgimer, state.useCrossExamPool) {
         val visibleSubjs = when {
+            state.useCrossExamPool -> SubjectCatalog.ALL_SUBJS
             isPgimer -> SubjectCatalog.NURSING_SUBJS
             isNorcet -> SubjectCatalog.ALL_SUBJS.filter { it.code != "Railways" }
             else -> SubjectCatalog.ALL_SUBJS
         }
         val baseGroups = when {
+            state.useCrossExamPool -> listOf(
+                "MIXED" to "All Subjects",
+                "NURSING" to "Nursing Core",
+                "PYQ" to "All PYQs"
+            )
             isPgimer -> listOf(
                 "MIXED" to "Mixed (All)",
                 "PYQ" to "PGIMER PYQs",
@@ -142,10 +149,30 @@ fun TimedPracticeConfigDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = editorial.cardSurface,
         title = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Filled.Timer, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Text("Timed Practice Mode", style = MaterialTheme.typography.titleLarge)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Filled.Timer, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+                    Text("Timed Practice", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                }
+                if (state.useCrossExamPool) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = editorial.acidLime
+                    ) {
+                        val scopeTxt = state.crossExamFilterId?.let { id ->
+                            PlatformCatalogDefaults.DEFAULT_EXAMS.firstOrNull { it.id == id }?.shortName ?: "Filtered Exam"
+                        } ?: "All Exams Combined"
+                        Text(
+                            text = "By Subject · $scopeTxt",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = editorial.onAcidLime,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
             }
         },
         text = {
@@ -156,18 +183,19 @@ fun TimedPracticeConfigDialog(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text(
-                    text = "Select Subject or Mixed Set",
-                    style = MaterialTheme.typography.labelLarge
+                    text = "Select Subject or Set",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
                 )
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     sourceOptions.forEach { (key, label) ->
-                        FilterChip(
+                        MonochromeFilterPill(
+                            label = label,
                             selected = state.sourceKey == key,
                             onClick = { onSelectSource(key) },
-                            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                             modifier = Modifier.testTag("timed_src_$key")
                         )
                     }
@@ -175,7 +203,8 @@ fun TimedPracticeConfigDialog(
 
                 Text(
                     text = "Difficulty Level",
-                    style = MaterialTheme.typography.labelLarge
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
                 )
                 DifficultyFilterBar(
                     selected = state.difficultyFilter,
@@ -184,18 +213,19 @@ fun TimedPracticeConfigDialog(
                 )
 
                 Text(
-                    text = "Question Count ($availableCount available)",
-                    style = MaterialTheme.typography.labelLarge
+                    text = "Questions ($availableCount available)",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
                 )
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     listOf(15 to "15 Qs", 30 to "30 Qs", 50 to "50 Qs", 0 to "All").forEach { (cnt, lbl) ->
-                        FilterChip(
+                        MonochromeFilterPill(
+                            label = lbl,
                             selected = state.questionCount == cnt,
                             onClick = { onSelectCount(cnt) },
-                            label = { Text(lbl, style = MaterialTheme.typography.labelMedium) },
                             modifier = Modifier.testTag("timed_cnt_$cnt")
                         )
                     }
@@ -206,12 +236,12 @@ fun TimedPracticeConfigDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Timer Duration", style = MaterialTheme.typography.labelLarge)
+                    Text("Timer Duration", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                     Text(
-                        text = if (useTimeLimit) "${state.durationMinutes} mins" else "Off (Settings)",
+                        text = if (useTimeLimit) "${state.durationMinutes} min" else "Off (Settings)",
                         style = MaterialTheme.typography.titleSmall.copy(fontFamily = MonoFontFamily),
                         color = if (useTimeLimit) {
-                            MaterialTheme.colorScheme.primary
+                            if (editorial.isDark) AcidLime else PureBlack
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
@@ -221,7 +251,7 @@ fun TimedPracticeConfigDialog(
 
                 if (!useTimeLimit) {
                     Text(
-                        text = "Time limit is turned off in Settings. This practice drill will run without a countdown.",
+                        text = "Time limit is off in Settings. Drill will run untimed.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -244,6 +274,11 @@ fun TimedPracticeConfigDialog(
                         onValueChange = { onSelectMinutes(it.toInt()) },
                         valueRange = 5f..120f,
                         enabled = useTimeLimit,
+                        colors = SliderDefaults.colors(
+                            thumbColor = if (editorial.isDark) AcidLime else PureBlack,
+                            activeTrackColor = if (editorial.isDark) AcidLime else PureBlack,
+                            inactiveTrackColor = editorial.elevatedSurface
+                        ),
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(
@@ -260,11 +295,10 @@ fun TimedPracticeConfigDialog(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     listOf(15, 30, 45, 60, 90).forEach { m ->
-                        FilterChip(
+                        MonochromeFilterPill(
+                            label = "${m}m",
                             selected = useTimeLimit && state.durationMinutes == m,
-                            enabled = useTimeLimit,
-                            onClick = { onSelectMinutes(m) },
-                            label = { Text("${m}m", style = MaterialTheme.typography.labelSmall) }
+                            onClick = { if (useTimeLimit) onSelectMinutes(m) }
                         )
                     }
                 }
@@ -275,9 +309,9 @@ fun TimedPracticeConfigDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Negative Marking (-$negLabel)", style = MaterialTheme.typography.labelLarge)
+                        Text("Negative Marking (-$negLabel)", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                         Text(
-                            text = "Standard +1 / -$negLabel exam scoring",
+                            text = "+1 / -$negLabel exam scoring",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -285,6 +319,11 @@ fun TimedPracticeConfigDialog(
                     Switch(
                         checked = negativeMarking,
                         onCheckedChange = { onToggleNegativeMarking() },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = PureBlack,
+                            checkedTrackColor = AcidLime,
+                            checkedBorderColor = AcidLime
+                        ),
                         modifier = Modifier.testTag("timed_neg_switch")
                     )
                 }
@@ -294,14 +333,20 @@ fun TimedPracticeConfigDialog(
             Button(
                 onClick = onStart,
                 enabled = effectiveCount > 0,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = editorial.acidLime,
+                    contentColor = editorial.onAcidLime
+                ),
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.testTag("start_timed_practice_button")
             ) {
                 Text(
                     if (useTimeLimit) {
-                        "Start ($effectiveCount Qs • ${state.durationMinutes}m)"
+                        "Start ($effectiveCount Qs · ${state.durationMinutes}m)"
                     } else {
-                        "Start ($effectiveCount Qs • Untimed)"
-                    }
+                        "Start ($effectiveCount Qs)"
+                    },
+                    fontWeight = FontWeight.Bold
                 )
             }
         },
@@ -334,10 +379,12 @@ fun ImporterModalSheet(
 ) {
     if (!state.isVisible) return
 
+    val editorial = MaterialTheme.editorialColors
     var confirmClear by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        containerColor = editorial.cardSurface,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
         Column(
@@ -346,7 +393,7 @@ fun ImporterModalSheet(
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 28.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -354,21 +401,21 @@ fun ImporterModalSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Import, Backup & Restore", style = MaterialTheme.typography.titleLarge)
+                    Text("Import & Backup", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
-                        "Import shift questions or back up your student profile, plan & progress",
+                        "Import shift questions or back up profile, plan & progress",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
+                        shape = RoundedCornerShape(6.dp),
+                        color = editorial.elevatedSurface,
+                        border = BorderStroke(1.dp, editorial.borderSubtle)
                     ) {
                         Text(
                             text = "Active Exam: $activeExamShortName",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
@@ -378,18 +425,12 @@ fun ImporterModalSheet(
                 }
             }
 
-            TabRow(selectedTabIndex = state.selectedTab) {
-                Tab(
-                    selected = state.selectedTab == 0,
-                    onClick = { onUpdate { it.copy(selectedTab = 0) } },
-                    text = { Text("PDF Text Parser") }
-                )
-                Tab(
-                    selected = state.selectedTab == 1,
-                    onClick = { onUpdate { it.copy(selectedTab = 1) } },
-                    text = { Text("Backup & Batch") }
-                )
-            }
+            SegmentedPillBar(
+                options = listOf(0, 1),
+                selected = state.selectedTab,
+                labelOf = { idx -> if (idx == 0) "PDF Text Parser" else "Backup & Batch" },
+                onSelect = { idx -> onUpdate { it.copy(selectedTab = idx) } }
+            )
 
             if (state.selectedTab == 0) {
                 PdfTextImportPane(
@@ -419,8 +460,9 @@ fun ImporterModalSheet(
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
-            title = { Text("Reset Custom Questions?") },
-            text = { Text("Delete all custom imported questions? The built-in MCQs will remain untouched.") },
+            containerColor = editorial.cardSurface,
+            title = { Text("Reset Custom Questions?", fontWeight = FontWeight.Bold) },
+            text = { Text("Delete all custom imported questions? Built-in MCQs stay untouched.") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -428,11 +470,11 @@ fun ImporterModalSheet(
                         onClearCustom()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MutedCrimsonFill,
-                        contentColor = WarmWhite
+                        containerColor = SemanticWrongFill,
+                        contentColor = PureWhite
                     )
                 ) {
-                    Text("Delete Custom")
+                    Text("Delete Custom", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -450,19 +492,21 @@ private fun PdfTextImportPane(
     onPreviewPdf: () -> Unit,
     onCommitPdf: () -> Unit
 ) {
+    val editorial = MaterialTheme.editorialColors
     val categories = listOf("pyq" to "PYQ", "nur" to "Nursing Core", "ca" to "GK & Health", "gen" to "Aptitude / Sci")
     val subjects = SubjectCatalog.ALL_SUBJS.map { it.code }
     var catExpanded by remember { mutableStateOf(false) }
     var subjExpanded by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Source Type", style = MaterialTheme.typography.labelLarge)
+        Text("Source Type", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             QuestionSourceType.entries.forEach { st ->
-                FilterChip(
+                MonochromeFilterPill(
+                    label = st.label,
                     selected = state.sourceType == st,
                     onClick = {
                         onUpdate { current ->
@@ -475,16 +519,15 @@ private fun PdfTextImportPane(
                             current.copy(sourceType = st, category = alignedCategory)
                         }
                     },
-                    label = { Text(st.label, style = MaterialTheme.typography.labelSmall) },
                     modifier = Modifier.testTag("import_source_${st.dbValue}")
                 )
             }
         }
         if (state.sourceType == QuestionSourceType.OFFICIAL_PYQ && state.sourceNote.isBlank()) {
             Text(
-                text = "Add a source note below to mark as Official PYQ; otherwise saved as Memory-Based PYQ.",
+                text = "Add a source note below to mark as Official PYQ.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.editorialColors.warningText
+                color = editorial.warningText
             )
         }
     }
@@ -583,7 +626,7 @@ private fun PdfTextImportPane(
                 )
             }
         },
-        label = { Text("Source Note (required to mark PYQ as Verified)") },
+        label = { Text("Source Note (for Verified status)") },
         placeholder = { Text("e.g. Official RRB 2025 Shift 1 answer key PDF") },
         singleLine = true,
         modifier = Modifier
@@ -597,13 +640,9 @@ private fun PdfTextImportPane(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text("Mark Imported Questions as Verified", style = MaterialTheme.typography.labelLarge)
+            Text("Mark Imported as Verified", style = MaterialTheme.typography.labelLarge)
             Text(
-                text = if (state.sourceNote.isBlank()) {
-                    "Add a non-empty Source Note above to enable Verified status; otherwise saved as Unverified."
-                } else {
-                    "Will be saved as Verified with the Source Note above."
-                },
+                text = if (state.sourceNote.isBlank()) "Requires Source Note above." else "Saved as Verified.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -612,6 +651,7 @@ private fun PdfTextImportPane(
             checked = state.markAsVerified && state.sourceNote.isNotBlank(),
             enabled = state.sourceNote.isNotBlank(),
             onCheckedChange = { checked -> onUpdate { it.copy(markAsVerified = checked) } },
+            colors = SwitchDefaults.colors(checkedThumbColor = PureBlack, checkedTrackColor = AcidLime),
             modifier = Modifier.testTag("pdf_mark_verified_switch")
         )
     }
@@ -620,10 +660,10 @@ private fun PdfTextImportPane(
         Text("Default Difficulty", style = MaterialTheme.typography.labelLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             QuestionDifficulty.entries.forEach { diff ->
-                FilterChip(
+                MonochromeFilterPill(
+                    label = diff.label,
                     selected = state.difficulty == diff,
                     onClick = { onUpdate { it.copy(difficulty = diff) } },
-                    label = { Text(diff.label) },
                     modifier = Modifier.testTag("import_diff_${diff.name.lowercase()}")
                 )
             }
@@ -649,16 +689,20 @@ private fun PdfTextImportPane(
 
     Button(
         onClick = onPreviewPdf,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary
+        ),
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .testTag("parse_preview_button"),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Text("Parse & Preview")
+        Text("Parse & Preview", fontWeight = FontWeight.Bold)
     }
 
     if (state.hasPreviewed) {
-        val editorial = MaterialTheme.editorialColors
         if (state.previewQuestions.isEmpty()) {
             Text(
                 "Could not detect questions. Format as 'Q.1 Question' followed by '1. Opt' and 'Ans: 1'.",
@@ -672,7 +716,7 @@ private fun PdfTextImportPane(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Parsed ${state.previewQuestions.size} valid MCQ(s)",
+                    "Parsed ${state.previewQuestions.size} MCQ(s)",
                     color = editorial.correctText,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold
@@ -680,12 +724,13 @@ private fun PdfTextImportPane(
                 Button(
                     onClick = onCommitPdf,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = CalmSageFill,
-                        contentColor = WarmWhite
+                        containerColor = editorial.acidLime,
+                        contentColor = editorial.onAcidLime
                     ),
+                    shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.testTag("save_imported_button")
                 ) {
-                    Text("Save Permanently")
+                    Text("Save Permanently", fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -699,14 +744,15 @@ private fun PdfTextImportPane(
                 state.previewQuestions.forEachIndexed { idx, q ->
                     Card(
                         shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        border = BorderStroke(1.dp, editorial.borderSubtle),
+                        colors = CardDefaults.cardColors(containerColor = editorial.elevatedSurface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
                         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             PyqSourceBadge(question = q)
                             Text("${idx + 1}. ${q.questionText}", style = MaterialTheme.typography.labelMedium)
                             Text(
-                                "Ans: ${'A' + q.correctIndex} • ${q.options.getOrElse(q.correctIndex) { "" }}",
+                                "Ans: ${'A' + q.correctIndex} · ${q.options.getOrElse(q.correctIndex) { "" }}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = editorial.correctText
                             )
@@ -732,10 +778,11 @@ private fun JsonBackupPane(
     onOpenPdfExport: () -> Unit,
     onRequestClearCustom: () -> Unit
 ) {
+    val editorial = MaterialTheme.editorialColors
     Surface(
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        color = editorial.elevatedSurface,
+        border = BorderStroke(1.dp, editorial.borderSubtle)
     ) {
         Column(
             modifier = Modifier
@@ -756,7 +803,7 @@ private fun JsonBackupPane(
                     Icon(
                         imageVector = Icons.Filled.FolderOpen,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(20.dp)
                     )
                     Column {
@@ -776,12 +823,12 @@ private fun JsonBackupPane(
                     onClick = onChooseBackupFolder,
                     modifier = Modifier.testTag("importer_choose_backup_folder_btn")
                 ) {
-                    Text("Change")
+                    Text("Change", fontWeight = FontWeight.Bold)
                 }
             }
 
             Text(
-                text = "Includes your student profile, active plan, study goal, bookmarks, progress, and custom MCQs.",
+                text = "Includes student profile, plan, study goal, bookmarks, progress, and custom MCQs.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -790,32 +837,31 @@ private fun JsonBackupPane(
                 Button(
                     onClick = onExportBackup,
                     enabled = !isBackupBusy,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
                     modifier = Modifier
                         .weight(1f)
+                        .heightIn(min = 46.dp)
                         .testTag("export_backup_button"),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Backup,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    Icon(imageVector = Icons.Filled.Backup, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Backup")
+                    Text("Backup", fontWeight = FontWeight.Bold)
                 }
                 OutlinedButton(
                     onClick = onRestoreBackup,
                     enabled = !isBackupBusy,
+                    border = BorderStroke(1.dp, editorial.borderSubtle),
                     modifier = Modifier
                         .weight(1f)
+                        .heightIn(min = 46.dp)
                         .testTag("restore_backup_button"),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Restore,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    Icon(imageVector = Icons.Filled.Restore, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Restore")
                 }
@@ -842,12 +888,6 @@ private fun JsonBackupPane(
                 style = MaterialTheme.typography.bodySmall
             )
         },
-        supportingText = {
-            Text(
-                "PYQ items are saved as verified only when sourceStatus is \"verified\" and sourceNote is non-empty; otherwise saved as unverified.",
-                style = MaterialTheme.typography.bodySmall
-            )
-        },
         minLines = 4,
         maxLines = 7,
         modifier = Modifier
@@ -857,28 +897,28 @@ private fun JsonBackupPane(
 
     OutlinedButton(
         onClick = onImportJson,
+        border = BorderStroke(1.dp, editorial.borderSubtle),
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 46.dp)
             .testTag("import_json_button"),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Text("Import Question Batch")
+        Text("Import Question Batch", fontWeight = FontWeight.SemiBold)
     }
 
-    FilledTonalButton(
+    OutlinedButton(
         onClick = onOpenPdfExport,
+        border = BorderStroke(1.dp, editorial.borderSubtle),
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 46.dp)
             .testTag("importer_open_pdf_export_button"),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Icon(
-            imageVector = Icons.Filled.PictureAsPdf,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp)
-        )
+        Icon(imageVector = Icons.Filled.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(modifier = Modifier.width(8.dp))
-        Text("Export Printable PDF Worksheet")
+        Text("Export Printable PDF Worksheet", fontWeight = FontWeight.SemiBold)
     }
 
     Row(
@@ -887,7 +927,7 @@ private fun JsonBackupPane(
     ) {
         TextButton(
             onClick = onRequestClearCustom,
-            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.editorialColors.wrongText)
+            colors = ButtonDefaults.textButtonColors(contentColor = editorial.wrongText)
         ) {
             Text("Reset Custom Questions")
         }
@@ -906,6 +946,7 @@ fun PdfExportModalSheet(
 ) {
     if (!state.isVisible) return
 
+    val editorial = MaterialTheme.editorialColors
     val scopes = remember {
         listOf(
             "MIXED" to "All MCQs",
@@ -929,6 +970,7 @@ fun PdfExportModalSheet(
 
     ModalBottomSheet(
         onDismissRequest = { if (!state.isExporting) onDismiss() },
+        containerColor = editorial.cardSurface,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
         Column(
@@ -952,12 +994,12 @@ fun PdfExportModalSheet(
                     Icon(
                         imageVector = Icons.Filled.PictureAsPdf,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                     Column {
-                        Text("Export Printable PDF Worksheet", style = MaterialTheme.typography.titleLarge)
+                        Text("Export PDF Worksheet", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Text(
-                            "Clean A4 study booklets with ClinEdge watermark on every page",
+                            "A4 study sheets with ClinEdge watermark",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -972,7 +1014,7 @@ fun PdfExportModalSheet(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Question Scope", style = MaterialTheme.typography.labelLarge)
+                Text("Question Scope", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -980,10 +1022,10 @@ fun PdfExportModalSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     scopes.forEach { (key, label) ->
-                        FilterChip(
+                        MonochromeFilterPill(
+                            label = label,
                             selected = state.sourceKey == key,
                             onClick = { onUpdate { it.copy(sourceKey = key) } },
-                            label = { Text(label) },
                             modifier = Modifier.testTag("pdf_scope_$key")
                         )
                     }
@@ -991,7 +1033,7 @@ fun PdfExportModalSheet(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Difficulty Level", style = MaterialTheme.typography.labelLarge)
+                Text("Difficulty Level", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 DifficultyFilterBar(
                     selected = state.difficultyFilter,
                     onSelect = { diff -> onUpdate { it.copy(difficultyFilter = diff) } },
@@ -1000,16 +1042,16 @@ fun PdfExportModalSheet(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Worksheet Size", style = MaterialTheme.typography.labelLarge)
+                Text("Worksheet Size", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     limits.forEach { (limit, label) ->
-                        FilterChip(
+                        MonochromeFilterPill(
+                            label = label,
                             selected = state.questionLimit == limit,
                             onClick = { onUpdate { it.copy(questionLimit = limit) } },
-                            label = { Text(label) },
                             modifier = Modifier.testTag("pdf_limit_$limit")
                         )
                     }
@@ -1017,21 +1059,14 @@ fun PdfExportModalSheet(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Layout Mode", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = !state.inlineAnswers,
-                        onClick = { onUpdate { it.copy(inlineAnswers = false) } },
-                        label = { Text("Mock Booklet") },
-                        modifier = Modifier.testTag("pdf_mode_mock")
-                    )
-                    FilterChip(
-                        selected = state.inlineAnswers,
-                        onClick = { onUpdate { it.copy(inlineAnswers = true) } },
-                        label = { Text("Inline Study Sheet") },
-                        modifier = Modifier.testTag("pdf_mode_study")
-                    )
-                }
+                Text("Layout Mode", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                SegmentedPillBar(
+                    options = listOf(false, true),
+                    selected = state.inlineAnswers,
+                    labelOf = { inline -> if (inline) "Inline Study Sheet" else "Mock Booklet" },
+                    onSelect = { inline -> onUpdate { it.copy(inlineAnswers = inline) } },
+                    testTagOf = { inline -> if (inline) "pdf_mode_study" else "pdf_mode_mock" }
+                )
 
                 if (!state.inlineAnswers) {
                     Row(
@@ -1042,7 +1077,7 @@ fun PdfExportModalSheet(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Include Answer Key & Rationales", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Appends answer grid and clinical rationales at the end",
+                                "Appends answer grid at the end",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1050,6 +1085,7 @@ fun PdfExportModalSheet(
                         Switch(
                             checked = state.includeAnswerKey,
                             onCheckedChange = { checked -> onUpdate { it.copy(includeAnswerKey = checked) } },
+                            colors = SwitchDefaults.colors(checkedThumbColor = PureBlack, checkedTrackColor = AcidLime),
                             modifier = Modifier.testTag("pdf_answer_key_switch")
                         )
                     }
@@ -1058,8 +1094,8 @@ fun PdfExportModalSheet(
 
             Surface(
                 shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                color = editorial.elevatedSurface,
+                border = BorderStroke(1.dp, editorial.borderSubtle)
             ) {
                 Column(
                     modifier = Modifier
@@ -1069,17 +1105,13 @@ fun PdfExportModalSheet(
                 ) {
                     Text(
                         text = if (matchingCount > 0) {
-                            "$matchingCount MCQs ready  •  ~$estimatedPages A4 pages"
+                            "$matchingCount MCQs ready  ·  ~$estimatedPages A4 pages"
                         } else {
-                            "No matching MCQs found for this filter"
+                            "No matching MCQs found"
                         },
-                        style = MaterialTheme.typography.titleSmall,
-                        fontFamily = MonoFontFamily,
-                        color = if (matchingCount > 0) {
-                            MaterialTheme.editorialColors.correctText
-                        } else {
-                            MaterialTheme.editorialColors.wrongText
-                        }
+                        style = MaterialTheme.typography.titleSmall.copy(fontFamily = MonoFontFamily),
+                        fontWeight = FontWeight.Bold,
+                        color = if (matchingCount > 0) editorial.correctText else editorial.wrongText
                     )
                     Text(
                         text = "File: $suggestedFileName",
@@ -1092,6 +1124,10 @@ fun PdfExportModalSheet(
             Button(
                 onClick = onExportPdf,
                 enabled = matchingCount > 0 && !state.isExporting,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = editorial.acidLime,
+                    contentColor = editorial.onAcidLime
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
@@ -1102,7 +1138,7 @@ fun PdfExportModalSheet(
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
+                        color = editorial.onAcidLime
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Generating PDF...", fontWeight = FontWeight.Bold)
@@ -1129,8 +1165,11 @@ fun ExamPickerModalSheet(
 ) {
     if (!isVisible) return
 
+    val editorial = MaterialTheme.editorialColors
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        containerColor = editorial.cardSurface,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
         Column(
@@ -1155,12 +1194,12 @@ fun ExamPickerModalSheet(
                     Icon(
                         imageVector = Icons.Filled.School,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                     Column {
-                        Text("Active Exam Track", style = MaterialTheme.typography.titleLarge)
+                        Text("Active Exam Track", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Text(
-                            "Choose your exam track",
+                            "Switch between nursing exam banks anytime",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1178,16 +1217,17 @@ fun ExamPickerModalSheet(
             professions.forEach { profession ->
                 val profExams = examsByProfession[profession.id].orEmpty()
                 if (profExams.isNotEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
                             text = profession.name.uppercase(),
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         profExams.forEach { exam ->
                             val isSelected = exam.id == activeExamId
                             val qCount = examQuestionCounts[exam.id] ?: 0
+                            val hasStages = PlatformCatalogDefaults.supportsStages(exam.id)
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1196,20 +1236,17 @@ fun ExamPickerModalSheet(
                                     .testTag("exam_option_${exam.id}"),
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (isSelected) {
-                                        MaterialTheme.colorScheme.primaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.surface
-                                    }
+                                    containerColor = if (isSelected) editorial.elevatedSurface else editorial.cardSurface
                                 ),
                                 border = BorderStroke(
-                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                    width = if (isSelected) 2.dp else 1.dp,
                                     color = if (isSelected) {
-                                        MaterialTheme.colorScheme.primary
+                                        if (editorial.isDark) editorial.acidLime else PureBlack
                                     } else {
-                                        MaterialTheme.colorScheme.outline
+                                        editorial.borderSubtle
                                     }
-                                )
+                                ),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -1220,36 +1257,43 @@ fun ExamPickerModalSheet(
                                 ) {
                                     Column(
                                         modifier = Modifier.weight(1f),
-                                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
-                                        Text(
-                                            text = exam.name,
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isSelected) {
-                                                MaterialTheme.colorScheme.onPrimaryContainer
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurface
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = exam.name,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.weight(1f, fill = false)
+                                            )
+                                            if (hasStages) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = editorial.acidLime
+                                                ) {
+                                                    Text(
+                                                        text = "2-Stage",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = editorial.onAcidLime,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
                                             }
-                                        )
+                                        }
                                         Text(
-                                            text = "${formatApproxQuestionCount(qCount)}  •  ${exam.defaultMockQuestions}Q / ${exam.defaultMockMinutes}m  •  -${exam.negativeMarks}",
+                                            text = "${formatApproxQuestionCount(qCount)}  ·  ${exam.defaultMockQuestions}Q / ${exam.defaultMockMinutes}m  ·  -${exam.negativeMarks}",
                                             style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                                            color = if (isSelected) {
-                                                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            }
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                         if (exam.description.isNotBlank()) {
                                             Text(
                                                 text = exam.description,
                                                 style = MaterialTheme.typography.bodySmall,
-                                                color = if (isSelected) {
-                                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                }
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
                                     }
@@ -1257,7 +1301,7 @@ fun ExamPickerModalSheet(
                                         Icon(
                                             imageVector = Icons.Filled.CheckCircle,
                                             contentDescription = "Active exam",
-                                            tint = MaterialTheme.colorScheme.primary,
+                                            tint = if (editorial.isDark) editorial.acidLime else PureBlack,
                                             modifier = Modifier.size(22.dp)
                                         )
                                     }
@@ -1266,19 +1310,6 @@ fun ExamPickerModalSheet(
                         }
                     }
                 }
-            }
-
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-            ) {
-                Text(
-                    text = "Switch tracks anytime — your mastery progress and saved bookmarks stay synced across shared nursing subjects.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(14.dp)
-                )
             }
         }
     }
@@ -1291,15 +1322,17 @@ fun AppUpdateAvailableDialog(
     onDismiss: () -> Unit
 ) {
     if (!updateState.showDialog || updateState.downloadUrl.isBlank()) return
+    val editorial = MaterialTheme.editorialColors
     val isDirectApk = updateState.downloadUrl.endsWith(".apk", ignoreCase = true)
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = editorial.cardSurface,
         icon = {
             Icon(
                 imageVector = Icons.Filled.SystemUpdate,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
+                tint = if (editorial.isDark) AcidLime else PureBlack
             )
         },
         title = {
@@ -1317,15 +1350,15 @@ fun AppUpdateAvailableDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer
+                    shape = RoundedCornerShape(8.dp),
+                    color = editorial.acidLime
                 ) {
                     Text(
                         text = "v${updateState.currentVersion}  →  v${updateState.latestVersion}",
-                        style = MaterialTheme.typography.labelLarge.copy(fontFamily = MonoFontFamily),
+                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        color = editorial.onAcidLime,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
                 }
                 Text(
@@ -1337,9 +1370,9 @@ fun AppUpdateAvailableDialog(
                 )
                 if (isDirectApk) {
                     Text(
-                        text = "Tap Download APK below, then open the downloaded file to install over your current version (all your study data stays intact).",
+                        text = "Tap Download APK, then open the file to update with all study data intact.",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -1347,6 +1380,11 @@ fun AppUpdateAvailableDialog(
         confirmButton = {
             Button(
                 onClick = onDownloadUpdate,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = editorial.acidLime,
+                    contentColor = editorial.onAcidLime
+                ),
+                shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.testTag("update_dialog_download_btn")
             ) {
                 Text(
@@ -1365,6 +1403,3 @@ fun AppUpdateAvailableDialog(
         }
     )
 }
-
-
-

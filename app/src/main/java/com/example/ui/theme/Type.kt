@@ -28,32 +28,40 @@ val MonoFontFamily = FontFamily(
 )
 
 val AppTypography = Typography(
+    displaySmall = TextStyle(
+        fontFamily = DisplayFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
+        letterSpacing = (-0.5).sp
+    ),
     headlineMedium = TextStyle(
         fontFamily = DisplayFontFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 24.sp,
-        lineHeight = 32.sp,
-        letterSpacing = (-0.25).sp
+        lineHeight = 30.sp,
+        letterSpacing = (-0.4).sp
     ),
     headlineSmall = TextStyle(
         fontFamily = DisplayFontFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 20.sp,
-        lineHeight = 28.sp,
-        letterSpacing = (-0.15).sp
+        lineHeight = 26.sp,
+        letterSpacing = (-0.25).sp
     ),
     titleLarge = TextStyle(
         fontFamily = DisplayFontFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 18.sp,
-        lineHeight = 26.sp,
-        letterSpacing = (-0.1).sp
+        lineHeight = 24.sp,
+        letterSpacing = (-0.2).sp
     ),
     titleMedium = TextStyle(
         fontFamily = DisplayFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 16.sp,
-        lineHeight = 23.sp
+        lineHeight = 22.sp,
+        letterSpacing = (-0.1).sp
     ),
     titleSmall = TextStyle(
         fontFamily = BodyFontFamily,
@@ -95,7 +103,7 @@ val AppTypography = Typography(
         fontFamily = BodyFontFamily,
         fontWeight = FontWeight.Medium,
         fontSize = 11.sp,
-        lineHeight = 15.sp,
+        lineHeight = 14.sp,
         letterSpacing = 0.2.sp
     )
 )

@@ -9,7 +9,7 @@ import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -50,11 +50,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -91,17 +94,19 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.ProfileAvatarStorage
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
+import com.example.data.model.ExamStage
+import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.repository.NursingPrepRepository
 import com.example.data.update.AppUpdateVersionLogic
 import com.example.ui.auth.authStateFlow
 import com.example.ui.auth.signOut
 import com.example.ui.components.AppUpdateAvailableDialog
+import com.example.ui.components.ClinEdgeLogoMark
 import com.example.ui.components.ExamPickerModalSheet
 import com.example.ui.components.ImporterModalSheet
 import com.example.ui.components.PdfExportModalSheet
 import com.example.ui.components.ProfileAvatarCircle
 import com.example.ui.components.TimedPracticeConfigDialog
-import com.example.ui.components.formatApproxQuestionCount
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.BookmarksScreen
 import com.example.ui.screens.CbtExamScreen
@@ -115,6 +120,7 @@ import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.StatsScreen
 import com.example.ui.screens.SubjectsHubScreen
 import com.example.ui.theme.RrbNursingTheme
+import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.MainTab
 import com.example.ui.viewmodel.MainViewModel
 import com.google.firebase.Firebase
@@ -205,12 +211,15 @@ fun RrbNursingApp(vm: MainViewModel) {
     }
 
     RrbNursingTheme(darkTheme = isDark) {
+        val editorial = MaterialTheme.editorialColors
         val state by vm.mainState.collectAsStateWithLifecycle()
         val selectedTab by vm.selectedTab.collectAsStateWithLifecycle()
         val isSettingsOpen by vm.isSettingsOpen.collectAsStateWithLifecycle()
         val isProfileOpen by vm.isProfileOpen.collectAsStateWithLifecycle()
         val isExamPickerOpen by vm.isExamPickerOpen.collectAsStateWithLifecycle()
         val activeExamId by vm.activeExamId.collectAsStateWithLifecycle()
+        val practicePathway by vm.practicePathway.collectAsStateWithLifecycle()
+        val subjectExamFilter by vm.subjectPracticeExamFilter.collectAsStateWithLifecycle()
         val subjectSection by vm.subjectHubSection.collectAsStateWithLifecycle()
         val difficultyFilter by vm.difficultyFilter.collectAsStateWithLifecycle()
         val practiceSession by vm.practiceSession.collectAsStateWithLifecycle()
@@ -433,13 +442,16 @@ fun RrbNursingApp(vm: MainViewModel) {
 
                 Scaffold(
                     contentWindowInsets = WindowInsets.safeDrawing,
+                    containerColor = MaterialTheme.colorScheme.background,
                     snackbarHost = { SnackbarHost(snackbarHostState) },
                     topBar = {
                         if (!inActiveSession && !isSettingsOpen && !isProfileOpen) {
                             Column {
                                 TopAppBar(
                                     colors = TopAppBarDefaults.topAppBarColors(
-                                        containerColor = MaterialTheme.colorScheme.surface
+                                        containerColor = MaterialTheme.colorScheme.background,
+                                        titleContentColor = MaterialTheme.colorScheme.onBackground,
+                                        actionIconContentColor = MaterialTheme.colorScheme.onBackground
                                     ),
                                     navigationIcon = {
                                         IconButton(
@@ -450,43 +462,54 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         ) {
                                             ProfileAvatarCircle(
                                                 name = profileName,
-                                                size = 36.dp,
+                                                size = 34.dp,
                                                 avatarPath = profileAvatarPath
                                             )
                                         }
                                     },
                                     title = {
                                         val activeExamShort = state.activeExam?.shortName ?: "RRB Nursing"
-                                        val approxCount = formatApproxQuestionCount(state.overall.totalQuestions)
-                                        Column(
+                                        val examPillText = if (state.activeExamSupportsStages) {
+                                            "$activeExamShort · ${state.activeExamStage.shortLabel}"
+                                        } else {
+                                            activeExamShort
+                                        }
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                                             modifier = Modifier
-                                                .heightIn(min = 48.dp)
+                                                .heightIn(min = 44.dp)
                                                 .clip(RoundedCornerShape(10.dp))
                                                 .clickable(onClick = vm::openExamPicker)
                                                 .padding(horizontal = 4.dp, vertical = 4.dp)
-                                                .testTag("top_exam_picker_btn"),
-                                            verticalArrangement = Arrangement.Center
+                                                .testTag("top_exam_picker_btn")
                                         ) {
-                                            Text(
-                                                text = "ClinEdge",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = "$activeExamShort • $approxCount",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                                Icon(
-                                                    imageVector = Icons.Filled.KeyboardArrowDown,
-                                                    contentDescription = "Switch active exam",
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
+                                            ClinEdgeLogoMark(size = 26.dp)
+                                            Surface(
+                                                shape = RoundedCornerShape(50),
+                                                color = editorial.elevatedSurface,
+                                                border = BorderStroke(1.dp, editorial.borderSubtle)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = examPillText,
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    Icon(
+                                                        imageVector = Icons.Filled.KeyboardArrowDown,
+                                                        contentDescription = "Switch active exam",
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                     },
@@ -498,7 +521,15 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             BadgedBox(
                                                 badge = {
                                                     if (state.overall.bookmarkCount > 0) {
-                                                        Badge { Text("${state.overall.bookmarkCount}") }
+                                                        Badge(
+                                                            containerColor = editorial.acidLime,
+                                                            contentColor = editorial.onAcidLime
+                                                        ) {
+                                                            Text(
+                                                                "${state.overall.bookmarkCount}",
+                                                                fontWeight = FontWeight.Bold
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             ) {
@@ -516,359 +547,405 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         }
                                     }
                                 )
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
-                                )
+                                HorizontalDivider(color = editorial.borderSubtle)
                             }
                         }
                     },
-                bottomBar = {
-                    if (!inActiveSession && !useRail) {
-                        NavigationBar {
-                            MainTab.entries.forEach { tab ->
-                                val selected = !isSettingsOpen && !isProfileOpen && tab == selectedTab
-                                NavigationBarItem(
-                                    selected = selected,
-                                    onClick = { vm.selectTab(tab) },
-                                    icon = { NavTabIcon(tab, selected) },
-                                    label = {
-                                        Text(
-                                            text = tab.label,
-                                            maxLines = 1,
-                                            softWrap = false,
-                                            overflow = TextOverflow.Ellipsis,
-                                            textAlign = TextAlign.Center
+                    bottomBar = {
+                        if (!inActiveSession && !useRail) {
+                            Column {
+                                HorizontalDivider(color = editorial.borderSubtle)
+                                NavigationBar(
+                                    containerColor = MaterialTheme.colorScheme.background,
+                                    tonalElevation = 0.dp
+                                ) {
+                                    MainTab.entries.forEach { tab ->
+                                        val selected = !isSettingsOpen && !isProfileOpen && tab == selectedTab
+                                        NavigationBarItem(
+                                            selected = selected,
+                                            onClick = { vm.selectTab(tab) },
+                                            icon = { NavTabIcon(tab, selected) },
+                                            label = {
+                                                Text(
+                                                    text = tab.label,
+                                                    maxLines = 1,
+                                                    softWrap = false,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    textAlign = TextAlign.Center,
+                                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                                                )
+                                            },
+                                            colors = NavigationBarItemDefaults.colors(
+                                                indicatorColor = editorial.acidLime,
+                                                selectedIconColor = editorial.onAcidLime,
+                                                selectedTextColor = MaterialTheme.colorScheme.onBackground,
+                                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                            ),
+                                            modifier = Modifier.testTag("nav_${tab.name}")
                                         )
-                                    },
-                                    modifier = Modifier.testTag("nav_${tab.name}")
-                                )
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            ) { innerPadding ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                ) {
-                    if (!inActiveSession && useRail) {
-                        NavigationRail {
-                            Spacer(modifier = Modifier.weight(0.1f))
-                            MainTab.entries.forEach { tab ->
-                                val selected = !isSettingsOpen && !isProfileOpen && tab == selectedTab
-                                NavigationRailItem(
-                                    selected = selected,
-                                    onClick = { vm.selectTab(tab) },
-                                    icon = { NavTabIcon(tab, selected) },
-                                    label = {
-                                        Text(
-                                            text = tab.label,
-                                            maxLines = 1,
-                                            softWrap = false,
-                                            overflow = TextOverflow.Ellipsis,
-                                            textAlign = TextAlign.Center
-                                        )
-                                    },
-                                    modifier = Modifier.testTag("rail_${tab.name}")
-                                )
-                            }
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-                    }
-
-                    Box(modifier = Modifier.weight(1f).fillMaxSize()) {
-                        when {
-                            cbtSession != null -> {
-                                CbtExamScreen(
-                                    session = cbtSession!!,
-                                    onSelectOption = vm::cbtSelectOption,
-                                    onClearResponse = vm::cbtClearResponse,
-                                    onMoveTo = vm::cbtMoveTo,
-                                    onSaveAndNext = vm::cbtSaveAndNext,
-                                    onMarkForReviewAndNext = vm::cbtMarkForReviewAndNext,
-                                    onRequestSubmitConfirm = vm::requestCbtSubmitConfirm,
-                                    onDismissSubmitConfirm = vm::dismissCbtSubmitConfirm,
-                                    onConfirmSubmit = vm::submitCbtExam,
-                                    onChangeReviewFilter = vm::setCbtReviewFilter,
-                                    onExit = vm::exitPracticeOrCbt,
-                                    onRequestNextSection = vm::requestCbtNextSection,
-                                    onDismissNextSection = vm::dismissCbtNextSection,
-                                    onConfirmNextSection = vm::confirmCbtNextSection,
-                                    onDismissSectionNotice = vm::dismissCbtSectionNotice
-                                )
-                            }
-
-                            practiceSession != null -> {
-                                PracticeScreen(
-                                    session = practiceSession!!,
-                                    allQuestions = state.questions,
-                                    negativeMarking = negMarking,
-                                    onToggleNegativeMarking = vm::toggleNegativeMarking,
-                                    onSelectOption = vm::answerPracticeQuestion,
-                                    onMoveIndex = vm::movePracticeIndex,
-                                    onToggleBookmark = vm::toggleBookmark,
-                                    onRequestSubmit = vm::requestPracticeSubmitPrompt,
-                                    onDismissSubmitPrompt = vm::dismissPracticeSubmitPrompt,
-                                    onConfirmSubmit = vm::submitTimedPractice,
-                                    onChangeReviewFilter = vm::setPracticeReviewFilter,
-                                    onExit = vm::exitPracticeOrCbt
-                                )
-                            }
-
-                            isSettingsOpen -> {
-                                SettingsScreen(
-                                    profileName = profileName,
-                                    themePreference = themePref,
-                                    useTimeLimit = useTimeLimit,
-                                    secondsPerQuestion = secondsPerQuestion,
-                                    negativeMarking = negMarking,
-                                    keepScreenOn = keepScreenOn,
-                                    dailyGoalQuestions = studyGoal.dailyGoalQuestions,
-                                    backupFolderSummary = backupFolderSummary,
-                                    isBackupBusy = isBackupBusy,
-                                    appUpdateState = appUpdateState,
-                                    activeExamNegativeMarks = state.activeExam?.negativeMarks ?: 0.33,
-                                    activeExamDefaultMinutes = state.activeExam?.defaultMockMinutes ?: 90,
-                                    onProfileNameChange = vm::setProfileName,
-                                    onThemePreferenceChange = vm::setThemePreference,
-                                    onUseTimeLimitChange = vm::setUseTimeLimit,
-                                    onSecondsPerQuestionChange = vm::setSecondsPerQuestion,
-                                    onNegativeMarkingChange = vm::setNegativeMarking,
-                                    onKeepScreenOnChange = vm::setKeepScreenOn,
-                                    onDailyGoalChange = vm::setDailyGoalQuestions,
-                                    onReopenOnboarding = vm::reopenOnboarding,
-                                    onChooseBackupFolder = { backupFolderLauncher.launch(null) },
-                                    onResetBackupFolder = vm::resetBackupFolderToDefault,
-                                    onCreateBackup = vm::createBackupInActiveFolder,
-                                    onRestoreLatestBackup = vm::restoreLatestFromActiveFolder,
-                                    onPickRestoreFile = {
-                                        restoreLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
-                                    },
-                                    onOpenImporter = vm::openImporter,
-                                    onOpenPdfExport = { vm.openPdfExport() },
-                                    onCheckForUpdates = { vm.checkForAppUpdates(userInitiated = true) },
-                                    onOpenUpdateDialog = vm::openUpdateDialog,
-                                    onOpenReleasesPage = {
-                                        val url = appUpdateState.releasePageUrl.ifBlank {
-                                            AppUpdateVersionLogic.GITHUB_RELEASES_WEB_URL
-                                        }
-                                        runCatching {
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                        }.onFailure {
-                                            vm.showMessage("Could not open browser for Releases page.")
-                                        }
-                                    },
-                                    onResetStatistics = vm::clearAllStatistics,
-                                    onBack = vm::closeSettings
-                                )
-                            }
-
-                            isProfileOpen -> {
-                                ProfileScreen(
-                                    profileName = profileName,
-                                    profileRole = profileRole,
-                                    targetYear = targetYear,
-                                    focusSubject = focusSubject,
-                                    phoneNumber = phoneNumber,
-                                    avatarPath = profileAvatarPath,
-                                    currentDeviceName = vm.currentDeviceName,
-                                    account = signedInAccount,
-                                    cloudSyncState = cloudSyncState,
-                                    studyGoal = studyGoal,
-                                    state = state,
-                                    onProfileNameChange = vm::setProfileName,
-                                    onProfileRoleChange = vm::setProfileRole,
-                                    onTargetYearChange = vm::setTargetYear,
-                                    onFocusSubjectChange = vm::setFocusSubject,
-                                    onPhoneNumberChange = vm::setPhoneNumber,
-                                    onPickProfilePhoto = {
-                                        profilePhotoLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                        )
-                                    },
-                                    onRemoveProfilePhoto = {
-                                        scope.launch {
-                                            ProfileAvatarStorage.removeAvatar(context, profileAvatarPath)
-                                            vm.onProfileAvatarRemoved()
-                                        }
-                                    },
-                                    onDailyGoalChange = vm::setDailyGoalQuestions,
-                                    onStartDailyGoalDrill = {
-                                        vm.closeProfile()
-                                        vm.startDailyGoalDrill()
-                                    },
-                                    onOpenExamPicker = vm::openExamPicker,
-                                    onPracticeSubject = { list, title ->
-                                        vm.closeProfile()
-                                        vm.startPractice(list, title)
-                                    },
-                                    onOpenSettings = vm::openSettings,
-                                    onSyncNow = vm::syncNow,
-                                    onSignOut = performSignOut,
-                                    onBack = vm::closeProfile
-                                )
-                            }
-
-                            else -> {
-                                when (selectedTab) {
-                                    MainTab.DASHBOARD -> DashboardScreen(
-                                        state = state,
-                                        studyGoal = studyGoal,
-                                        difficultyFilter = difficultyFilter,
-                                        onSelectDifficulty = vm::selectDifficultyFilter,
-                                        onLaunchFullMock = {
-                                            val fullQ = state.activeExam?.defaultMockQuestions ?: 100
-                                            val fullMins = state.activeExam?.defaultMockMinutes ?: 90
-                                            val mockTitle = if (activeExamId == "aiims_norcet") {
-                                                "NORCET Stage I Prelims (${fullQ}Q)"
-                                            } else {
-                                                "Full Official ${fullQ}Q CBT Mock"
-                                            }
-                                            vm.startCbtStandardMock(
-                                                totalQuestions = fullQ,
-                                                durationMinutes = fullMins,
-                                                title = mockTitle,
-                                                isOfficialFullMock = true
+                ) { innerPadding ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        if (!inActiveSession && useRail) {
+                            NavigationRail(
+                                containerColor = MaterialTheme.colorScheme.background
+                            ) {
+                                Spacer(modifier = Modifier.weight(0.1f))
+                                MainTab.entries.forEach { tab ->
+                                    val selected = !isSettingsOpen && !isProfileOpen && tab == selectedTab
+                                    NavigationRailItem(
+                                        selected = selected,
+                                        onClick = { vm.selectTab(tab) },
+                                        icon = { NavTabIcon(tab, selected) },
+                                        label = {
+                                            Text(
+                                                text = tab.label,
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                overflow = TextOverflow.Ellipsis,
+                                                textAlign = TextAlign.Center,
+                                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                                             )
                                         },
-                                        onOpenTimedPractice = { vm.openTimedPracticeConfig() },
-                                        onStartDailyGoalDrill = vm::startDailyGoalDrill,
-                                        onAdjustDailyGoal = vm::openSettings,
-                                        onOpenSubjectSection = vm::openSubjectHub,
-                                        onSelectTab = vm::selectTab,
-                                        onStartDrill = { list, title -> vm.startPractice(list, title) }
+                                        colors = NavigationRailItemDefaults.colors(
+                                            indicatorColor = editorial.acidLime,
+                                            selectedIconColor = editorial.onAcidLime,
+                                            selectedTextColor = MaterialTheme.colorScheme.onBackground,
+                                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        modifier = Modifier.testTag("rail_${tab.name}")
                                     )
+                                }
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
 
-                                    MainTab.SUBJECTS -> SubjectsHubScreen(
-                                        state = state,
-                                        activeSection = subjectSection,
-                                        difficultyFilter = difficultyFilter,
-                                        onSelectDifficulty = vm::selectDifficultyFilter,
-                                        onSelectSection = vm::selectSubjectSection,
-                                        onStartPractice = { list, title -> vm.startPractice(list, title) },
-                                        onStartTimedConfig = { subjCode -> vm.openTimedPracticeConfig(defaultSource = subjCode, defaultCount = 15) },
-                                        onStartCbtCustom = { list, title -> vm.startCbtCustom(list, title) },
-                                        onOpenImporter = vm::openImporter
+                        Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+                            when {
+                                cbtSession != null -> {
+                                    CbtExamScreen(
+                                        session = cbtSession!!,
+                                        onSelectOption = vm::cbtSelectOption,
+                                        onClearResponse = vm::cbtClearResponse,
+                                        onMoveTo = vm::cbtMoveTo,
+                                        onSaveAndNext = vm::cbtSaveAndNext,
+                                        onMarkForReviewAndNext = vm::cbtMarkForReviewAndNext,
+                                        onRequestSubmitConfirm = vm::requestCbtSubmitConfirm,
+                                        onDismissSubmitConfirm = vm::dismissCbtSubmitConfirm,
+                                        onConfirmSubmit = vm::submitCbtExam,
+                                        onChangeReviewFilter = vm::setCbtReviewFilter,
+                                        onExit = vm::exitPracticeOrCbt,
+                                        onRequestNextSection = vm::requestCbtNextSection,
+                                        onDismissNextSection = vm::dismissCbtNextSection,
+                                        onConfirmNextSection = vm::confirmCbtNextSection,
+                                        onDismissSectionNotice = vm::dismissCbtSectionNotice
                                     )
+                                }
 
-                                    MainTab.CBT -> CbtHubScreen(
-                                        state = state,
+                                practiceSession != null -> {
+                                    PracticeScreen(
+                                        session = practiceSession!!,
+                                        allQuestions = state.crossExamQuestions.ifEmpty { state.questions },
+                                        negativeMarking = negMarking,
+                                        onToggleNegativeMarking = vm::toggleNegativeMarking,
+                                        onSelectOption = vm::answerPracticeQuestion,
+                                        onMoveIndex = vm::movePracticeIndex,
+                                        onToggleBookmark = vm::toggleBookmark,
+                                        onRequestSubmit = vm::requestPracticeSubmitPrompt,
+                                        onDismissSubmitPrompt = vm::dismissPracticeSubmitPrompt,
+                                        onConfirmSubmit = vm::submitTimedPractice,
+                                        onChangeReviewFilter = vm::setPracticeReviewFilter,
+                                        onExit = vm::exitPracticeOrCbt
+                                    )
+                                }
+
+                                isSettingsOpen -> {
+                                    SettingsScreen(
+                                        profileName = profileName,
+                                        themePreference = themePref,
                                         useTimeLimit = useTimeLimit,
                                         secondsPerQuestion = secondsPerQuestion,
-                                        onStartStandardMock = vm::startCbtStandardMock,
-                                        onStartNorcetMainsMock = vm::startNorcetMainsMock,
-                                        onStartCustomCbt = { list, title, mins -> vm.startCbtCustom(list, title, mins) },
-                                        onOpenTimedPracticeConfig = { vm.openTimedPracticeConfig() }
-                                    )
-
-                                    MainTab.STATS -> StatsScreen(
-                                        state = state,
-                                        onPracticeLowestAccuracy = { list ->
-                                            vm.startPractice(list, "Lowest Accuracy Review")
+                                        negativeMarking = negMarking,
+                                        keepScreenOn = keepScreenOn,
+                                        dailyGoalQuestions = studyGoal.dailyGoalQuestions,
+                                        backupFolderSummary = backupFolderSummary,
+                                        isBackupBusy = isBackupBusy,
+                                        appUpdateState = appUpdateState,
+                                        activeExamNegativeMarks = state.activeExam?.negativeMarks ?: 0.33,
+                                        activeExamDefaultMinutes = state.activeExam?.defaultMockMinutes ?: 90,
+                                        onProfileNameChange = vm::setProfileName,
+                                        onThemePreferenceChange = vm::setThemePreference,
+                                        onUseTimeLimitChange = vm::setUseTimeLimit,
+                                        onSecondsPerQuestionChange = vm::setSecondsPerQuestion,
+                                        onNegativeMarkingChange = vm::setNegativeMarking,
+                                        onKeepScreenOnChange = vm::setKeepScreenOn,
+                                        onDailyGoalChange = vm::setDailyGoalQuestions,
+                                        onReopenOnboarding = vm::reopenOnboarding,
+                                        onChooseBackupFolder = { backupFolderLauncher.launch(null) },
+                                        onResetBackupFolder = vm::resetBackupFolderToDefault,
+                                        onCreateBackup = vm::createBackupInActiveFolder,
+                                        onRestoreLatestBackup = vm::restoreLatestFromActiveFolder,
+                                        onPickRestoreFile = {
+                                            restoreLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
                                         },
-                                        onToggleBookmark = vm::toggleBookmark,
-                                        onClearStats = vm::clearAllStatistics
+                                        onOpenImporter = vm::openImporter,
+                                        onOpenPdfExport = { vm.openPdfExport() },
+                                        onCheckForUpdates = { vm.checkForAppUpdates(userInitiated = true) },
+                                        onOpenUpdateDialog = vm::openUpdateDialog,
+                                        onOpenReleasesPage = {
+                                            val url = appUpdateState.releasePageUrl.ifBlank {
+                                                AppUpdateVersionLogic.GITHUB_RELEASES_WEB_URL
+                                            }
+                                            runCatching {
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                            }.onFailure {
+                                                vm.showMessage("Could not open browser for Releases page.")
+                                            }
+                                        },
+                                        onResetStatistics = vm::clearAllStatistics,
+                                        onBack = vm::closeSettings
                                     )
+                                }
 
-                                    MainTab.DECK -> BookmarksScreen(
+                                isProfileOpen -> {
+                                    ProfileScreen(
+                                        profileName = profileName,
+                                        profileRole = profileRole,
+                                        targetYear = targetYear,
+                                        focusSubject = focusSubject,
+                                        phoneNumber = phoneNumber,
+                                        avatarPath = profileAvatarPath,
+                                        currentDeviceName = vm.currentDeviceName,
+                                        account = signedInAccount,
+                                        cloudSyncState = cloudSyncState,
+                                        studyGoal = studyGoal,
                                         state = state,
-                                        onPracticeDeck = { list, title -> vm.startPractice(list, title) },
-                                        onOpenPdfExport = { sourceKey -> vm.openPdfExport(defaultSource = sourceKey, defaultLimit = 0) },
-                                        onToggleBookmark = vm::toggleBookmark
+                                        onProfileNameChange = vm::setProfileName,
+                                        onProfileRoleChange = vm::setProfileRole,
+                                        onTargetYearChange = vm::setTargetYear,
+                                        onFocusSubjectChange = vm::setFocusSubject,
+                                        onPhoneNumberChange = vm::setPhoneNumber,
+                                        onPickProfilePhoto = {
+                                            profilePhotoLauncher.launch(
+                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                            )
+                                        },
+                                        onRemoveProfilePhoto = {
+                                            scope.launch {
+                                                ProfileAvatarStorage.removeAvatar(context, profileAvatarPath)
+                                                vm.onProfileAvatarRemoved()
+                                            }
+                                        },
+                                        onDailyGoalChange = vm::setDailyGoalQuestions,
+                                        onStartDailyGoalDrill = {
+                                            vm.closeProfile()
+                                            vm.startDailyGoalDrill()
+                                        },
+                                        onOpenExamPicker = vm::openExamPicker,
+                                        onPracticeSubject = { list, title ->
+                                            vm.closeProfile()
+                                            vm.startPractice(list, title)
+                                        },
+                                        onOpenSettings = vm::openSettings,
+                                        onSyncNow = vm::syncNow,
+                                        onSignOut = performSignOut,
+                                        onBack = vm::closeProfile
                                     )
+                                }
+
+                                else -> {
+                                    when (selectedTab) {
+                                        MainTab.DASHBOARD -> DashboardScreen(
+                                            state = state,
+                                            profileName = profileName.ifBlank { signedInAccount.displayName },
+                                            studyGoal = studyGoal,
+                                            difficultyFilter = difficultyFilter,
+                                            onSelectDifficulty = vm::selectDifficultyFilter,
+                                            onSelectExamStage = vm::selectExamStage,
+                                            onOpenExamPicker = vm::openExamPicker,
+                                            onLaunchFullMock = {
+                                                val isNorcetMains = PlatformCatalogDefaults.isNorcetExam(activeExamId) &&
+                                                    state.activeExamStage == ExamStage.MAINS
+                                                if (isNorcetMains) {
+                                                    vm.startNorcetMainsMock()
+                                                } else {
+                                                    val fullQ = state.activeExam?.defaultMockQuestions ?: 100
+                                                    val fullMins = state.activeExam?.defaultMockMinutes ?: 90
+                                                    val mockTitle = if (PlatformCatalogDefaults.isNorcetExam(activeExamId)) {
+                                                        "NORCET Stage I Prelims (${fullQ}Q)"
+                                                    } else {
+                                                        "Full Official ${fullQ}Q CBT Mock"
+                                                    }
+                                                    vm.startCbtStandardMock(
+                                                        totalQuestions = fullQ,
+                                                        durationMinutes = fullMins,
+                                                        title = mockTitle,
+                                                        isOfficialFullMock = true
+                                                    )
+                                                }
+                                            },
+                                            onOpenTimedPractice = { vm.openTimedPracticeConfig() },
+                                            onStartDailyGoalDrill = vm::startDailyGoalDrill,
+                                            onAdjustDailyGoal = vm::openSettings,
+                                            onOpenSubjectSection = vm::openSubjectHub,
+                                            onOpenSubjectPracticeMode = vm::openSubjectPracticeMode,
+                                            onSelectTab = vm::selectTab,
+                                            onStartDrill = { list, title -> vm.startPractice(list, title) }
+                                        )
+
+                                        MainTab.SUBJECTS -> SubjectsHubScreen(
+                                            state = state,
+                                            practicePathway = practicePathway,
+                                            subjectExamFilter = subjectExamFilter,
+                                            activeSection = subjectSection,
+                                            difficultyFilter = difficultyFilter,
+                                            onSelectPathway = vm::selectPracticePathway,
+                                            onSelectSubjectExamFilter = vm::selectSubjectPracticeExamFilter,
+                                            onSelectExamStage = vm::selectExamStage,
+                                            onSelectDifficulty = vm::selectDifficultyFilter,
+                                            onSelectSection = vm::selectSubjectSection,
+                                            onStartPractice = { list, title -> vm.startPractice(list, title) },
+                                            onStartCrossExamSubjectPractice = vm::startCrossExamSubjectPractice,
+                                            onStartTimedConfig = { subjCode, useCrossExam, filterId ->
+                                                vm.openTimedPracticeConfig(
+                                                    defaultSource = subjCode,
+                                                    defaultCount = 15,
+                                                    useCrossExamPool = useCrossExam,
+                                                    crossExamFilterId = filterId
+                                                )
+                                            },
+                                            onStartCbtCustom = { list, title -> vm.startCbtCustom(list, title) },
+                                            onOpenImporter = vm::openImporter
+                                        )
+
+                                        MainTab.CBT -> CbtHubScreen(
+                                            state = state,
+                                            useTimeLimit = useTimeLimit,
+                                            secondsPerQuestion = secondsPerQuestion,
+                                            onSelectExamStage = vm::selectExamStage,
+                                            onStartStandardMock = vm::startCbtStandardMock,
+                                            onStartNorcetMainsMock = vm::startNorcetMainsMock,
+                                            onStartCustomCbt = { list, title, mins -> vm.startCbtCustom(list, title, mins) },
+                                            onOpenTimedPracticeConfig = { vm.openTimedPracticeConfig() }
+                                        )
+
+                                        MainTab.STATS -> StatsScreen(
+                                            state = state,
+                                            onPracticeLowestAccuracy = { list ->
+                                                vm.startPractice(list, "Lowest Accuracy Review")
+                                            },
+                                            onToggleBookmark = vm::toggleBookmark,
+                                            onClearStats = vm::clearAllStatistics
+                                        )
+
+                                        MainTab.DECK -> BookmarksScreen(
+                                            state = state,
+                                            onPracticeDeck = { list, title -> vm.startPractice(list, title) },
+                                            onOpenPdfExport = { sourceKey -> vm.openPdfExport(defaultSource = sourceKey, defaultLimit = 0) },
+                                            onToggleBookmark = vm::toggleBookmark
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            TimedPracticeConfigDialog(
-                state = timedConfig,
-                allQuestions = state.questions,
-                activeExamId = activeExamId,
-                useTimeLimit = useTimeLimit,
-                negativeMarking = negMarking,
-                onToggleNegativeMarking = vm::toggleNegativeMarking,
-                onSelectSource = vm::updateTimedConfigSource,
-                onSelectDifficulty = vm::updateTimedConfigDifficulty,
-                onSelectCount = vm::updateTimedConfigCount,
-                onSelectMinutes = vm::updateTimedConfigMinutes,
-                onStart = vm::launchConfiguredTimedPractice,
-                onDismiss = vm::closeTimedPracticeConfig,
-                filterCountProvider = { key, diff -> vm.filteredQuestionsForSource(key, state.questions, diff).size }
-            )
+                TimedPracticeConfigDialog(
+                    state = timedConfig,
+                    allQuestions = state.questions,
+                    activeExamId = activeExamId,
+                    useTimeLimit = useTimeLimit,
+                    negativeMarking = negMarking,
+                    onToggleNegativeMarking = vm::toggleNegativeMarking,
+                    onSelectSource = vm::updateTimedConfigSource,
+                    onSelectDifficulty = vm::updateTimedConfigDifficulty,
+                    onSelectCount = vm::updateTimedConfigCount,
+                    onSelectMinutes = vm::updateTimedConfigMinutes,
+                    onStart = vm::launchConfiguredTimedPractice,
+                    onDismiss = vm::closeTimedPracticeConfig,
+                    filterCountProvider = { key, diff -> vm.timedConfigMatchingCount(key, diff) }
+                )
 
-            ImporterModalSheet(
-                state = importerState,
-                activeExamShortName = state.activeExam?.shortName ?: "RRB Nursing",
-                backupFolderSummary = backupFolderSummary,
-                isBackupBusy = isBackupBusy,
-                onUpdate = vm::updateImporter,
-                onPreviewPdf = vm::previewPdfTextImport,
-                onCommitPdf = vm::commitPreviewImport,
-                onImportJson = vm::importJsonBatch,
-                onChooseBackupFolder = { backupFolderLauncher.launch(null) },
-                onResetBackupFolder = vm::resetBackupFolderToDefault,
-                onExportBackup = vm::createBackupInActiveFolder,
-                onRestoreBackup = {
-                    if (backupFolderSummary.backupCount > 0) {
-                        vm.restoreLatestFromActiveFolder()
-                    } else {
-                        restoreLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
-                    }
-                },
-                onOpenPdfExport = {
-                    vm.closeImporter()
-                    vm.openPdfExport()
-                },
-                onClearCustom = vm::clearCustomQuestions,
-                onDismiss = vm::closeImporter
-            )
-
-            ExamPickerModalSheet(
-                isVisible = isExamPickerOpen,
-                professions = state.availableProfessions,
-                exams = state.availableExams,
-                activeExamId = activeExamId,
-                examQuestionCounts = state.examQuestionCounts,
-                onSelectExam = vm::selectActiveExam,
-                onDismiss = vm::closeExamPicker
-            )
-
-            val pdfMatchingCount = remember(pdfExportConfig, state.questions, state.lowestAccuracyQuestions) {
-                vm.resolvedPdfWorksheetQuestions(pdfExportConfig, state).size
-            }
-            val suggestedPdfName = remember(pdfExportConfig, pdfMatchingCount) {
-                vm.suggestedPdfFileName(pdfExportConfig, state)
-            }
-            PdfExportModalSheet(
-                state = pdfExportConfig,
-                matchingCount = pdfMatchingCount,
-                suggestedFileName = suggestedPdfName,
-                onUpdate = vm::updatePdfExportConfig,
-                onExportPdf = {
-                    pdfExportLauncher.launch(suggestedPdfName)
-                },
-                onDismiss = vm::closePdfExport
-            )
-
-            AppUpdateAvailableDialog(
-                updateState = appUpdateState,
-                onDownloadUpdate = {
-                    val url = appUpdateState.downloadUrl.ifBlank { appUpdateState.releasePageUrl }
-                    vm.dismissUpdateDialog()
-                    if (url.startsWith("https://")) {
-                        runCatching {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                        }.onFailure {
-                            vm.showMessage("Could not open browser for update link.")
+                ImporterModalSheet(
+                    state = importerState,
+                    activeExamShortName = state.activeExam?.shortName ?: "RRB Nursing",
+                    backupFolderSummary = backupFolderSummary,
+                    isBackupBusy = isBackupBusy,
+                    onUpdate = vm::updateImporter,
+                    onPreviewPdf = vm::previewPdfTextImport,
+                    onCommitPdf = vm::commitPreviewImport,
+                    onImportJson = vm::importJsonBatch,
+                    onChooseBackupFolder = { backupFolderLauncher.launch(null) },
+                    onResetBackupFolder = vm::resetBackupFolderToDefault,
+                    onExportBackup = vm::createBackupInActiveFolder,
+                    onRestoreBackup = {
+                        if (backupFolderSummary.backupCount > 0) {
+                            vm.restoreLatestFromActiveFolder()
+                        } else {
+                            restoreLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
                         }
-                    }
-                },
-                onDismiss = vm::dismissUpdateDialog
-            )
+                    },
+                    onOpenPdfExport = {
+                        vm.closeImporter()
+                        vm.openPdfExport()
+                    },
+                    onClearCustom = vm::clearCustomQuestions,
+                    onDismiss = vm::closeImporter
+                )
+
+                ExamPickerModalSheet(
+                    isVisible = isExamPickerOpen,
+                    professions = state.availableProfessions,
+                    exams = state.availableExams,
+                    activeExamId = activeExamId,
+                    examQuestionCounts = state.examQuestionCounts,
+                    onSelectExam = vm::selectActiveExam,
+                    onDismiss = vm::closeExamPicker
+                )
+
+                val pdfMatchingCount = remember(pdfExportConfig, state.questions, state.lowestAccuracyQuestions) {
+                    vm.resolvedPdfWorksheetQuestions(pdfExportConfig, state).size
+                }
+                val suggestedPdfName = remember(pdfExportConfig, pdfMatchingCount) {
+                    vm.suggestedPdfFileName(pdfExportConfig, state)
+                }
+                PdfExportModalSheet(
+                    state = pdfExportConfig,
+                    matchingCount = pdfMatchingCount,
+                    suggestedFileName = suggestedPdfName,
+                    onUpdate = vm::updatePdfExportConfig,
+                    onExportPdf = {
+                        pdfExportLauncher.launch(suggestedPdfName)
+                    },
+                    onDismiss = vm::closePdfExport
+                )
+
+                AppUpdateAvailableDialog(
+                    updateState = appUpdateState,
+                    onDownloadUpdate = {
+                        val url = appUpdateState.downloadUrl.ifBlank { appUpdateState.releasePageUrl }
+                        vm.dismissUpdateDialog()
+                        if (url.startsWith("https://")) {
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            }.onFailure {
+                                vm.showMessage("Could not open browser for update link.")
+                            }
+                        }
+                    },
+                    onDismiss = vm::dismissUpdateDialog
+                )
             }
         }
     }

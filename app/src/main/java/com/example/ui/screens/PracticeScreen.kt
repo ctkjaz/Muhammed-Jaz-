@@ -2,6 +2,8 @@ package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,9 +18,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -36,7 +39,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,26 +55,30 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.model.QuestionItem
+import com.example.ui.components.AcidLimeProgressBar
 import com.example.ui.components.DifficultyBadge
 import com.example.ui.components.MetricTile
+import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.components.PyqSourceBadge
 import com.example.ui.components.formatTimer
-import com.example.ui.theme.CalmSageFill
+import com.example.ui.theme.AcidLime
 import com.example.ui.theme.EditorialBannerKpiAccent
 import com.example.ui.theme.EditorialBannerKpiDanger
 import com.example.ui.theme.EditorialBannerKpiSuccess
 import com.example.ui.theme.EditorialBannerSurface
 import com.example.ui.theme.EditorialBannerTitle
 import com.example.ui.theme.MonoFontFamily
-import com.example.ui.theme.MutedCrimsonFill
-import com.example.ui.theme.WarmOchreFill
-import com.example.ui.theme.WarmWhite
+import com.example.ui.theme.PureBlack
+import com.example.ui.theme.PureWhite
+import com.example.ui.theme.SemanticCorrectFill
+import com.example.ui.theme.SemanticWarningFill
+import com.example.ui.theme.SemanticWrongFill
 import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.CbtReviewFilter
 import com.example.ui.viewmodel.PracticeSessionState
@@ -133,6 +140,11 @@ fun PracticeScreen(
     }
     val negLabel = String.format(Locale.US, "%.2f", session.negativeMarks)
     val sNet = if (negativeMarking) sRight - (sWrong * session.negativeMarks) else sRight.toDouble()
+    val progressFrac = if (session.questions.isNotEmpty()) {
+        (session.currentIndex + 1).toFloat() / session.questions.size
+    } else {
+        0f
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
@@ -140,19 +152,13 @@ fun PracticeScreen(
                 .fillMaxSize()
                 .widthIn(max = 820.dp)
                 .align(Alignment.TopCenter)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Top Bar
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-            ) {
+            // Minimalist Top Bar + Acid Lime Progress Bar
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -183,8 +189,8 @@ fun PracticeScreen(
                     ) {
                         if (session.timedMode && session.hasCountdown) {
                             val timerBg = when {
-                                session.remainingSeconds <= 60 -> MutedCrimsonFill
-                                session.remainingSeconds <= 300 -> WarmOchreFill
+                                session.remainingSeconds <= 60 -> SemanticWrongFill
+                                session.remainingSeconds <= 300 -> SemanticWarningFill
                                 else -> EditorialBannerSurface
                             }
                             Surface(
@@ -200,13 +206,13 @@ fun PracticeScreen(
                                     Icon(
                                         Icons.Filled.Timer,
                                         contentDescription = "Remaining time",
-                                        tint = WarmWhite,
+                                        tint = PureWhite,
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Text(
                                         text = formatTimer(session.remainingSeconds),
                                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                                        color = WarmWhite,
+                                        color = PureWhite,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -214,61 +220,61 @@ fun PracticeScreen(
                         } else if (!session.timedMode) {
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = if (negativeMarking) {
-                                    MaterialTheme.colorScheme.errorContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant
-                                },
+                                color = if (negativeMarking) editorial.wrongBg else editorial.elevatedSurface,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (negativeMarking) editorial.wrongText.copy(alpha = 0.4f) else editorial.borderSubtle
+                                ),
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(10.dp))
                                     .clickable(onClick = onToggleNegativeMarking)
                                     .testTag("neg_marking_toggle")
                             ) {
                                 Text(
-                                    text = if (negativeMarking) "-$negLabel ON" else "-$negLabel OFF",
-                                    style = MaterialTheme.typography.labelSmall,
+                                    text = if (negativeMarking) "-$negLabel" else "No Neg",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                                     fontWeight = FontWeight.Bold,
-                                    color = if (negativeMarking) {
-                                        MaterialTheme.colorScheme.onErrorContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                                    color = if (negativeMarking) editorial.wrongText else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
                             }
                         }
 
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
+                            color = editorial.elevatedSurface,
+                            border = BorderStroke(1.dp, editorial.borderSubtle)
                         ) {
                             Text(
                                 text = String.format(Locale.US, "%.2f", sNet),
                                 style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                             )
                         }
                     }
                 }
+
+                AcidLimeProgressBar(progress = progressFrac, height = 4.dp)
             }
 
-            // Question Body
+            // Distraction-Free Question Surface
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Card(
                     shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                    colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                    border = BorderStroke(1.dp, editorial.borderSubtle),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Column(
                         modifier = Modifier.padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -282,10 +288,11 @@ fun PracticeScreen(
                             ) {
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant
+                                    color = editorial.elevatedSurface,
+                                    border = BorderStroke(1.dp, editorial.borderSubtle)
                                 ) {
                                     Text(
-                                        text = "Q ${session.currentIndex + 1} / ${session.questions.size}",
+                                        text = "${session.currentIndex + 1} / ${session.questions.size}",
                                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -293,13 +300,12 @@ fun PracticeScreen(
                                 }
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer
+                                    color = editorial.elevatedSurface
                                 ) {
                                     Text(
                                         text = q.subject,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        fontWeight = FontWeight.Bold,
+                                        fontWeight = FontWeight.SemiBold,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                 }
@@ -314,41 +320,52 @@ fun PracticeScreen(
                                 Icon(
                                     imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
                                     contentDescription = if (isBookmarked) "Remove bookmark" else "Bookmark question",
-                                    tint = if (isBookmarked) editorial.warningText else MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = if (isBookmarked) {
+                                        if (editorial.isDark) AcidLime else PureBlack
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
                                 )
                             }
                         }
 
                         Text(
                             text = q.questionText,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 17.sp,
+                                lineHeight = 26.sp,
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
                         )
 
+                        // Clean Option Cards
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             q.options.forEachIndexed { oi, optionText ->
                                 val isCorrectOpt = oi == q.correctIndex
                                 val isChosenOpt = oi == chosen
+                                val isDimmed = answered && !isCorrectOpt && !isChosenOpt
+
                                 val borderColor = when {
-                                    !answered -> MaterialTheme.colorScheme.outline
+                                    !answered -> editorial.borderSubtle
                                     isCorrectOpt -> editorial.correctText
                                     isChosenOpt -> editorial.wrongText
-                                    else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
+                                    else -> editorial.borderSubtle.copy(alpha = 0.45f)
                                 }
                                 val bgColor = when {
-                                    !answered -> MaterialTheme.colorScheme.surface
-                                    isCorrectOpt -> editorial.correctText.copy(alpha = 0.12f)
-                                    isChosenOpt -> editorial.wrongText.copy(alpha = 0.12f)
-                                    else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+                                    !answered -> editorial.cardSurface
+                                    isCorrectOpt -> editorial.correctBg
+                                    isChosenOpt -> editorial.wrongBg
+                                    else -> editorial.cardSurface.copy(alpha = 0.55f)
                                 }
                                 val badgeBg = when {
-                                    !answered -> MaterialTheme.colorScheme.surfaceVariant
-                                    isCorrectOpt -> CalmSageFill
-                                    isChosenOpt -> MutedCrimsonFill
-                                    else -> MaterialTheme.colorScheme.surfaceVariant
+                                    !answered -> editorial.elevatedSurface
+                                    isCorrectOpt -> SemanticCorrectFill
+                                    isChosenOpt -> SemanticWrongFill
+                                    else -> editorial.elevatedSurface.copy(alpha = 0.6f)
                                 }
                                 val badgeFg = if (answered && (isCorrectOpt || isChosenOpt)) {
-                                    WarmWhite
+                                    PureWhite
                                 } else {
                                     MaterialTheme.colorScheme.onSurface
                                 }
@@ -361,15 +378,19 @@ fun PracticeScreen(
                                 Surface(
                                     shape = RoundedCornerShape(14.dp),
                                     color = bgColor,
-                                    border = BorderStroke(if (answered && (isCorrectOpt || isChosenOpt)) 1.5.dp else 1.dp, borderColor),
+                                    border = BorderStroke(
+                                        width = if (answered && (isCorrectOpt || isChosenOpt)) 1.5.dp else 1.dp,
+                                        color = borderColor
+                                    ),
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .heightIn(min = 56.dp)
                                         .clip(RoundedCornerShape(14.dp))
                                         .clickable(enabled = !answered) { onSelectOption(oi) }
                                         .testTag("practice_option_$oi")
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(14.dp),
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
@@ -382,7 +403,7 @@ fun PracticeScreen(
                                         ) {
                                             Text(
                                                 text = badgeLabel,
-                                                style = MaterialTheme.typography.labelMedium,
+                                                style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
                                                 color = badgeFg,
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -390,6 +411,11 @@ fun PracticeScreen(
                                         Text(
                                             text = optionText,
                                             style = MaterialTheme.typography.bodyMedium,
+                                            color = if (isDimmed) {
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            },
                                             modifier = Modifier.weight(1f)
                                         )
                                     }
@@ -397,30 +423,47 @@ fun PracticeScreen(
                             }
                         }
 
-                        AnimatedVisibility(visible = answered) {
+                        // Clearly Separated Explanation Section
+                        AnimatedVisibility(
+                            visible = answered,
+                            enter = fadeIn() + expandVertically()
+                        ) {
                             val isRight = chosen == q.correctIndex
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                                color = editorial.explanationSurface,
+                                border = BorderStroke(1.dp, editorial.borderSubtle)
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(14.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "EXPLANATION",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = if (isRight) {
+                                                "Correct (+1.00)"
+                                            } else {
+                                                "Incorrect (${if (negativeMarking) "-$negLabel" else "0"}) · Ans ${'A' + q.correctIndex}"
+                                            },
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = if (isRight) editorial.correctText else editorial.wrongText,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    HorizontalDivider(color = editorial.borderSubtle)
                                     Text(
-                                        text = if (isRight) {
-                                            "✓ Correct (+1.00)"
-                                        } else {
-                                            "✕ Incorrect (${if (negativeMarking) "-$negLabel" else "0.00"}) • Correct: ${'A' + q.correctIndex}"
-                                        },
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = if (isRight) editorial.correctText else editorial.wrongText,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "Clinical Rationale / Solution: ${q.explanation.ifBlank { "No rationale provided." }}",
-                                        style = MaterialTheme.typography.bodySmall,
+                                        text = q.explanation.ifBlank { "No rationale provided." },
+                                        style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     if (q.isVerifiedSource) {
@@ -437,28 +480,30 @@ fun PracticeScreen(
                 }
             }
 
-            // Bottom Navigation Strip
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Clean Bottom Navigation Strip
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     itemsIndexed(session.questions) { idx, item ->
                         val ans = session.selectedAnswers[item.id]
+                        val isCurrent = idx == session.currentIndex
                         val bg = when {
-                            idx == session.currentIndex -> MaterialTheme.colorScheme.primary
-                            ans == item.question.correctIndex -> CalmSageFill
-                            ans != null -> MutedCrimsonFill
-                            else -> MaterialTheme.colorScheme.surfaceVariant
+                            isCurrent -> editorial.acidLime
+                            ans == item.question.correctIndex -> SemanticCorrectFill
+                            ans != null -> SemanticWrongFill
+                            else -> editorial.elevatedSurface
                         }
                         val fg = when {
-                            idx == session.currentIndex -> MaterialTheme.colorScheme.onPrimary
-                            ans != null -> WarmWhite
+                            isCurrent -> editorial.onAcidLime
+                            ans != null -> PureWhite
                             else -> MaterialTheme.colorScheme.onSurface
                         }
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = bg,
+                            border = if (!isCurrent && ans == null) BorderStroke(1.dp, editorial.borderSubtle) else null,
                             modifier = Modifier
                                 .size(34.dp)
                                 .clip(RoundedCornerShape(8.dp))
@@ -485,16 +530,22 @@ fun PracticeScreen(
                         onClick = { onMoveIndex(session.currentIndex - 1) },
                         enabled = session.currentIndex > 0,
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.testTag("practice_prev_btn")
+                        border = BorderStroke(1.dp, editorial.borderSubtle),
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("practice_prev_btn")
                     ) {
-                        Text("← Prev")
+                        Text("Prev")
                     }
 
                     if (session.timedMode) {
                         OutlinedButton(
                             onClick = onRequestSubmit,
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.testTag("practice_timed_submit_btn")
+                            border = BorderStroke(1.dp, editorial.borderSubtle),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("practice_timed_submit_btn")
                         ) {
                             Text("Submit (${session.selectedAnswers.size}/${session.questions.size})")
                         }
@@ -504,21 +555,29 @@ fun PracticeScreen(
                         Button(
                             onClick = { onMoveIndex(session.currentIndex + 1) },
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.testTag("practice_next_btn")
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("practice_next_btn")
                         ) {
-                            Text("Next →")
+                            Text("Next", fontWeight = FontWeight.Bold)
                         }
                     } else {
                         Button(
                             onClick = { if (session.timedMode) onRequestSubmit() else onExit() },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = CalmSageFill,
-                                contentColor = WarmWhite
+                                containerColor = editorial.acidLime,
+                                contentColor = editorial.onAcidLime
                             ),
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.testTag("practice_finish_btn")
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("practice_finish_btn")
                         ) {
-                            Text(if (session.timedMode) "Finish & Submit" else "Finish ✓")
+                            Text(if (session.timedMode) "Finish & Submit" else "Finish", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -526,47 +585,39 @@ fun PracticeScreen(
         }
     }
 
-    // Timeout AlertDialog (non-dismissible until user submits)
     if (session.showTimeoutDialog) {
         AlertDialog(
             onDismissRequest = {},
-            title = { Text("Time's Up!") },
+            title = { Text("Time's Up") },
             text = {
-                Text(
-                    "Your configured timer has expired. You answered ${session.selectedAnswers.size} of ${session.questions.size} questions. Submit now to view your score and review solutions."
-                )
+                Text("Timer ended. You answered ${session.selectedAnswers.size} of ${session.questions.size} questions.")
             },
             confirmButton = {
                 Button(
                     onClick = onConfirmSubmit,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = CalmSageFill,
-                        contentColor = WarmWhite
+                        containerColor = editorial.acidLime,
+                        contentColor = editorial.onAcidLime
                     ),
                     modifier = Modifier.testTag("timeout_submit_btn")
                 ) {
-                    Text("Submit & View Report")
+                    Text("View Report", fontWeight = FontWeight.Bold)
                 }
             }
         )
     }
 
-    // Completion / Early Submit Prompt
     if (session.showCompletionPrompt && !session.showTimeoutDialog) {
         val remainingQs = session.questions.size - session.selectedAnswers.size
         AlertDialog(
             onDismissRequest = onDismissSubmitPrompt,
-            title = { Text(if (session.hasCountdown) "Submit Timed Practice?" else "Submit Practice Drill?") },
+            title = { Text("Submit Practice?") },
             text = {
                 Text(
                     if (remainingQs == 0) {
-                        if (session.hasCountdown) {
-                            "You have answered all ${session.questions.size} questions with ${formatTimer(session.remainingSeconds)} remaining. Submit now to view your detailed report?"
-                        } else {
-                            "You have answered all ${session.questions.size} questions. Submit now to view your detailed report?"
-                        }
+                        "All ${session.questions.size} questions answered. View your report?"
                     } else {
-                        "You have answered ${session.selectedAnswers.size}/${session.questions.size} questions ($remainingQs unanswered). Submit now?"
+                        "${session.selectedAnswers.size}/${session.questions.size} answered ($remainingQs unanswered). Submit now?"
                     }
                 )
             },
@@ -574,17 +625,17 @@ fun PracticeScreen(
                 Button(
                     onClick = onConfirmSubmit,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = CalmSageFill,
-                        contentColor = WarmWhite
+                        containerColor = editorial.acidLime,
+                        contentColor = editorial.onAcidLime
                     ),
                     modifier = Modifier.testTag("confirm_timed_submit_btn")
                 ) {
-                    Text("Submit Practice")
+                    Text("Submit", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = onDismissSubmitPrompt) {
-                    Text("Keep Practicing")
+                    Text("Continue")
                 }
             }
         )
@@ -593,16 +644,8 @@ fun PracticeScreen(
     if (showExitConfirm) {
         AlertDialog(
             onDismissRequest = { showExitConfirm = false },
-            title = { Text(if (session.hasCountdown) "Exit Timed Practice?" else "Exit Practice Drill?") },
-            text = {
-                Text(
-                    if (session.hasCountdown) {
-                        "Your active countdown timer will stop. Do you want to submit first or exit?"
-                    } else {
-                        "Leave this practice drill? Your answered questions are already saved."
-                    }
-                )
-            },
+            title = { Text("Exit Practice?") },
+            text = { Text("Your answered questions are already saved.") },
             confirmButton = {
                 Button(onClick = {
                     showExitConfirm = false
@@ -613,7 +656,7 @@ fun PracticeScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showExitConfirm = false }) {
-                    Text("Continue")
+                    Text("Cancel")
                 }
             }
         )
@@ -629,6 +672,7 @@ private fun TimedPracticeSummaryView(
     onExit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val editorial = MaterialTheme.editorialColors
     var right = 0
     var wrong = 0
     var skipped = 0
@@ -666,9 +710,10 @@ private fun TimedPracticeSummaryView(
         ) {
             item {
                 Card(
-                    shape = RoundedCornerShape(22.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = EditorialBannerSurface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
+                    border = BorderStroke(1.dp, editorial.borderSubtle),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Column(
                         modifier = Modifier.padding(18.dp),
@@ -680,11 +725,15 @@ private fun TimedPracticeSummaryView(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Timed Practice Score Card", style = MaterialTheme.typography.labelMedium, color = EditorialBannerKpiAccent)
+                                Text("SCORE REPORT", style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily), color = AcidLime)
                                 Text(session.title, style = MaterialTheme.typography.titleLarge, color = EditorialBannerTitle, fontWeight = FontWeight.Bold)
                             }
-                            Button(onClick = onExit) {
-                                Text("Done")
+                            Button(
+                                onClick = onExit,
+                                colors = ButtonDefaults.buttonColors(containerColor = AcidLime, contentColor = PureBlack),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("Done", fontWeight = FontWeight.Bold)
                             }
                         }
 
@@ -704,7 +753,7 @@ private fun TimedPracticeSummaryView(
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MetricTile(label = "Correct (+1)", value = "$right", valueColor = EditorialBannerKpiSuccess, modifier = Modifier.weight(1f))
+                            MetricTile(label = "Correct", value = "$right", valueColor = EditorialBannerKpiSuccess, modifier = Modifier.weight(1f))
                             MetricTile(label = "Wrong", value = "$wrong", valueColor = EditorialBannerKpiDanger, modifier = Modifier.weight(1f))
                             MetricTile(label = "Skipped", value = "$skipped", valueColor = EditorialBannerTitle, modifier = Modifier.weight(1f))
                         }
@@ -718,10 +767,10 @@ private fun TimedPracticeSummaryView(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     CbtReviewFilter.entries.forEach { f ->
-                        FilterChip(
+                        MonochromeFilterPill(
+                            label = f.label,
                             selected = session.reviewFilter == f,
-                            onClick = { onChangeFilter(f) },
-                            label = { Text(f.label) }
+                            onClick = { onChangeFilter(f) }
                         )
                     }
                 }
@@ -729,11 +778,11 @@ private fun TimedPracticeSummaryView(
 
             itemsIndexed(filtered) { _, (idx, item, ans) ->
                 val q = item.question
-                val editorial = MaterialTheme.editorialColors
                 Card(
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                    colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                    border = BorderStroke(1.dp, editorial.borderSubtle),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(
@@ -746,7 +795,7 @@ private fun TimedPracticeSummaryView(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text("Q${idx + 1} • ${q.subject}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                Text("Q${idx + 1} · ${q.subject}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                                 PyqSourceBadge(question = q)
                                 DifficultyBadge(difficulty = q.difficulty)
                             }
@@ -767,9 +816,10 @@ private fun TimedPracticeSummaryView(
                         }
                         Text(q.questionText, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                         Text(
-                            "Correct Answer: ${'A' + q.correctIndex}. ${q.options.getOrElse(q.correctIndex) { "" }}",
+                            "Correct: ${'A' + q.correctIndex}. ${q.options.getOrElse(q.correctIndex) { "" }}",
                             style = MaterialTheme.typography.labelMedium,
-                            color = editorial.correctText
+                            color = editorial.correctText,
+                            fontWeight = FontWeight.Bold
                         )
                         if (q.explanation.isNotBlank()) {
                             Text(q.explanation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

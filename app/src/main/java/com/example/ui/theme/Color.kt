@@ -3,90 +3,77 @@ package com.example.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // ============================================================================
-// Direction C: Premium / Editorial Palette
-// Burgundy #542F3B · Cream #F6F0E9 · Dusty Rose #B78B79 · Charcoal #34383D
+// ClinEdge Design System — Premium Monochrome + Acid Lime
+// Pure Black #000000 · Pure White #FFFFFF · Acid Lime #C7FF4D
 // ============================================================================
 
-// Core Brand Swatches
-val BurgundyPrimary = Color(0xFF542F3B)
-val BurgundyDeep = Color(0xFF3D1E28)
-val BurgundyContainerLight = Color(0xFFEFE2E6)
-val OnBurgundyContainerLight = Color(0xFF3D1E28)
+// Primary Brand Colours
+val PureBlack = Color(0xFF000000)
+val PureWhite = Color(0xFFFFFFFF)
+val AcidLime = Color(0xFFC7FF4D)
+val AcidLimePressed = Color(0xFFB5EC3B)
+val AcidLimeMutedDark = Color(0xFF1E2610)
+val AcidLimeMutedLight = Color(0xFFF3FCD9)
 
-val BurgundyPrimaryDark = Color(0xFFD6A0AB)
-val OnBurgundyPrimaryDark = Color(0xFF2C121A)
-val BurgundyContainerDark = Color(0xFF4E2A36)
-val OnBurgundyContainerDark = Color(0xFFF6E7EB)
+// Supporting Monochrome Scale
+val Graphite = Color(0xFF171717)
+val SecondaryGraphite = Color(0xFF1C1C1C)
+val MediumGrey = Color(0xFF858585)
+val LightGrey = Color(0xFFEAEAEA)
+val BorderGrey = Color(0xFFE5E5E5)
+val SoftSurfaceGrey = Color(0xFFF7F7F7)
 
-val DustyRoseSecondary = Color(0xFFB78B79)
-val OnDustyRoseLight = Color(0xFF231917)
-val DustyRoseContainerLight = Color(0xFFEFE3DD)
-val OnDustyRoseContainerLight = Color(0xFF4C3026)
+// Light Mode Tokens
+val LightBackground = PureWhite
+val LightCardSurface = PureWhite
+val LightElevatedSurface = SoftSurfaceGrey
+val LightBorder = BorderGrey
+val LightTextPrimary = Color(0xFF111111)
+val LightTextSecondary = Color(0xFF737373)
 
-val DustyRoseSecondaryDark = Color(0xFFC79B89)
-val OnDustyRoseDark = Color(0xFF271813)
-val DustyRoseContainerDark = Color(0xFF422D25)
-val OnDustyRoseContainerDark = Color(0xFFF3E4DC)
+// True AMOLED Dark Mode Tokens
+val AmoledBackground = PureBlack
+val AmoledCardPrimary = Color(0xFF111111)
+val AmoledCardElevated = Color(0xFF1A1A1A)
+val AmoledBorder = Color(0xFF292929)
+val AmoledTextPrimary = Color(0xFFF5F5F5)
+val AmoledTextSecondary = Color(0xFF999999)
 
-val CharcoalAccent = Color(0xFF34383D)
-val CharcoalContainerLight = Color(0xFFE4E1DE)
-val OnCharcoalContainerLight = Color(0xFF2B2E33)
+// Restrained High-Contrast Semantic Feedback Colours (Answer reveal & CBT palette)
+val SemanticCorrectFill = Color(0xFF16A34A)
+val SemanticCorrectTextLight = Color(0xFF15803D)
+val SemanticCorrectTextDark = Color(0xFF4ADE80)
+val SemanticCorrectBgLight = Color(0xFFECFDF3)
+val SemanticCorrectBgDark = Color(0xFF0B2214)
 
-val CharcoalAccentDark = Color(0xFFB8BEC6)
-val OnCharcoalAccentDark = Color(0xFF1B1E22)
-val CharcoalContainerDark = Color(0xFF34383D)
-val OnCharcoalContainerDark = Color(0xFFECEEF0)
+val SemanticWrongFill = Color(0xFFDC2626)
+val SemanticWrongTextLight = Color(0xFFB91C1C)
+val SemanticWrongTextDark = Color(0xFFF87171)
+val SemanticWrongBgLight = Color(0xFFFEF2F2)
+val SemanticWrongBgDark = Color(0xFF2A0F12)
 
-// Light Theme Surfaces (Warm Cream & Soft Ivory, >= 4.5:1 body text contrast)
-val CreamBackground = Color(0xFFF6F0E9)
-val CreamSurface = Color(0xFFFCF9F5)
-val WarmLinenSurfaceVariant = Color(0xFFECE3D9)
-val WarmSandOutline = Color(0xFFD6C9BE)
-val WarmSandOutlineVariant = Color(0xFFE5DCD2)
-val LightTextPrimary = Color(0xFF34383D)
-val LightTextSecondary = Color(0xFF575257)
-val WarmWhite = Color(0xFFFDFBF8)
+val SemanticWarningFill = Color(0xFFD97706)
+val SemanticWarningTextLight = Color(0xFFB45309)
+val SemanticWarningTextDark = Color(0xFFFBBF24)
 
-// Separately Designed Dark Theme Surfaces (Deep Warm Charcoal-Plum & Ivory Text)
-val DarkBackground = Color(0xFF161417)
-val DarkSurface = Color(0xFF201C20)
-val DarkSurfaceVariant = Color(0xFF2C262B)
-val DarkOutline = Color(0xFF443C42)
-val DarkOutlineVariant = Color(0xFF312B30)
-val DarkTextPrimary = Color(0xFFF4EEE6)
-val DarkTextSecondary = Color(0xFFC9BEB6)
+val SemanticReviewFill = Color(0xFF52525B)
+val SemanticReviewTextLight = Color(0xFF3F3F46)
+val SemanticReviewTextDark = Color(0xFFD4D4D8)
 
-// Calm Editorial Semantic & CBT Palette Colors
-// Fill variants guarantee >= 5.3:1 contrast with white labels in both themes.
-// Text/Badge variants are theme-specific in Theme.kt for >= 5.3:1 contrast on light & dark cards.
-val CalmSageFill = Color(0xFF2F6F5E)
-val CalmSageTextLight = Color(0xFF2A6B5A)
-val CalmSageTextDark = Color(0xFF7DC2AE)
+val UnvisitedNeutral = MediumGrey
 
-val MutedCrimsonFill = Color(0xFF9E3442)
-val MutedCrimsonTextLight = Color(0xFF9E3442)
-val MutedCrimsonTextDark = Color(0xFFE38C96)
-val MutedCrimsonContainerLight = Color(0xFFF7E4E6)
-val OnMutedCrimsonContainerLight = Color(0xFF661E28)
-val MutedCrimsonContainerDark = Color(0xFF4D1E26)
-val OnMutedCrimsonContainerDark = Color(0xFFF9DDE0)
+// Legacy aliases mapped cleanly to Monochrome + Acid Lime tokens for non-UI callers
+val CalmSageFill = SemanticCorrectFill
+val MutedCrimsonFill = SemanticWrongFill
+val WarmOchreFill = SemanticWarningFill
+val MutedPlumFill = SemanticReviewFill
 
-val WarmOchreFill = Color(0xFF8C5D22)
-val WarmOchreTextLight = Color(0xFF8C5D22)
-val WarmOchreTextDark = Color(0xFFDFB473)
-
-val MutedPlumFill = Color(0xFF5E4980)
-val MutedPlumTextLight = Color(0xFF5E4980)
-val MutedPlumTextDark = Color(0xFFBAA5DB)
-
-val UnvisitedNeutral = Color(0xFF726C73)
-
-// Flat Editorial Dark Header / Score Card Surfaces & KPI Accents
-val EditorialBannerSurface = Color(0xFF2B1C22)
-val EditorialBannerTitle = Color(0xFFFAF5EF)
-val EditorialBannerSubtext = Color(0xFFDDD1C8)
-val EditorialBannerMuted = Color(0xFFB9ACA4)
-val EditorialBannerKpiSuccess = Color(0xFF8EC9B7)
-val EditorialBannerKpiAccent = Color(0xFFE2B9A9)
-val EditorialBannerKpiHighlight = Color(0xFFE6C68E)
-val EditorialBannerKpiDanger = Color(0xFFEAA1A9)
+// Dark Hero / Score Banner Surface (Monochrome Graphite + Acid Lime KPI Accents)
+val EditorialBannerSurface = Color(0xFF111111)
+val EditorialBannerTitle = AmoledTextPrimary
+val EditorialBannerSubtext = Color(0xFFD4D4D4)
+val EditorialBannerMuted = AmoledTextSecondary
+val EditorialBannerKpiSuccess = SemanticCorrectTextDark
+val EditorialBannerKpiAccent = AcidLime
+val EditorialBannerKpiHighlight = AcidLime
+val EditorialBannerKpiDanger = SemanticWrongTextDark

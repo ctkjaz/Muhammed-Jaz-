@@ -34,14 +34,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.MedicalServices
-import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -70,7 +70,10 @@ import com.example.data.model.Exam
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.StudyGoalLogic
 import com.example.data.model.SubjectCatalog
+import com.example.ui.components.ClinEdgeLogoMark
+import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.theme.MonoFontFamily
+import com.example.ui.theme.PureBlack
 import com.example.ui.theme.editorialColors
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -131,11 +134,8 @@ fun OnboardingScreen(
         contentWindowInsets = WindowInsets.safeDrawing,
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 2.dp,
-                shadowElevation = 4.dp
-            ) {
+            Column(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
+                HorizontalDivider(color = editorial.borderSubtle)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -153,6 +153,7 @@ fun OnboardingScreen(
                             OutlinedButton(
                                 onClick = { step -= 1 },
                                 shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, editorial.borderSubtle),
                                 modifier = Modifier
                                     .heightIn(min = 52.dp)
                                     .testTag("onboarding_back_btn")
@@ -167,9 +168,10 @@ fun OnboardingScreen(
                             }
                         }
 
+                        val isLastStep = step == totalSteps - 1
                         Button(
                             onClick = {
-                                if (step < totalSteps - 1) {
+                                if (!isLastStep) {
                                     step += 1
                                 } else {
                                     onComplete(
@@ -184,13 +186,17 @@ fun OnboardingScreen(
                                 }
                             },
                             shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isLastStep) editorial.acidLime else MaterialTheme.colorScheme.primary,
+                                contentColor = if (isLastStep) editorial.onAcidLime else MaterialTheme.colorScheme.onPrimary
+                            ),
                             modifier = Modifier
                                 .weight(1f)
                                 .heightIn(min = 52.dp)
                                 .testTag("onboarding_next_btn")
                         ) {
                             Text(
-                                text = if (step < totalSteps - 1) "Continue" else "Start Studying",
+                                text = if (!isLastStep) "Continue" else "Start Studying",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
@@ -219,7 +225,7 @@ fun OnboardingScreen(
                     .padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                // Top Brand + Step Progress Bar + Skip
+                // Top Brand + Acid Lime Step Progress + Skip
                 Column(
                     modifier = Modifier.padding(top = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -233,20 +239,7 @@ fun OnboardingScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.size(38.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Filled.MonitorHeart,
-                                        contentDescription = "ClinEdge",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
-                            }
+                            ClinEdgeLogoMark(size = 38.dp)
                             Column {
                                 Text(
                                     text = "ClinEdge Setup",
@@ -283,11 +276,7 @@ fun OnboardingScreen(
                                     .height(5.dp)
                                     .clip(RoundedCornerShape(50))
                                     .background(
-                                        if (filled) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
-                                        }
+                                        if (filled) editorial.acidLime else editorial.elevatedSurface
                                     )
                             )
                         }
@@ -313,8 +302,8 @@ fun OnboardingScreen(
                             0 -> {
                                 OnboardingStepHeader(
                                     badge = "EXAM TRACK",
-                                    title = "Which exam are you preparing for?",
-                                    subtitle = "We'll tailor your dashboard, PYQ papers, and CBT mocks to match. You can switch tracks anytime."
+                                    title = "Choose your exam",
+                                    subtitle = "We'll tailor your dashboard, PYQ papers, and CBT mocks. Switch tracks anytime."
                                 )
 
                                 exams.forEach { exam ->
@@ -322,65 +311,54 @@ fun OnboardingScreen(
                                     val isNorcet = PlatformCatalogDefaults.isNorcetExam(exam.id)
                                     val isPgimer = PlatformCatalogDefaults.isPgimerExam(exam.id)
                                     val patternLine = when {
-                                        isPgimer -> "100% Core Nursing • 100Q / 100m • +1 / -0.25 Marking"
-                                        isNorcet -> "80:20 Prelims & 160Q Mains • +1 / -0.33 Marking"
-                                        else -> "70:30 Nursing & General • 100Q / 90 min CBT"
+                                        isPgimer -> "100% Core Nursing · 100Q / 100m · -0.25"
+                                        isNorcet -> "Stage I Prelims (80:20) & Stage II Mains (160Q)"
+                                        else -> "70:30 Nursing & General · 100Q / 90m"
                                     }
                                     val highlightTag = when {
                                         isPgimer -> "PGIMER 2020–25 PYQs"
-                                        isNorcet -> "NORCET 5–10 PYQs"
+                                        isNorcet -> "NORCET 5–10 · 2-Stage"
                                         else -> "2015–2026 Shifts"
                                     }
 
                                     Card(
-                                        shape = RoundedCornerShape(20.dp),
+                                        shape = RoundedCornerShape(18.dp),
                                         colors = CardDefaults.cardColors(
-                                            containerColor = if (isSelected) {
-                                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
-                                            } else {
-                                                MaterialTheme.colorScheme.surface
-                                            }
+                                            containerColor = if (isSelected) editorial.elevatedSurface else editorial.cardSurface
                                         ),
                                         border = BorderStroke(
                                             width = if (isSelected) 2.dp else 1.dp,
                                             color = if (isSelected) {
-                                                MaterialTheme.colorScheme.primary
+                                                if (editorial.isDark) editorial.acidLime else PureBlack
                                             } else {
-                                                MaterialTheme.colorScheme.outline
+                                                editorial.borderSubtle
                                             }
                                         ),
+                                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(20.dp))
+                                            .clip(RoundedCornerShape(18.dp))
                                             .clickable { selectedExamId = exam.id }
                                             .testTag("onboarding_exam_${exam.id}")
                                     ) {
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(18.dp),
+                                                .padding(16.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                                         ) {
                                             Surface(
-                                                shape = RoundedCornerShape(14.dp),
-                                                color = if (isSelected) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.surfaceVariant
-                                                },
-                                                modifier = Modifier.size(46.dp)
+                                                shape = RoundedCornerShape(12.dp),
+                                                color = if (isSelected) editorial.acidLime else editorial.elevatedSurface,
+                                                modifier = Modifier.size(44.dp)
                                             ) {
                                                 Box(contentAlignment = Alignment.Center) {
                                                     Icon(
                                                         imageVector = if (isNorcet) Icons.Filled.MedicalServices else Icons.Filled.School,
                                                         contentDescription = null,
-                                                        tint = if (isSelected) {
-                                                            MaterialTheme.colorScheme.onPrimary
-                                                        } else {
-                                                            MaterialTheme.colorScheme.primary
-                                                        },
-                                                        modifier = Modifier.size(24.dp)
+                                                        tint = if (isSelected) editorial.onAcidLime else MaterialTheme.colorScheme.onSurface,
+                                                        modifier = Modifier.size(22.dp)
                                                     )
                                                 }
                                             }
@@ -399,28 +377,17 @@ fun OnboardingScreen(
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
                                                 Row(
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                    modifier = Modifier.padding(top = 4.dp)
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    modifier = Modifier.padding(top = 2.dp)
                                                 ) {
                                                     Surface(
-                                                        shape = RoundedCornerShape(8.dp),
-                                                        color = MaterialTheme.colorScheme.surfaceVariant
-                                                    ) {
-                                                        Text(
-                                                            text = "1,000+ Qs",
-                                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                                                            fontWeight = FontWeight.Bold,
-                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                                        )
-                                                    }
-                                                    Surface(
-                                                        shape = RoundedCornerShape(8.dp),
-                                                        color = editorial.warningText.copy(alpha = 0.14f)
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = editorial.cardSurface,
+                                                        border = BorderStroke(1.dp, editorial.borderSubtle)
                                                     ) {
                                                         Text(
                                                             text = highlightTag,
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            color = editorial.warningText,
+                                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                                                             fontWeight = FontWeight.SemiBold,
                                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                                         )
@@ -431,11 +398,11 @@ fun OnboardingScreen(
                                                 imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
                                                 contentDescription = if (isSelected) "Selected" else "Not selected",
                                                 tint = if (isSelected) {
-                                                    MaterialTheme.colorScheme.primary
+                                                    if (editorial.isDark) editorial.acidLime else PureBlack
                                                 } else {
                                                     MaterialTheme.colorScheme.onSurfaceVariant
                                                 },
-                                                modifier = Modifier.size(24.dp)
+                                                modifier = Modifier.size(22.dp)
                                             )
                                         }
                                     }
@@ -445,17 +412,18 @@ fun OnboardingScreen(
                             1 -> {
                                 OnboardingStepHeader(
                                     badge = "LEARNER PROFILE",
-                                    title = "Personalize your study focus",
-                                    subtitle = "Optional details to tailor your profile and one-tap daily focus drills."
+                                    title = "Personalize your focus",
+                                    subtitle = "Optional details for your greeting and quick focus drills."
                                 )
 
                                 Card(
-                                    shape = RoundedCornerShape(20.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                                    shape = RoundedCornerShape(18.dp),
+                                    colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                                    border = BorderStroke(1.dp, editorial.borderSubtle),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                                 ) {
                                     Column(
-                                        modifier = Modifier.padding(18.dp),
+                                        modifier = Modifier.padding(16.dp),
                                         verticalArrangement = Arrangement.spacedBy(14.dp)
                                     ) {
                                         OutlinedTextField(
@@ -483,10 +451,7 @@ fun OnboardingScreen(
                                             label = { Text("Mobile Number (Optional)") },
                                             placeholder = { Text("e.g. +91 98765 43210") },
                                             leadingIcon = {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Phone,
-                                                    contentDescription = null
-                                                )
+                                                Icon(imageVector = Icons.Filled.Phone, contentDescription = null)
                                             },
                                             isError = phoneInvalid,
                                             supportingText = {
@@ -494,7 +459,7 @@ fun OnboardingScreen(
                                                     text = if (phoneInvalid) {
                                                         "Enter a valid 10-digit mobile number or leave blank."
                                                     } else {
-                                                        "Optional • Saved privately to your profile (no OTP required)."
+                                                        "Optional · Saved privately to your profile."
                                                     }
                                                 )
                                             },
@@ -514,13 +479,13 @@ fun OnboardingScreen(
                                             val roles = listOf("B.Sc. Nursing", "GNM", "Post Basic B.Sc.", "Staff Nurse")
                                             FlowRow(
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                                verticalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
                                                 roles.forEach { itemRole ->
-                                                    FilterChip(
+                                                    MonochromeFilterPill(
+                                                        label = itemRole,
                                                         selected = role.equals(itemRole, ignoreCase = true),
                                                         onClick = { role = itemRole },
-                                                        label = { Text(itemRole) },
                                                         modifier = Modifier.testTag("onboarding_role_${itemRole.replace(" ", "_")}")
                                                     )
                                                 }
@@ -535,15 +500,10 @@ fun OnboardingScreen(
                                             )
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 listOf("2026", "2027", "2028").forEach { year ->
-                                                    FilterChip(
+                                                    MonochromeFilterPill(
+                                                        label = year,
                                                         selected = targetYear == year,
                                                         onClick = { targetYear = year },
-                                                        label = {
-                                                            Text(
-                                                                text = year,
-                                                                style = MaterialTheme.typography.labelLarge.copy(fontFamily = MonoFontFamily)
-                                                            )
-                                                        },
                                                         modifier = Modifier.testTag("onboarding_year_$year")
                                                     )
                                                 }
@@ -562,17 +522,17 @@ fun OnboardingScreen(
                                                     .horizontalScroll(rememberScrollState()),
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
-                                                FilterChip(
+                                                MonochromeFilterPill(
+                                                    label = "All Subjects",
                                                     selected = focusSubject.isBlank(),
                                                     onClick = { focusSubject = "" },
-                                                    label = { Text("All Subjects") },
                                                     modifier = Modifier.testTag("onboarding_focus_ALL")
                                                 )
                                                 SubjectCatalog.ALL_SUBJS.forEach { subj ->
-                                                    FilterChip(
+                                                    MonochromeFilterPill(
+                                                        label = subj.code,
                                                         selected = focusSubject == subj.code,
                                                         onClick = { focusSubject = subj.code },
-                                                        label = { Text(subj.code) },
                                                         modifier = Modifier.testTag("onboarding_focus_${subj.code}")
                                                     )
                                                 }
@@ -585,13 +545,13 @@ fun OnboardingScreen(
                             else -> {
                                 OnboardingStepHeader(
                                     badge = "DAILY HABIT",
-                                    title = "Set your daily question goal",
-                                    subtitle = "Consistency beats cramming. Answer your daily target in Practice or CBT Mocks to build your study streak."
+                                    title = "Set your daily goal",
+                                    subtitle = "Hit your target in Practice or CBT mocks to build a daily streak."
                                 )
 
                                 val presets = listOf(
                                     Triple(15, "Light Warmup", "Great for busy shift days"),
-                                    Triple(25, "Balanced Daily (Recommended)", "Steady mastery across all subjects"),
+                                    Triple(25, "Balanced Daily", "Recommended steady mastery"),
                                     Triple(50, "Exam Sprint", "Serious preparation pace"),
                                     Triple(100, "Full Mock Pace", "High-intensity final revision")
                                 )
@@ -601,25 +561,22 @@ fun OnboardingScreen(
                                     val estMins = SettingsPreferences.calculateSuggestedMinutes(count, secondsPerQuestion)
                                         .coerceAtLeast(5)
                                     Card(
-                                        shape = RoundedCornerShape(18.dp),
+                                        shape = RoundedCornerShape(16.dp),
                                         colors = CardDefaults.cardColors(
-                                            containerColor = if (isSelected) {
-                                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
-                                            } else {
-                                                MaterialTheme.colorScheme.surface
-                                            }
+                                            containerColor = if (isSelected) editorial.elevatedSurface else editorial.cardSurface
                                         ),
                                         border = BorderStroke(
                                             width = if (isSelected) 2.dp else 1.dp,
                                             color = if (isSelected) {
-                                                MaterialTheme.colorScheme.primary
+                                                if (editorial.isDark) editorial.acidLime else PureBlack
                                             } else {
-                                                MaterialTheme.colorScheme.outline
+                                                editorial.borderSubtle
                                             }
                                         ),
+                                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(18.dp))
+                                            .clip(RoundedCornerShape(16.dp))
                                             .clickable { dailyGoal = count }
                                             .testTag("onboarding_goal_$count")
                                     ) {
@@ -632,23 +589,15 @@ fun OnboardingScreen(
                                         ) {
                                             Surface(
                                                 shape = CircleShape,
-                                                color = if (isSelected) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.surfaceVariant
-                                                },
-                                                modifier = Modifier.size(48.dp)
+                                                color = if (isSelected) editorial.acidLime else editorial.elevatedSurface,
+                                                modifier = Modifier.size(46.dp)
                                             ) {
                                                 Box(contentAlignment = Alignment.Center) {
                                                     Text(
                                                         text = "$count",
                                                         style = MaterialTheme.typography.titleMedium.copy(fontFamily = MonoFontFamily),
                                                         fontWeight = FontWeight.Bold,
-                                                        color = if (isSelected) {
-                                                            MaterialTheme.colorScheme.onPrimary
-                                                        } else {
-                                                            MaterialTheme.colorScheme.primary
-                                                        }
+                                                        color = if (isSelected) editorial.onAcidLime else MaterialTheme.colorScheme.onSurface
                                                     )
                                                 }
                                             }
@@ -659,7 +608,7 @@ fun OnboardingScreen(
                                                     fontWeight = FontWeight.Bold
                                                 )
                                                 Text(
-                                                    text = "$subtitle • ~$estMins min/day",
+                                                    text = "$subtitle · ~$estMins min/day",
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -668,7 +617,7 @@ fun OnboardingScreen(
                                                 imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
                                                 contentDescription = if (isSelected) "Selected" else "Not selected",
                                                 tint = if (isSelected) {
-                                                    MaterialTheme.colorScheme.primary
+                                                    if (editorial.isDark) editorial.acidLime else PureBlack
                                                 } else {
                                                     MaterialTheme.colorScheme.onSurfaceVariant
                                                 }
@@ -678,9 +627,9 @@ fun OnboardingScreen(
                                 }
 
                                 Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = editorial.warningText.copy(alpha = 0.12f),
-                                    border = BorderStroke(1.dp, editorial.warningText.copy(alpha = 0.35f))
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = editorial.elevatedSurface,
+                                    border = BorderStroke(1.dp, editorial.borderSubtle)
                                 ) {
                                     Row(
                                         modifier = Modifier
@@ -689,16 +638,24 @@ fun OnboardingScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.LocalFireDepartment,
-                                            contentDescription = null,
-                                            tint = editorial.warningText,
-                                            modifier = Modifier.size(24.dp)
-                                        )
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = editorial.acidLime,
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.LocalFireDepartment,
+                                                    contentDescription = null,
+                                                    tint = editorial.onAcidLime,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
                                         Text(
-                                            text = "Your daily goal and study streak sync automatically with your Google account and can be adjusted anytime in Settings.",
+                                            text = "Your daily goal and streak sync automatically and can be adjusted anytime in Settings.",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
@@ -717,17 +674,19 @@ private fun OnboardingStepHeader(
     title: String,
     subtitle: String
 ) {
+    val editorial = MaterialTheme.editorialColors
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Surface(
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            shape = RoundedCornerShape(6.dp),
+            color = editorial.elevatedSurface,
+            border = BorderStroke(1.dp, editorial.borderSubtle)
         ) {
             Text(
                 text = badge,
                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
             )
         }
         Text(

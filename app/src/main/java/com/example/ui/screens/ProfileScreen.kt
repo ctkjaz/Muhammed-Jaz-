@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -31,7 +32,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.CheckCircle
@@ -49,10 +49,10 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -82,9 +82,17 @@ import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.QuestionItem
 import com.example.data.model.StudyGoalLogic
 import com.example.data.model.SubjectCatalog
+import com.example.ui.components.AcidLimeProgressBar
+import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.components.ProfileAvatarCircle
 import com.example.ui.components.formatApproxQuestionCount
+import com.example.ui.theme.AcidLime
+import com.example.ui.theme.AmoledBorder
+import com.example.ui.theme.EditorialBannerSubtext
+import com.example.ui.theme.EditorialBannerSurface
+import com.example.ui.theme.EditorialBannerTitle
 import com.example.ui.theme.MonoFontFamily
+import com.example.ui.theme.PureBlack
 import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.DashboardDerivedState
 import com.example.ui.viewmodel.SubjectHubSection
@@ -116,7 +124,7 @@ fun ProfileDrawerContent(
     val focusSubjectLabel = if (focusSubject.isBlank()) {
         "All Subjects"
     } else {
-        "$focusSubject • ${SubjectCatalog.displayNameFor(focusSubject)}"
+        "$focusSubject · ${SubjectCatalog.displayNameFor(focusSubject)}"
     }
     val editorial = MaterialTheme.editorialColors
 
@@ -125,7 +133,7 @@ fun ProfileDrawerContent(
             .widthIn(max = 320.dp)
             .fillMaxHeight()
             .testTag("profile_drawer_sheet"),
-        drawerContainerColor = MaterialTheme.colorScheme.surface
+        drawerContainerColor = MaterialTheme.colorScheme.background
     ) {
         Column(
             modifier = Modifier
@@ -134,7 +142,7 @@ fun ProfileDrawerContent(
                 .padding(horizontal = 18.dp, vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Tappable Profile Picture Circle + Personal Summary -> Opens Full Profile Page
+            // Profile Summary Card (Graphite + Acid Lime accent)
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -142,8 +150,9 @@ fun ProfileDrawerContent(
                     .clickable(onClick = onOpenFullProfile)
                     .testTag("drawer_profile_header_btn"),
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+                colors = CardDefaults.cardColors(containerColor = EditorialBannerSurface),
+                border = BorderStroke(1.dp, AmoledBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -155,7 +164,7 @@ fun ProfileDrawerContent(
                     ) {
                         ProfileAvatarCircle(
                             name = profileName,
-                            size = 58.dp,
+                            size = 56.dp,
                             avatarPath = avatarPath,
                             modifier = Modifier.testTag("drawer_profile_avatar_circle")
                         )
@@ -167,14 +176,14 @@ fun ProfileDrawerContent(
                                 text = displayName,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                color = EditorialBannerTitle,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = subtitleRole,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f),
+                                color = EditorialBannerSubtext,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -182,7 +191,7 @@ fun ProfileDrawerContent(
                                 Text(
                                     text = account.email,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
+                                    color = EditorialBannerSubtext.copy(alpha = 0.72f),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -191,28 +200,40 @@ fun ProfileDrawerContent(
                                 Text(
                                     text = "Target $targetYear",
                                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = AcidLime,
                                     fontWeight = FontWeight.SemiBold
                                 )
                             }
                         }
                     }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+                    HorizontalDivider(color = AmoledBorder)
 
+                    val todayCount = studyGoal.effectiveTodayCount()
+                    val activeStreak = studyGoal.effectiveCurrentStreak()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val todayCount = studyGoal.effectiveTodayCount()
-                        val activeStreak = studyGoal.effectiveCurrentStreak()
                         Text(
-                            text = "Today: $todayCount/${studyGoal.dailyGoalQuestions} Qs • ${activeStreak}d streak",
+                            text = "Today: $todayCount/${studyGoal.dailyGoalQuestions} Qs",
                             style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = EditorialBannerTitle
                         )
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = AcidLime
+                        ) {
+                            Text(
+                                text = "${activeStreak}d streak",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                fontWeight = FontWeight.Bold,
+                                color = PureBlack,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
                     }
 
                     Row(
@@ -221,15 +242,15 @@ fun ProfileDrawerContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "View & edit full profile",
+                            text = "View & edit profile",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = AcidLime
                         )
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Open full profile",
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = AcidLime,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -244,8 +265,9 @@ fun ProfileDrawerContent(
                     .clickable(onClick = onOpenFullProfile)
                     .testTag("drawer_plan_card"),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                border = BorderStroke(1.dp, editorial.borderSubtle),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(14.dp),
@@ -263,7 +285,7 @@ fun ProfileDrawerContent(
                             Icon(
                                 imageVector = Icons.Filled.WorkspacePremium,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(18.dp)
                             )
                             Text(
@@ -273,20 +295,20 @@ fun ProfileDrawerContent(
                             )
                         }
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = editorial.correctText.copy(alpha = 0.14f)
+                            shape = RoundedCornerShape(6.dp),
+                            color = editorial.acidLime
                         ) {
                             Text(
                                 text = "Active",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = editorial.correctText,
+                                color = editorial.onAcidLime,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                     }
                     Text(
-                        text = "${formatApproxQuestionCount(state.overall.totalQuestions, verbose = true)}, CBT mocks, analytics & PDF worksheets.",
+                        text = "${formatApproxQuestionCount(state.overall.totalQuestions, verbose = true)}, CBT mocks, analytics & PDF sheets.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -297,15 +319,16 @@ fun ProfileDrawerContent(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "EXAM & SUBJECT",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Card(
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                    colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                    border = BorderStroke(1.dp, editorial.borderSubtle),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Column(
                         modifier = Modifier.padding(14.dp),
@@ -332,11 +355,11 @@ fun ProfileDrawerContent(
                                 onClick = onOpenExamPicker,
                                 modifier = Modifier.testTag("drawer_switch_exam_btn")
                             ) {
-                                Text("Switch")
+                                Text("Switch", fontWeight = FontWeight.Bold)
                             }
                         }
 
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                        HorizontalDivider(color = editorial.borderSubtle)
 
                         Row(
                             modifier = Modifier
@@ -375,7 +398,7 @@ fun ProfileDrawerContent(
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     text = "STUDY SECTIONS",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 2.dp)
@@ -395,15 +418,15 @@ fun ProfileDrawerContent(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
+            HorizontalDivider(color = editorial.borderSubtle)
 
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 DrawerActionRow(
                     icon = if (cloudSyncState.status == SyncBadgeState.OFFLINE) Icons.Filled.CloudOff else Icons.Filled.CloudSync,
                     label = when (cloudSyncState.status) {
                         SyncBadgeState.SYNCING -> "Syncing to cloud..."
-                        SyncBadgeState.SYNCED -> "Cloud Synced • Sync Now"
-                        SyncBadgeState.OFFLINE -> "Offline • Tap to Sync"
+                        SyncBadgeState.SYNCED -> "Cloud Synced · Sync Now"
+                        SyncBadgeState.OFFLINE -> "Offline · Tap to Sync"
                         else -> "Sync Cloud Progress"
                     },
                     onClick = onSyncNow,
@@ -453,7 +476,7 @@ private fun DrawerActionRow(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
+            tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.size(20.dp)
         )
         Text(
@@ -545,7 +568,7 @@ fun ProfileScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Personal details, plan & exam preferences",
+                            text = "Details, study goal & account sync",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -566,8 +589,9 @@ fun ProfileScreen(
             item {
                 Card(
                     shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                    border = BorderStroke(1.dp, editorial.borderSubtle),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -592,8 +616,8 @@ fun ProfileScreen(
                             )
                             Surface(
                                 shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primary,
-                                border = BorderStroke(2.dp, MaterialTheme.colorScheme.surface),
+                                color = editorial.acidLime,
+                                border = BorderStroke(2.dp, editorial.cardSurface),
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
                                     .size(30.dp)
@@ -602,7 +626,7 @@ fun ProfileScreen(
                                     Icon(
                                         imageVector = Icons.Filled.AddAPhoto,
                                         contentDescription = "Add or change profile picture",
-                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                        tint = editorial.onAcidLime,
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -650,7 +674,7 @@ fun ProfileScreen(
                             Text(
                                 text = buildString {
                                     append(displayRole)
-                                    if (targetYear.isNotBlank()) append("  •  Target $targetYear")
+                                    if (targetYear.isNotBlank()) append("  ·  Target $targetYear")
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -677,6 +701,7 @@ fun ProfileScreen(
                             ProfileStatPill(
                                 label = "Streak",
                                 value = "${activeStreak}d",
+                                highlight = activeStreak > 0,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -689,8 +714,12 @@ fun ProfileScreen(
                 val todayCount = studyGoal.effectiveTodayCount()
                 val activeStreak = studyGoal.effectiveCurrentStreak()
                 val bestStreak = studyGoal.longestStreakDays
+                val goalProgress = if (studyGoal.dailyGoalQuestions > 0) {
+                    (todayCount.toFloat() / studyGoal.dailyGoalQuestions).coerceIn(0f, 1f)
+                } else 0f
+
                 ProfileSectionCard(
-                    title = "Daily Study Goal & Streak",
+                    title = "Daily Study Goal",
                     icon = Icons.Filled.Flag,
                     cardTag = "profile_card_daily_goal"
                 ) {
@@ -706,18 +735,38 @@ fun ProfileScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Current streak: $activeStreak days  •  Best: $bestStreak days",
+                                text = "Streak: ${activeStreak}d  ·  Best: ${bestStreak}d",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Icon(
-                            imageVector = Icons.Filled.LocalFireDepartment,
-                            contentDescription = "Study streak",
-                            tint = if (activeStreak > 0) editorial.warningText else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(26.dp)
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = if (activeStreak > 0) editorial.acidLime else editorial.elevatedSurface,
+                            border = BorderStroke(1.dp, if (activeStreak > 0) editorial.acidLime else editorial.borderSubtle)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.LocalFireDepartment,
+                                    contentDescription = "Study streak",
+                                    tint = if (activeStreak > 0) editorial.onAcidLime else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "${activeStreak}d",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (activeStreak > 0) editorial.onAcidLime else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
+
+                    AcidLimeProgressBar(progress = goalProgress, height = 6.dp)
 
                     Row(
                         modifier = Modifier
@@ -726,15 +775,10 @@ fun ProfileScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         StudyGoalLogic.DAILY_GOAL_PRESETS.forEach { preset ->
-                            FilterChip(
+                            MonochromeFilterPill(
+                                label = "$preset Qs/day",
                                 selected = studyGoal.dailyGoalQuestions == preset,
                                 onClick = { onDailyGoalChange(preset) },
-                                label = {
-                                    Text(
-                                        text = "$preset Qs/day",
-                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily)
-                                    )
-                                },
                                 modifier = Modifier.testTag("profile_daily_goal_$preset")
                             )
                         }
@@ -743,6 +787,10 @@ fun ProfileScreen(
                     Button(
                         onClick = onStartDailyGoalDrill,
                         shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 48.dp)
@@ -757,10 +805,10 @@ fun ProfileScreen(
                 }
             }
 
-            // 0. Google Account & Cloud Sync
+            // Google Account & Cloud Sync
             item {
                 ProfileSectionCard(
-                    title = "Google Account & Cloud Sync",
+                    title = "Google Account & Sync",
                     icon = if (cloudSyncState.status == SyncBadgeState.OFFLINE) Icons.Filled.CloudOff else Icons.Filled.CloudDone,
                     cardTag = "profile_card_cloud_account"
                 ) {
@@ -791,21 +839,17 @@ fun ProfileScreen(
                             SyncBadgeState.ERROR -> "Paused"
                             SyncBadgeState.IDLE -> "Ready"
                         }
-                        val badgeColor = when (cloudSyncState.status) {
-                            SyncBadgeState.SYNCED -> editorial.correctText
-                            SyncBadgeState.ERROR -> MaterialTheme.colorScheme.error
-                            else -> MaterialTheme.colorScheme.primary
-                        }
+                        val isSynced = cloudSyncState.status == SyncBadgeState.SYNCED
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = badgeColor.copy(alpha = 0.14f),
-                            border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.35f))
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSynced) editorial.acidLime else editorial.elevatedSurface,
+                            border = BorderStroke(1.dp, if (isSynced) editorial.acidLime else editorial.borderSubtle)
                         ) {
                             Text(
                                 text = badgeLabel,
-                                style = MaterialTheme.typography.labelMedium,
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = badgeColor,
+                                color = if (isSynced) editorial.onAcidLime else MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
@@ -813,8 +857,8 @@ fun ProfileScreen(
 
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                        color = editorial.elevatedSurface,
+                        border = BorderStroke(1.dp, editorial.borderSubtle),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("profile_single_device_status")
@@ -827,19 +871,19 @@ fun ProfileScreen(
                             Icon(
                                 imageVector = Icons.Filled.PhonelinkLock,
                                 contentDescription = "Single-device lock active",
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(20.dp)
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "1-Phone Active Lock • $currentDeviceName",
+                                    text = "1-Phone Active Lock · $currentDeviceName",
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "Signing in on another phone automatically logs this device out.",
+                                    text = "Signing in on another phone signs this device out.",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -855,6 +899,10 @@ fun ProfileScreen(
                             onClick = onSyncNow,
                             enabled = cloudSyncState.status != SyncBadgeState.SYNCING,
                             shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
                             modifier = Modifier
                                 .weight(1f)
                                 .heightIn(min = 48.dp)
@@ -882,6 +930,7 @@ fun ProfileScreen(
                         OutlinedButton(
                             onClick = onSignOut,
                             shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, editorial.borderSubtle),
                             modifier = Modifier
                                 .heightIn(min = 48.dp)
                                 .testTag("profile_sign_out_btn")
@@ -898,7 +947,7 @@ fun ProfileScreen(
                 }
             }
 
-            // 1. Personal Details
+            // Personal Details
             item {
                 ProfileSectionCard(
                     title = "Personal Details",
@@ -924,10 +973,7 @@ fun ProfileScreen(
                         label = { Text("Mobile Number (Optional)") },
                         placeholder = { Text("e.g. +91 98765 43210") },
                         leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Filled.Phone,
-                                contentDescription = null
-                            )
+                            Icon(imageVector = Icons.Filled.Phone, contentDescription = null)
                         },
                         isError = phoneInvalid,
                         supportingText = {
@@ -935,7 +981,7 @@ fun ProfileScreen(
                                 text = if (phoneInvalid) {
                                     "Enter a valid 10-digit mobile number or leave blank."
                                 } else {
-                                    "Optional contact number synced privately to your profile."
+                                    "Synced privately to your profile."
                                 }
                             )
                         },
@@ -958,14 +1004,14 @@ fun ProfileScreen(
                     )
 
                     FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         roleSuggestions.forEach { suggestion ->
-                            FilterChip(
+                            MonochromeFilterPill(
+                                label = suggestion,
                                 selected = profileRole.equals(suggestion, ignoreCase = true),
-                                onClick = { onProfileRoleChange(suggestion) },
-                                label = { Text(suggestion, style = MaterialTheme.typography.labelSmall) }
+                                onClick = { onProfileRoleChange(suggestion) }
                             )
                         }
                     }
@@ -973,19 +1019,15 @@ fun ProfileScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
                             text = "Target Exam Year",
-                            style = MaterialTheme.typography.labelLarge
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             yearOptions.forEach { yr ->
-                                FilterChip(
+                                MonochromeFilterPill(
+                                    label = yr,
                                     selected = targetYear == yr,
                                     onClick = { onTargetYearChange(yr) },
-                                    label = {
-                                        Text(
-                                            text = yr,
-                                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily)
-                                        )
-                                    },
                                     modifier = Modifier.testTag("profile_year_$yr")
                                 )
                             }
@@ -994,7 +1036,7 @@ fun ProfileScreen(
                 }
             }
 
-            // 2. Plan Details
+            // Plan Details
             item {
                 ProfileSectionCard(
                     title = "Plan Details",
@@ -1019,27 +1061,26 @@ fun ProfileScreen(
                             )
                         }
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = editorial.correctText.copy(alpha = 0.14f),
-                            border = BorderStroke(1.dp, editorial.correctText.copy(alpha = 0.35f))
+                            shape = RoundedCornerShape(8.dp),
+                            color = editorial.acidLime
                         ) {
                             Text(
                                 text = "Active",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = editorial.correctText,
+                                color = editorial.onAcidLime,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
                     }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    HorizontalDivider(color = editorial.borderSubtle)
 
                     val included = listOf(
                         "${formatApproxQuestionCount(state.overall.totalQuestions, verbose = true)} with rationales",
                         "Full-length CBT mocks & custom timed drills",
                         "Subject accuracy analytics & weak-area revision",
-                        "Printable A4 PDF study worksheets & JSON backup"
+                        "Printable A4 PDF study worksheets & backup/restore"
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         included.forEach { benefit ->
@@ -1051,19 +1092,16 @@ fun ProfileScreen(
                                     imageVector = Icons.Filled.CheckCircle,
                                     contentDescription = null,
                                     tint = editorial.correctText,
-                                    modifier = Modifier.size(17.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
-                                Text(
-                                    text = benefit,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
+                                Text(text = benefit, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
                 }
             }
 
-            // 3. Active Exam & Focus Subject
+            // Active Exam & Focus Subject
             item {
                 ProfileSectionCard(
                     title = "Exam & Focus Subject",
@@ -1072,8 +1110,8 @@ fun ProfileScreen(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                        color = editorial.elevatedSurface,
+                        border = BorderStroke(1.dp, editorial.borderSubtle)
                     ) {
                         Row(
                             modifier = Modifier
@@ -1089,7 +1127,7 @@ fun ProfileScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "${formatApproxQuestionCount(state.overall.totalQuestions)}  •  ${activeExam?.defaultMockQuestions ?: 100}Q / ${activeExam?.defaultMockMinutes ?: 90}m",
+                                    text = "${formatApproxQuestionCount(state.overall.totalQuestions)}  ·  ${activeExam?.defaultMockQuestions ?: 100}Q / ${activeExam?.defaultMockMinutes ?: 90}m",
                                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1097,6 +1135,7 @@ fun ProfileScreen(
                             OutlinedButton(
                                 onClick = onOpenExamPicker,
                                 shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, editorial.borderSubtle),
                                 modifier = Modifier.testTag("profile_change_exam_btn")
                             ) {
                                 Text("Change")
@@ -1107,7 +1146,8 @@ fun ProfileScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             text = "Primary Focus Subject",
-                            style = MaterialTheme.typography.labelLarge
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
                         )
                         Row(
                             modifier = Modifier
@@ -1115,17 +1155,17 @@ fun ProfileScreen(
                                 .horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            FilterChip(
+                            MonochromeFilterPill(
+                                label = "All Subjects",
                                 selected = focusSubject.isBlank(),
                                 onClick = { onFocusSubjectChange("") },
-                                label = { Text("All Subjects") },
                                 modifier = Modifier.testTag("profile_focus_ALL")
                             )
                             SubjectCatalog.ALL_SUBJS.forEach { subj ->
-                                FilterChip(
+                                MonochromeFilterPill(
+                                    label = subj.code,
                                     selected = focusSubject == subj.code,
                                     onClick = { onFocusSubjectChange(subj.code) },
-                                    label = { Text(subj.code) },
                                     modifier = Modifier.testTag("profile_focus_${subj.code}")
                                 )
                             }
@@ -1146,6 +1186,10 @@ fun ProfileScreen(
                         onClick = { onPracticeSubject(targetPool.shuffled().take(25), targetLabel) },
                         enabled = targetPool.isNotEmpty(),
                         shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 48.dp)
@@ -1172,13 +1216,15 @@ fun ProfileScreen(
 private fun ProfileStatPill(
     label: String,
     value: String,
+    highlight: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val editorial = MaterialTheme.editorialColors
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f))
+        color = if (highlight) editorial.acidLime else editorial.elevatedSurface,
+        border = BorderStroke(1.dp, if (highlight) editorial.acidLime else editorial.borderSubtle)
     ) {
         Column(
             modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
@@ -1189,12 +1235,12 @@ private fun ProfileStatPill(
                 text = value,
                 style = MaterialTheme.typography.titleMedium.copy(fontFamily = MonoFontFamily),
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = if (highlight) editorial.onAcidLime else MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (highlight) editorial.onAcidLime.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -1207,10 +1253,12 @@ private fun ProfileSectionCard(
     cardTag: String,
     content: @Composable () -> Unit
 ) {
+    val editorial = MaterialTheme.editorialColors
     Card(
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+        border = BorderStroke(1.dp, editorial.borderSubtle),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .testTag(cardTag)
@@ -1228,8 +1276,8 @@ private fun ProfileSectionCard(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(18.dp)
                 )
                 Text(
                     text = title,

@@ -106,6 +106,6 @@ class NorcetSectionalCbtTest {
     fun `norcet catalog metadata includes norcet 10 shift and 80 percent nursing weightage`() {
         assertEquals(80, PlatformCatalogDefaults.nursingWeightagePercent(PlatformCatalogDefaults.EXAM_AIIMS_NORCET))
         assertEquals(70, PlatformCatalogDefaults.nursingWeightagePercent(PlatformCatalogDefaults.EXAM_RRB_NURSING))
-        assertEquals("AIIMS NORCET-10 (Prelims & Mains)", SubjectCatalog.SHIFT_NAMES["NORCET-10"])
+        assertEquals("AIIMS NORCET-10 — Stage I Prelims", SubjectCatalog.SHIFT_NAMES["NORCET-10"])
     }
 }

@@ -12,21 +12,28 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,13 +46,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.model.DifficultyFilter
+import com.example.data.model.ExamStage
 import com.example.data.model.Flashcard
 import com.example.data.model.PlatformCatalogDefaults
+import com.example.data.model.PracticePathway
 import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectCatalog
 import com.example.data.model.SubjectMeta
+import com.example.data.model.SubjectPracticeLogic
 import com.example.ui.components.DifficultyFilterBar
 import com.example.ui.components.FlashcardItemCard
+import com.example.ui.components.MonochromeFilterPill
+import com.example.ui.components.SegmentedPillBar
 import com.example.ui.components.SubjectProgressCard
 import com.example.ui.theme.MonoFontFamily
 import com.example.ui.theme.editorialColors
@@ -56,6 +68,287 @@ import com.example.ui.viewmodel.SubjectHubSection
 @Composable
 fun SubjectsHubScreen(
     state: DashboardDerivedState,
+    practicePathway: PracticePathway,
+    subjectExamFilter: String?,
+    activeSection: SubjectHubSection,
+    difficultyFilter: DifficultyFilter,
+    onSelectPathway: (PracticePathway) -> Unit,
+    onSelectSubjectExamFilter: (String?) -> Unit,
+    onSelectExamStage: (ExamStage) -> Unit,
+    onSelectDifficulty: (DifficultyFilter) -> Unit,
+    onSelectSection: (SubjectHubSection) -> Unit,
+    onStartPractice: (List<QuestionItem>, String) -> Unit,
+    onStartCrossExamSubjectPractice: (String) -> Unit,
+    onStartTimedConfig: (String, Boolean, String?) -> Unit,
+    onStartCbtCustom: (List<QuestionItem>, String) -> Unit,
+    onOpenImporter: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val editorial = MaterialTheme.editorialColors
+    val activeExamId = state.activeExam?.id
+    val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExamId)
+    val isPgimer = PlatformCatalogDefaults.isPgimerExam(activeExamId)
+
+    Column(modifier = modifier.fillMaxSize()) {
+        // Primary Pathway Switch: By Exam vs By Subject (Req 16)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            SegmentedPillBar(
+                options = PracticePathway.entries,
+                selected = practicePathway,
+                labelOf = { it.label },
+                onSelect = onSelectPathway,
+                testTagOf = { "hub_pathway_${it.name.lowercase()}" }
+            )
+
+            // When in By Exam mode and exam supports stages (NORCET), show strict Prelims | Mains switch
+            if (practicePathway == PracticePathway.BY_EXAM && state.activeExamSupportsStages) {
+                SegmentedPillBar(
+                    options = ExamStage.entries,
+                    selected = state.activeExamStage,
+                    labelOf = { stage ->
+                        when (stage) {
+                            ExamStage.PRELIMS -> "Stage I · Prelims (${state.prelimsQuestionCount})"
+                            ExamStage.MAINS -> "Stage II · Mains (${state.mainsQuestionCount})"
+                        }
+                    },
+                    onSelect = onSelectExamStage,
+                    testTagOf = { "hub_stage_${it.id}" }
+                )
+            }
+        }
+
+        when (practicePathway) {
+            PracticePathway.BY_SUBJECT -> {
+                CrossExamSubjectPracticeView(
+                    state = state,
+                    examFilter = subjectExamFilter,
+                    difficultyFilter = difficultyFilter,
+                    onSelectExamFilter = onSelectSubjectExamFilter,
+                    onSelectDifficulty = onSelectDifficulty,
+                    onStartSubjectPractice = onStartCrossExamSubjectPractice,
+                    onStartTimed = { code -> onStartTimedConfig(code, true, subjectExamFilter) }
+                )
+            }
+
+            PracticePathway.BY_EXAM -> {
+                ExamScopedSubjectsView(
+                    state = state,
+                    activeExamId = activeExamId,
+                    isNorcet = isNorcet,
+                    isPgimer = isPgimer,
+                    activeSection = activeSection,
+                    difficultyFilter = difficultyFilter,
+                    onSelectDifficulty = onSelectDifficulty,
+                    onSelectSection = onSelectSection,
+                    onStartPractice = onStartPractice,
+                    onStartTimedConfig = { code -> onStartTimedConfig(code, false, null) },
+                    onStartCbtCustom = onStartCbtCustom,
+                    onOpenImporter = onOpenImporter
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CrossExamSubjectPracticeView(
+    state: DashboardDerivedState,
+    examFilter: String?,
+    difficultyFilter: DifficultyFilter,
+    onSelectExamFilter: (String?) -> Unit,
+    onSelectDifficulty: (DifficultyFilter) -> Unit,
+    onStartSubjectPractice: (String) -> Unit,
+    onStartTimed: (String) -> Unit
+) {
+    val editorial = MaterialTheme.editorialColors
+    var searchQuery by remember { mutableStateOf("") }
+
+    val visibleSubjects = remember(
+        state.crossExamQuestions,
+        state.crossExamLinks,
+        examFilter,
+        difficultyFilter,
+        searchQuery
+    ) {
+        val qTrim = searchQuery.trim().lowercase()
+        SubjectCatalog.ALL_SUBJS.mapNotNull { meta ->
+            val items = SubjectPracticeLogic.collectQuestionsForSubject(
+                allQuestions = state.crossExamQuestions,
+                allLinks = state.crossExamLinks,
+                subjectCode = meta.code,
+                examIdFilter = examFilter,
+                difficultyFilter = difficultyFilter
+            )
+            if (items.isEmpty()) return@mapNotNull null
+            if (qTrim.isNotEmpty() &&
+                !meta.name.lowercase().contains(qTrim) &&
+                !meta.code.lowercase().contains(qTrim)
+            ) {
+                return@mapNotNull null
+            }
+            meta to items
+        }
+    }
+
+    val totalPoolCount = remember(visibleSubjects) { visibleSubjects.sumOf { it.second.size } }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val columns = when {
+            maxWidth >= 840.dp -> 3
+            maxWidth >= 560.dp -> 2
+            else -> 1
+        }
+        val rows = visibleSubjects.chunked(columns)
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 1040.dp)
+                .align(Alignment.TopCenter),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Search subjects...") },
+                        singleLine = true,
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.Search,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedBorderColor = editorial.borderSubtle,
+                            focusedContainerColor = editorial.cardSurface,
+                            unfocusedContainerColor = editorial.cardSurface
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("subject_search_input")
+                    )
+
+                    // Optional Exam Filter (defaults to All Exams)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MonochromeFilterPill(
+                            label = "All Exams",
+                            selected = examFilter == null,
+                            onClick = { onSelectExamFilter(null) },
+                            modifier = Modifier.testTag("subj_exam_filter_all")
+                        )
+                        state.availableExams.forEach { exam ->
+                            MonochromeFilterPill(
+                                label = exam.shortName,
+                                selected = examFilter == exam.id,
+                                onClick = { onSelectExamFilter(exam.id) },
+                                modifier = Modifier.testTag("subj_exam_filter_${exam.id}")
+                            )
+                        }
+                    }
+
+                    DifficultyFilterBar(
+                        selected = difficultyFilter,
+                        onSelect = onSelectDifficulty,
+                        testTagPrefix = "cross_diff"
+                    )
+
+                    Text(
+                        text = "${visibleSubjects.size} subjects · $totalPoolCount questions" +
+                            if (examFilter == null) " across all exams" else "",
+                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("subject_pool_summary")
+                    )
+                }
+            }
+
+            if (visibleSubjects.isEmpty()) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                        border = BorderStroke(1.dp, editorial.borderSubtle)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("No matching subjects", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                "Try clearing your search or difficulty filter.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(rows.size) { rowIdx ->
+                    val rowItems = rows[rowIdx]
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        rowItems.forEach { (sub, list) ->
+                            val mastered = list.count { it.lastOutcome == "right" }
+                            val attempts = list.sumOf { it.attemptsCount }
+                            val correct = list.sumOf { it.correctCount }
+                            val acc = if (attempts > 0) ((correct.toFloat() / attempts) * 100f).toInt() else 0
+                            SubjectProgressCard(
+                                title = sub.name,
+                                accentColor = sub.accentColor,
+                                totalCount = list.size,
+                                masteredCount = mastered,
+                                accuracyPercent = acc,
+                                attemptsCount = attempts,
+                                subtitleBadge = if (examFilter == null) "All Exams · ${sub.code}" else sub.code,
+                                onPractice = { onStartSubjectPractice(sub.code) },
+                                onTimed = { onStartTimed(sub.code) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        repeat(columns - rowItems.size) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExamScopedSubjectsView(
+    state: DashboardDerivedState,
+    activeExamId: String?,
+    isNorcet: Boolean,
+    isPgimer: Boolean,
     activeSection: SubjectHubSection,
     difficultyFilter: DifficultyFilter,
     onSelectDifficulty: (DifficultyFilter) -> Unit,
@@ -63,59 +356,56 @@ fun SubjectsHubScreen(
     onStartPractice: (List<QuestionItem>, String) -> Unit,
     onStartTimedConfig: (String) -> Unit,
     onStartCbtCustom: (List<QuestionItem>, String) -> Unit,
-    onOpenImporter: () -> Unit,
-    modifier: Modifier = Modifier
+    onOpenImporter: () -> Unit
 ) {
-    val activeExamId = state.activeExam?.id
-    val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExamId)
-    val isPgimer = PlatformCatalogDefaults.isPgimerExam(activeExamId)
-    val sections = if (isPgimer) {
-        listOf(SubjectHubSection.NURSING, SubjectHubSection.PYQ)
-    } else {
-        SubjectHubSection.entries
+    val isNorcetMains = isNorcet && state.activeExamStage == ExamStage.MAINS
+    val sections = when {
+        isNorcetMains -> listOf(SubjectHubSection.NURSING)
+        isPgimer -> listOf(SubjectHubSection.NURSING, SubjectHubSection.PYQ)
+        else -> SubjectHubSection.entries
     }
     val effectiveSection = if (activeSection in sections) activeSection else SubjectHubSection.NURSING
-    val filteredPool = remember(state.questions, difficultyFilter) {
+
+    // Strictly uses stageQuestions so NORCET Prelims & Mains are NEVER mixed
+    val stagePool = state.stageQuestions.ifEmpty { state.questions }
+    val filteredPool = remember(stagePool, difficultyFilter) {
         difficultyFilter.difficulty?.let { d ->
-            state.questions.filter { it.question.difficulty == d }
-        } ?: state.questions
+            stagePool.filter { it.question.difficulty == d }
+        } ?: stagePool
     }
     val diffSuffix = difficultyFilter.difficulty?.let { " • ${it.label}" } ?: ""
 
-    Column(modifier = modifier.fillMaxSize()) {
-        PrimaryScrollableTabRow(
-            selectedTabIndex = sections.indexOf(effectiveSection).coerceAtLeast(0),
-            edgePadding = 12.dp
-        ) {
-            sections.forEach { sec ->
-                Tab(
-                    selected = sec == effectiveSection,
-                    onClick = { onSelectSection(sec) },
-                    text = { Text(sec.labelFor(activeExamId), fontWeight = FontWeight.SemiBold) },
-                    modifier = Modifier.testTag("subject_tab_${sec.name}")
-                )
+    Column(modifier = Modifier.fillMaxSize()) {
+        if (sections.size > 1) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                sections.forEach { sec ->
+                    val label = if (isNorcet && sec == SubjectHubSection.PYQ) {
+                        "Prelims PYQs"
+                    } else {
+                        sec.labelFor(activeExamId)
+                    }
+                    MonochromeFilterPill(
+                        label = label,
+                        selected = sec == effectiveSection,
+                        onClick = { onSelectSection(sec) },
+                        modifier = Modifier.testTag("subject_tab_${sec.name}")
+                    )
+                }
             }
         }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Difficulty:",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            DifficultyFilterBar(
-                selected = difficultyFilter,
-                onSelect = onSelectDifficulty,
-                testTagPrefix = "hub_diff",
-                modifier = Modifier.weight(1f)
-            )
-        }
+        DifficultyFilterBar(
+            selected = difficultyFilter,
+            onSelect = onSelectDifficulty,
+            testTagPrefix = "hub_diff",
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+        )
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val columns = when {
@@ -127,14 +417,16 @@ fun SubjectsHubScreen(
             when (effectiveSection) {
                 SubjectHubSection.NURSING -> SubjectListGrid(
                     title = when {
-                        isPgimer -> "PGIMER Core Nursing (100% Weightage)"
-                        isNorcet -> "Nursing Core & Mains Clinical (80% / 100%)"
-                        else -> "Subject-Wise Nursing (70% Weightage)"
+                        isPgimer -> "PGIMER Core Nursing"
+                        isNorcetMains -> "NORCET Mains · Clinical Nursing"
+                        isNorcet -> "NORCET Prelims · Nursing"
+                        else -> "Nursing Subjects"
                     },
                     subtitle = when {
-                        isPgimer -> "All 9 clinical & foundational nursing subjects for PGIMER Chandigarh Nursing Officer CBT (+1 / -0.25)"
-                        isNorcet -> "Core clinical nursing subjects & scenario-based priority questions for AIIMS NORCET"
-                        else -> "Core clinical & nursing subjects aligned with INC & RRB syllabus"
+                        isPgimer -> "100% Core Nursing • +1 / -0.25"
+                        isNorcetMains -> "100% Clinical scenarios & priority care"
+                        isNorcet -> "80% Stage I Prelims nursing syllabus"
+                        else -> "70% core nursing weightage"
                     },
                     subjects = SubjectCatalog.NURSING_SUBJS,
                     allQuestions = filteredPool,
@@ -167,12 +459,8 @@ fun SubjectsHubScreen(
                 )
 
                 SubjectHubSection.NON_TECH -> SubjectListGrid(
-                    title = if (isNorcet) {
-                        "Aptitude, Dosage Math & Science (20%)"
-                    } else {
-                        "Science, Arithmetic & Reasoning (30%)"
-                    },
-                    subtitle = "Dosage calculations, quantitative aptitude, logical reasoning & general science",
+                    title = if (isNorcet) "Prelims Aptitude & Science" else "Science, Math & Reasoning",
+                    subtitle = if (isNorcet) "20% Stage I Prelims non-nursing" else "30% non-technical weightage",
                     subjects = SubjectCatalog.GEN_SUBJS,
                     allQuestions = filteredPool,
                     diffSuffix = diffSuffix,
@@ -199,7 +487,10 @@ private fun SubjectListGrid(
     onStartTimedConfig: (String) -> Unit
 ) {
     val combined = remember(allQuestions, subjects) { allQuestions.filter(allFilter) }
-    val rows = subjects.chunked(columns)
+    val nonEmptySubjects = remember(allQuestions, subjects) {
+        subjects.filter { sub -> allQuestions.any { it.question.subject == sub.code } }
+    }
+    val rows = nonEmptySubjects.chunked(columns)
 
     LazyColumn(
         modifier = Modifier
@@ -214,8 +505,8 @@ private fun SubjectListGrid(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleLarge)
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
                         subtitle,
                         style = MaterialTheme.typography.bodySmall,
@@ -223,11 +514,18 @@ private fun SubjectListGrid(
                     )
                 }
                 Button(
-                    onClick = { onStartPractice(combined, "$title$diffSuffix — All") },
+                    onClick = { onStartPractice(combined, "$title$diffSuffix") },
+                    enabled = combined.isNotEmpty(),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.testTag("practice_all_${subjects.firstOrNull()?.code}")
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
+                    modifier = Modifier
+                        .heightIn(min = 44.dp)
+                        .testTag("practice_all_${subjects.firstOrNull()?.code}")
                 ) {
-                    Text("All (${combined.size})")
+                    Text("All (${combined.size})", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -276,6 +574,7 @@ private fun PyqShiftList(
     onStartCbtCustom: (List<QuestionItem>, String) -> Unit,
     onOpenImporter: () -> Unit
 ) {
+    val editorial = MaterialTheme.editorialColors
     val shifts = remember(allQuestions) {
         allQuestions.mapNotNull { it.question.shiftYear.takeIf { sy -> sy.isNotBlank() } }
             .distinct()
@@ -284,8 +583,6 @@ private fun PyqShiftList(
     val allPyqs = remember(allQuestions) {
         allQuestions.filter { it.question.isPyqTagged }
     }
-    val verifiedPyqCount = remember(allPyqs) { allPyqs.count { it.question.isVerifiedSource } }
-    val unverifiedPyqCount = remember(allPyqs, verifiedPyqCount) { allPyqs.size - verifiedPyqCount }
     val rows = shifts.chunked(columns)
 
     LazyColumn(
@@ -299,70 +596,37 @@ private fun PyqShiftList(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     text = when {
-                        isPgimer -> "PGIMER Chandigarh Memory-Based Papers"
-                        isNorcet -> "AIIMS NORCET Memory-Based Papers"
+                        isPgimer -> "PGIMER Papers (2020–2025)"
+                        isNorcet -> "NORCET Stage I Prelims Papers"
                         else -> "Previous Year Papers"
                     },
-                    style = MaterialTheme.typography.titleLarge
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
                 )
-                Text(
-                    text = when {
-                        isPgimer -> "PGIMER Chandigarh 2020–2025 Nursing Officer recall sets (+1 / -0.25 pattern). PGIMER does not release official CBT question papers, so recalled sets are labeled Memory-Based."
-                        isNorcet -> "NORCET 5–10 Prelims & Mains recall sets. AIIMS does not publish official CBT keys, so recalled papers are labeled Memory-Based."
-                        else -> "Shift-wise exam sets (2015–2026). Memory-based papers are clearly marked alongside official papers."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                val editorial = MaterialTheme.editorialColors
-                if (verifiedPyqCount > 0) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = editorial.correctText.copy(alpha = 0.14f),
-                            border = BorderStroke(1.dp, editorial.correctText.copy(alpha = 0.4f)),
-                            modifier = Modifier.testTag("pyq_verified_count")
-                        ) {
-                            Text(
-                                text = "Official PYQ: $verifiedPyqCount",
-                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                                color = editorial.correctText,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                            )
-                        }
-                        if (unverifiedPyqCount > 0) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = editorial.warningText.copy(alpha = 0.14f),
-                                border = BorderStroke(1.dp, editorial.warningText.copy(alpha = 0.35f)),
-                                modifier = Modifier.testTag("pyq_unverified_count")
-                            ) {
-                                Text(
-                                    text = "Memory-Based: $unverifiedPyqCount",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                                    color = editorial.warningText,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                                )
-                            }
-                        }
-                    }
-                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = { onStartPractice(allPyqs, "Previous Year Papers$diffSuffix") },
+                        enabled = allPyqs.isNotEmpty(),
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.testTag("practice_all_pyqs")
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        modifier = Modifier
+                            .heightIn(min = 44.dp)
+                            .testTag("practice_all_pyqs")
                     ) {
-                        Text("Practice All Papers")
+                        Text("Practice All (${allPyqs.size})", fontWeight = FontWeight.Bold)
                     }
                     OutlinedButton(
                         onClick = onOpenImporter,
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.testTag("pyq_add_pdf_btn")
+                        border = BorderStroke(1.dp, editorial.borderSubtle),
+                        modifier = Modifier
+                            .heightIn(min = 44.dp)
+                            .testTag("pyq_add_pdf_btn")
                     ) {
-                        Text("+ Add Paper")
+                        Text("+ Import")
                     }
                 }
             }
@@ -377,18 +641,15 @@ private fun PyqShiftList(
                 rowItems.forEach { sh ->
                     val list = allQuestions.filter { it.question.shiftYear == sh }
                     val solved = list.count { it.attemptsCount > 0 }
-                    val shiftVerified = list.count { it.question.isVerifiedSource }
-                    val shiftUnverified = list.size - shiftVerified
-                    val allVerified = list.isNotEmpty() && shiftUnverified == 0
-                    val editorial = MaterialTheme.editorialColors
+                    val allVerified = list.isNotEmpty() && list.all { it.question.isVerifiedSource }
                     val shiftBadgeText = if (allVerified) "Official PYQ" else "Memory-Based"
-                    val shiftBadgeColor = if (allVerified) editorial.correctText else editorial.warningText
-                    val title = SubjectCatalog.SHIFT_NAMES[sh] ?: "Exam Set $sh"
+                    val title = SubjectCatalog.SHIFT_NAMES[sh] ?: "Paper $sh"
                     Card(
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                        border = BorderStroke(1.dp, editorial.borderSubtle),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
@@ -405,34 +666,33 @@ private fun PyqShiftList(
                                     verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.tertiaryContainer
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = editorial.elevatedSurface,
+                                        border = BorderStroke(1.dp, editorial.borderSubtle)
                                     ) {
                                         Text(
                                             text = sh,
-                                            style = MaterialTheme.typography.labelSmall,
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                                             fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                         )
                                     }
                                     Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = shiftBadgeColor.copy(alpha = 0.14f),
-                                        border = BorderStroke(1.dp, shiftBadgeColor.copy(alpha = 0.35f)),
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (allVerified) editorial.correctBg else editorial.elevatedSurface,
                                         modifier = Modifier.testTag("shift_badge_$sh")
                                     ) {
                                         Text(
                                             text = shiftBadgeText,
                                             style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = shiftBadgeColor,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (allVerified) editorial.correctText else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                         )
                                     }
                                 }
                                 Text(
-                                    text = "$solved/${list.size} done",
+                                    text = "$solved/${list.size}",
                                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -441,14 +701,22 @@ private fun PyqShiftList(
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(
                                     onClick = { onStartPractice(list, "$title$diffSuffix") },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp)
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 44.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    )
                                 ) {
-                                    Text("Practice", style = MaterialTheme.typography.labelMedium)
+                                    Text("Practice", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                                 }
                                 OutlinedButton(
-                                    onClick = { onStartCbtCustom(list, "$sh Timed CBT$diffSuffix") },
-                                    shape = RoundedCornerShape(12.dp)
+                                    onClick = { onStartCbtCustom(list, "$sh CBT$diffSuffix") },
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, editorial.borderSubtle),
+                                    modifier = Modifier.heightIn(min = 44.dp)
                                 ) {
                                     Text("CBT", style = MaterialTheme.typography.labelMedium)
                                 }
@@ -505,24 +773,21 @@ private fun CaAndFlashcardsList(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (isNorcet) "General Knowledge & Health Programs" else "Current Affairs (2025–26) & Static GK",
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Text(
-                        text = if (isNorcet) {
-                            "National health missions (LaQshya, SUMAN, NTEP, UIP), Static GK & 2025–26 awareness"
-                        } else {
-                            "Union Budget 2026–27, Kavach 4.0, HPV Drive, Awards & Polity"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = if (isNorcet) "GK & Health Programs" else "Current Affairs & GK",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
                     )
                 }
                 Button(
-                    onClick = { onStartPractice(allCa, "Current Affairs & GK Complete$diffSuffix") },
-                    shape = RoundedCornerShape(12.dp)
+                    onClick = { onStartPractice(allCa, "Current Affairs & GK$diffSuffix") },
+                    enabled = allCa.isNotEmpty(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 ) {
-                    Text("All (${allCa.size})")
+                    Text("All (${allCa.size})", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -560,7 +825,7 @@ private fun CaAndFlashcardsList(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
                 Text(
-                    "Rapid-Revision Fact Cards (${flashcards.size})",
+                    "Fact Cards (${flashcards.size})",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -569,10 +834,10 @@ private fun CaAndFlashcardsList(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     tags.forEach { t ->
-                        FilterChip(
+                        MonochromeFilterPill(
+                            label = t,
                             selected = selectedTag == t,
-                            onClick = { selectedTag = t },
-                            label = { Text(t, style = MaterialTheme.typography.labelSmall) }
+                            onClick = { selectedTag = t }
                         )
                     }
                 }

@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
-        android:width="66dp"
-        android:height="66dp"
-        android:drawable="@drawable/ic_rrb_nursing_icon_1794982189757"
-        android:gravity="center" />
+        android:width="72dp"
+        android:height="72dp"
+        android:gravity="center">
+        <bitmap
+            android:src="@drawable/ic_clinedge_lime_logo_1795347301816"
+            android:gravity="fill" />
+    </item>
 </layer-list>

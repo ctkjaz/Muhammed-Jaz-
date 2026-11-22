@@ -244,6 +244,36 @@ object PlatformCatalogDefaults {
 
     fun isPgimerExam(examId: String?): Boolean = examId == EXAM_PGIMER_NURSING
 
+    /** Only exams that genuinely have separate Prelims & Mains stages return true. */
+    fun supportsStages(examId: String?): Boolean = examId == EXAM_AIIMS_NORCET
+
+    /**
+     * Strictly partitions AIIMS NORCET questions into disjoint Stage I Prelims vs Stage II Mains pools.
+     * - Stage II Mains: 100% Core Clinical Nursing (dedicated [Mains ...] clinical cases + Hard clinical nursing practice).
+     * - Stage I Prelims: Prelims PYQ recall papers (NORCET-5..10), 80% Prelims Nursing & 20% GK/Aptitude.
+     * Non-nursing questions NEVER enter Stage II Mains, and [Mains] clinical case items NEVER mix into Prelims.
+     */
+    fun stageForNorcetQuestion(question: Question): ExamStage {
+        if (!SubjectCatalog.isNursing(question)) return ExamStage.PRELIMS
+        if (question.questionText.contains("[Mains", ignoreCase = true)) return ExamStage.MAINS
+        val isNorcetRecallPyq = question.id.startsWith("N_") &&
+            (question.category == "pyq" || question.effectiveShiftYear.startsWith("NORCET", ignoreCase = true))
+        if (isNorcetRecallPyq) return ExamStage.PRELIMS
+        if (question.category == "nur" && question.difficulty == QuestionDifficulty.HARD) {
+            return ExamStage.MAINS
+        }
+        return ExamStage.PRELIMS
+    }
+
+    fun filterQuestionsForExamStage(
+        examId: String?,
+        stage: ExamStage,
+        questions: List<QuestionItem>
+    ): List<QuestionItem> {
+        if (!supportsStages(examId)) return questions
+        return questions.filter { stageForNorcetQuestion(it.question) == stage }
+    }
+
     fun nursingWeightagePercent(examId: String?): Int = when (examId) {
         EXAM_PGIMER_NURSING -> 100
         EXAM_AIIMS_NORCET -> 80
@@ -279,6 +309,101 @@ object PlatformCatalogDefaults {
         EXAM_AIIMS_NORCET -> sectionIdForNorcetSubject(subjectCode)
         EXAM_PGIMER_NURSING -> sectionIdForPgimerSubject(subjectCode)
         else -> sectionIdForRrbSubject(subjectCode)
+    }
+}
+
+enum class ExamStage(val id: String, val label: String, val shortLabel: String) {
+    PRELIMS("prelims", "Stage I · Prelims", "Prelims"),
+    MAINS("mains", "Stage II · Mains", "Mains")
+}
+
+enum class PracticePathway(val label: String) {
+    BY_EXAM("By Exam"),
+    BY_SUBJECT("By Subject")
+}
+
+object SubjectPracticeLogic {
+    private val whitespaceRegex = Regex("\\s+")
+
+    fun normalizeStem(text: String): String =
+        text.trim().lowercase().replace(whitespaceRegex, " ")
+
+    /** Deduplicates questions by ID and normalized stem, preserving higher progress/bookmark state. */
+    fun deduplicateQuestions(items: List<QuestionItem>): List<QuestionItem> {
+        val byId = LinkedHashMap<String, QuestionItem>(items.size)
+        for (item in items) {
+            val existing = byId[item.id]
+            if (existing == null || item.attemptsCount > existing.attemptsCount || (!existing.isBookmarked && item.isBookmarked)) {
+                byId[item.id] = item
+            }
+        }
+        val byStem = LinkedHashMap<String, QuestionItem>(byId.size)
+        for (item in byId.values) {
+            val stemKey = "${item.question.subject}|${normalizeStem(item.question.questionText)}"
+            val existing = byStem[stemKey]
+            if (existing == null || item.attemptsCount > existing.attemptsCount || (!existing.isBookmarked && item.isBookmarked)) {
+                byStem[stemKey] = item
+            }
+        }
+        return byStem.values.toList()
+    }
+
+    fun collectQuestionsForSubject(
+        allQuestions: List<QuestionItem>,
+        allLinks: List<ExamQuestionLink>,
+        subjectCode: String,
+        examIdFilter: String? = null,
+        difficultyFilter: DifficultyFilter = DifficultyFilter.ALL
+    ): List<QuestionItem> {
+        val allowedIds = if (!examIdFilter.isNullOrBlank()) {
+            allLinks.asSequence()
+                .filter { it.examId == examIdFilter }
+                .map { it.questionId }
+                .toHashSet()
+        } else {
+            null
+        }
+        val targetDiff = difficultyFilter.difficulty
+        val matched = allQuestions.filter { item ->
+            item.question.subject == subjectCode &&
+                (allowedIds == null || item.id in allowedIds) &&
+                (targetDiff == null || item.question.difficulty == targetDiff)
+        }
+        return deduplicateQuestions(matched)
+    }
+
+    fun computeCrossExamSubjectStats(
+        allQuestions: List<QuestionItem>,
+        allLinks: List<ExamQuestionLink>,
+        examIdFilter: String? = null
+    ): List<SubjectStat> {
+        val allowedIds = if (!examIdFilter.isNullOrBlank()) {
+            allLinks.asSequence()
+                .filter { it.examId == examIdFilter }
+                .map { it.questionId }
+                .toHashSet()
+        } else {
+            null
+        }
+        val pool = deduplicateQuestions(
+            if (allowedIds == null) allQuestions else allQuestions.filter { it.id in allowedIds }
+        )
+        return SubjectCatalog.ALL_SUBJS.mapNotNull { meta ->
+            val subItems = pool.filter { it.question.subject == meta.code }
+            if (subItems.isEmpty()) return@mapNotNull null
+            SubjectStat(
+                code = meta.code,
+                name = meta.name,
+                group = meta.group,
+                totalQuestions = subItems.size,
+                attemptedQuestions = subItems.count { it.attemptsCount > 0 },
+                totalAttempts = subItems.sumOf { it.attemptsCount },
+                correctAttempts = subItems.sumOf { it.correctCount },
+                wrongAttempts = subItems.sumOf { it.wrongCount },
+                masteredQuestions = subItems.count { it.lastOutcome == "right" },
+                accentColor = meta.accentColor
+            )
+        }
     }
 }
 
@@ -435,28 +560,28 @@ data class CategoryStat(
 
 object SubjectCatalog {
     val NURSING_SUBJS = listOf(
-        SubjectMeta("MSN", "Medical-Surgical", Color(0xFF8E4456), SubjectGroup.NURSING, "#8E4456"),
-        SubjectMeta("Pharm", "Pharmacology", Color(0xFF756091), SubjectGroup.NURSING, "#756091"),
-        SubjectMeta("OBG", "OBG & Midwifery", Color(0xFFB78B79), SubjectGroup.NURSING, "#B78B79"),
-        SubjectMeta("Peds", "Child Health (Peds)", Color(0xFFA67942), SubjectGroup.NURSING, "#A67942"),
-        SubjectMeta("CHN", "Community Health", Color(0xFF478271), SubjectGroup.NURSING, "#478271"),
-        SubjectMeta("Psych", "Mental Health", Color(0xFF666B8A), SubjectGroup.NURSING, "#666B8A"),
-        SubjectMeta("FON", "Fundamentals (FON)", Color(0xFF537B8A), SubjectGroup.NURSING, "#537B8A"),
-        SubjectMeta("Anat", "Anatomy & Physio", Color(0xFF5B8078), SubjectGroup.NURSING, "#5B8078"),
-        SubjectMeta("Admin", "Admin & Research", Color(0xFF726D70), SubjectGroup.NURSING, "#726D70")
+        SubjectMeta("MSN", "Medical-Surgical", Color(0xFF262626), SubjectGroup.NURSING, "#262626"),
+        SubjectMeta("Pharm", "Pharmacology", Color(0xFF404040), SubjectGroup.NURSING, "#404040"),
+        SubjectMeta("OBG", "OBG & Midwifery", Color(0xFF525252), SubjectGroup.NURSING, "#525252"),
+        SubjectMeta("Peds", "Child Health (Peds)", Color(0xFF3F3F46), SubjectGroup.NURSING, "#3F3F46"),
+        SubjectMeta("CHN", "Community Health", Color(0xFF27272A), SubjectGroup.NURSING, "#27272A"),
+        SubjectMeta("Psych", "Mental Health", Color(0xFF52525B), SubjectGroup.NURSING, "#52525B"),
+        SubjectMeta("FON", "Fundamentals (FON)", Color(0xFF333333), SubjectGroup.NURSING, "#333333"),
+        SubjectMeta("Anat", "Anatomy & Physio", Color(0xFF474747), SubjectGroup.NURSING, "#474747"),
+        SubjectMeta("Admin", "Admin & Research", Color(0xFF5C5C5C), SubjectGroup.NURSING, "#5C5C5C")
     )
 
     val CA_SUBJS = listOf(
-        SubjectMeta("CA-2026", "2025–26 National & Global", Color(0xFF7D5360), SubjectGroup.CA_GK, "#7D5360"),
-        SubjectMeta("Railways", "Indian Railways & Budget", Color(0xFF6A637D), SubjectGroup.CA_GK, "#6A637D"),
-        SubjectMeta("Health-Prog", "Health Drives & UIP", Color(0xFF4E8570), SubjectGroup.CA_GK, "#4E8570"),
-        SubjectMeta("Static-GK", "Static GK & Polity", Color(0xFF9F7A4D), SubjectGroup.CA_GK, "#9F7A4D")
+        SubjectMeta("CA-2026", "2025–26 National & Global", Color(0xFF333333), SubjectGroup.CA_GK, "#333333"),
+        SubjectMeta("Railways", "Indian Railways & Budget", Color(0xFF4A4A4A), SubjectGroup.CA_GK, "#4A4A4A"),
+        SubjectMeta("Health-Prog", "Health Drives & UIP", Color(0xFF3F3F46), SubjectGroup.CA_GK, "#3F3F46"),
+        SubjectMeta("Static-GK", "Static GK & Polity", Color(0xFF525252), SubjectGroup.CA_GK, "#525252")
     )
 
     val GEN_SUBJS = listOf(
-        SubjectMeta("Science", "General Science (NCERT)", Color(0xFF527D86), SubjectGroup.NON_TECH, "#527D86"),
-        SubjectMeta("Math", "Arithmetic & Dosage", Color(0xFFA96D54), SubjectGroup.NON_TECH, "#A96D54"),
-        SubjectMeta("Reasoning", "Logical Reasoning", Color(0xFF7E6189), SubjectGroup.NON_TECH, "#7E6189")
+        SubjectMeta("Science", "General Science (NCERT)", Color(0xFF2E2E2E), SubjectGroup.NON_TECH, "#2E2E2E"),
+        SubjectMeta("Math", "Arithmetic & Dosage", Color(0xFF444444), SubjectGroup.NON_TECH, "#444444"),
+        SubjectMeta("Reasoning", "Logical Reasoning", Color(0xFF555555), SubjectGroup.NON_TECH, "#555555")
     )
 
     val ALL_SUBJS = NURSING_SUBJS + CA_SUBJS + GEN_SUBJS
@@ -487,12 +612,12 @@ object SubjectCatalog {
         "2019-S2" to "2019 RRB Staff Nurse — Shift 2",
         "2019-S3" to "2019 RRB Staff Nurse — Shift 3",
         "2015" to "2015 RRB Staff Nurse PYQ",
-        "NORCET-10" to "AIIMS NORCET-10 (Prelims & Mains)",
-        "NORCET-9" to "AIIMS NORCET-9 (Prelims & Mains)",
-        "NORCET-8" to "AIIMS NORCET-8 (Prelims & Mains)",
-        "NORCET-7" to "AIIMS NORCET-7 (Prelims & Mains)",
-        "NORCET-6" to "AIIMS NORCET-6 (Prelims & Mains)",
-        "NORCET-5" to "AIIMS NORCET-5 (Prelims & Mains)",
+        "NORCET-10" to "AIIMS NORCET-10 — Stage I Prelims",
+        "NORCET-9" to "AIIMS NORCET-9 — Stage I Prelims",
+        "NORCET-8" to "AIIMS NORCET-8 — Stage I Prelims",
+        "NORCET-7" to "AIIMS NORCET-7 — Stage I Prelims",
+        "NORCET-6" to "AIIMS NORCET-6 — Stage I Prelims",
+        "NORCET-5" to "AIIMS NORCET-5 — Stage I Prelims",
         "PGIMER-2025" to "PGIMER Chandigarh 2025 Nursing Officer",
         "PGIMER-2024" to "PGIMER Chandigarh 2024 Nursing Officer",
         "PGIMER-2023" to "PGIMER Chandigarh 2023 Nursing Officer",

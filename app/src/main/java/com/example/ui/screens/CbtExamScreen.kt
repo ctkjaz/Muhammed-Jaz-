@@ -40,9 +40,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -63,20 +61,26 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.ui.components.AcidLimeProgressBar
 import com.example.ui.components.MetricTile
+import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.components.PyqSourceBadge
 import com.example.ui.components.formatTimer
-import com.example.ui.theme.CalmSageFill
+import com.example.ui.theme.AcidLime
+import com.example.ui.theme.AmoledBorder
 import com.example.ui.theme.EditorialBannerKpiAccent
 import com.example.ui.theme.EditorialBannerKpiDanger
 import com.example.ui.theme.EditorialBannerKpiSuccess
 import com.example.ui.theme.EditorialBannerSurface
 import com.example.ui.theme.EditorialBannerTitle
+import com.example.ui.theme.Graphite
 import com.example.ui.theme.MonoFontFamily
-import com.example.ui.theme.MutedCrimsonFill
-import com.example.ui.theme.MutedPlumFill
-import com.example.ui.theme.WarmOchreFill
-import com.example.ui.theme.WarmWhite
+import com.example.ui.theme.PureBlack
+import com.example.ui.theme.PureWhite
+import com.example.ui.theme.SemanticCorrectFill
+import com.example.ui.theme.SemanticReviewFill
+import com.example.ui.theme.SemanticWarningFill
+import com.example.ui.theme.SemanticWrongFill
 import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.CbtPaletteStatus
 import com.example.ui.viewmodel.CbtReviewFilter
@@ -105,6 +109,7 @@ fun CbtExamScreen(
 ) {
     var paletteSheetOpen by remember { mutableStateOf(false) }
     var showQuitConfirm by remember { mutableStateOf(false) }
+    val editorial = MaterialTheme.editorialColors
 
     BackHandler {
         if (session.isSubmitted) {
@@ -127,6 +132,9 @@ fun CbtExamScreen(
     val currentItem = session.questions.getOrNull(session.currentIndex) ?: return
     val q = currentItem.question
     val chosen = session.selectedAnswers[session.currentIndex]
+    val progressFraction = if (session.questions.isNotEmpty()) {
+        (session.currentIndex + 1).toFloat() / session.questions.size.toFloat()
+    } else 0f
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val isWide = maxWidth >= 840.dp
@@ -134,14 +142,15 @@ fun CbtExamScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // CBT Top Header
+            // Minimal CBT Top Header
             Card(
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                border = BorderStroke(1.dp, editorial.borderSubtle),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Row(
                     modifier = Modifier
@@ -160,13 +169,13 @@ fun CbtExamScreen(
                         )
                         val negLabel = String.format(Locale.US, "%.2f", session.negativeMarks)
                         Text(
-                            text = "+1.00 Correct • -$negLabel Incorrect",
-                            style = MaterialTheme.typography.labelSmall,
+                            text = "+1.00  ·  -$negLabel  ·  ${session.selectedAnswers.size}/${session.questions.size} ans",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (session.hasCountdown) {
@@ -176,13 +185,14 @@ fun CbtExamScreen(
                                 session.remainingSeconds
                             }
                             val timerBg = when {
-                                activeTimerSec <= 60 -> MutedCrimsonFill
-                                activeTimerSec <= 300 -> WarmOchreFill
-                                else -> EditorialBannerSurface
+                                activeTimerSec <= 60 -> SemanticWrongFill
+                                activeTimerSec <= 300 -> SemanticWarningFill
+                                else -> Graphite
                             }
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
                                 color = timerBg,
+                                border = BorderStroke(1.dp, AmoledBorder),
                                 modifier = Modifier.testTag("cbt_timer_badge")
                             ) {
                                 Row(
@@ -193,7 +203,7 @@ fun CbtExamScreen(
                                     Icon(
                                         Icons.Filled.Timer,
                                         contentDescription = "Remaining time",
-                                        tint = WarmWhite,
+                                        tint = if (activeTimerSec > 300) AcidLime else PureWhite,
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Text(
@@ -203,7 +213,7 @@ fun CbtExamScreen(
                                             formatTimer(activeTimerSec)
                                         },
                                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                                        color = WarmWhite,
+                                        color = PureWhite,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -214,10 +224,15 @@ fun CbtExamScreen(
                             OutlinedButton(
                                 onClick = { paletteSheetOpen = true },
                                 shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, editorial.borderSubtle),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                                 modifier = Modifier.testTag("cbt_palette_btn")
                             ) {
-                                Icon(Icons.Filled.GridView, contentDescription = "Open question palette", modifier = Modifier.size(16.dp))
+                                Icon(
+                                    Icons.Filled.GridView,
+                                    contentDescription = "Open question palette",
+                                    modifier = Modifier.size(16.dp)
+                                )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text("Palette", style = MaterialTheme.typography.labelSmall)
                             }
@@ -226,8 +241,8 @@ fun CbtExamScreen(
                         Button(
                             onClick = onRequestSubmitConfirm,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = CalmSageFill,
-                                contentColor = WarmWhite
+                                containerColor = editorial.acidLime,
+                                contentColor = editorial.onAcidLime
                             ),
                             shape = RoundedCornerShape(10.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
@@ -239,11 +254,14 @@ fun CbtExamScreen(
                 }
             }
 
+            // Thin Acid-Lime Exam Progress Indicator
+            AcidLimeProgressBar(progress = progressFraction, height = 4.dp)
+
             if (session.hasSectionLock) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                    color = editorial.elevatedSurface,
+                    border = BorderStroke(1.dp, editorial.borderSubtle),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("cbt_section_lock_bar")
@@ -260,25 +278,33 @@ fun CbtExamScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Filled.Lock,
-                                contentDescription = "Section locked mode",
-                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                modifier = Modifier.size(16.dp)
-                            )
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = editorial.acidLime,
+                                modifier = Modifier.size(26.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Lock,
+                                        contentDescription = "Section locked mode",
+                                        tint = editorial.onAcidLime,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
                             Column {
                                 Text(
                                     text = "${session.currentSectionLabel} (${session.currentSectionIndex + 1}/${session.totalSections})",
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "Q${session.activeSectionRange.first + 1}–Q${session.activeSectionRange.last + 1} active • Total left ${formatTimer(session.remainingSeconds)}",
+                                    text = "Q${session.activeSectionRange.first + 1}–Q${session.activeSectionRange.last + 1} active  ·  Total ${formatTimer(session.remainingSeconds)}",
                                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -286,6 +312,7 @@ fun CbtExamScreen(
                             OutlinedButton(
                                 onClick = onRequestNextSection,
                                 shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, editorial.borderSubtle),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 modifier = Modifier.testTag("cbt_next_section_btn")
                             ) {
@@ -299,7 +326,8 @@ fun CbtExamScreen(
             session.sectionAutoAdvanceNotice?.let { notice ->
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
+                    color = editorial.acidLimeMuted,
+                    border = BorderStroke(1.dp, editorial.acidLime.copy(alpha = 0.6f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -312,7 +340,7 @@ fun CbtExamScreen(
                         Text(
                             text = notice,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.weight(1f)
                         )
                         TextButton(onClick = onDismissSectionNotice) {
@@ -322,7 +350,7 @@ fun CbtExamScreen(
                 }
             }
 
-            // Body: Question + (Persistent Palette on Tablets)
+            // Body: Distraction-free Question + (Persistent Palette on Tablets)
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -342,31 +370,40 @@ fun CbtExamScreen(
                     ) {
                         Card(
                             shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                            colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                            border = BorderStroke(1.dp, editorial.borderSubtle),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                         ) {
                             Column(
                                 modifier = Modifier.padding(18.dp),
-                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 FlowRow(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Text(
-                                        text = "Question No. ${session.currentIndex + 1} of ${session.questions.size}",
-                                        style = MaterialTheme.typography.labelLarge.copy(fontFamily = MonoFontFamily),
-                                        fontWeight = FontWeight.Bold
-                                    )
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.primaryContainer
+                                        color = editorial.acidLime
+                                    ) {
+                                        Text(
+                                            text = "Q${session.currentIndex + 1} / ${session.questions.size}",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                            color = editorial.onAcidLime,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = editorial.elevatedSurface,
+                                        border = BorderStroke(1.dp, editorial.borderSubtle)
                                     ) {
                                         Text(
                                             text = q.subject,
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                         )
@@ -377,23 +414,24 @@ fun CbtExamScreen(
                                 Text(
                                     text = q.questionText,
                                     style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
 
+                                // Options — Acid Lime highlight when selected
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     q.options.forEachIndexed { oi, optionText ->
                                         val isSelected = chosen == oi
+                                        val optionBg = if (isSelected) editorial.acidLime else editorial.cardSurface
+                                        val optionBorder = if (isSelected) editorial.acidLime else editorial.borderSubtle
+                                        val optionTextColor = if (isSelected) editorial.onAcidLime else MaterialTheme.colorScheme.onSurface
+                                        val badgeBg = if (isSelected) PureBlack else editorial.elevatedSurface
+                                        val badgeFg = if (isSelected) AcidLime else MaterialTheme.colorScheme.onSurface
+
                                         Surface(
                                             shape = RoundedCornerShape(14.dp),
-                                            color = if (isSelected) {
-                                                MaterialTheme.colorScheme.primaryContainer
-                                            } else {
-                                                MaterialTheme.colorScheme.surface
-                                            },
-                                            border = BorderStroke(
-                                                if (isSelected) 2.dp else 1.dp,
-                                                if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                                            ),
+                                            color = optionBg,
+                                            border = BorderStroke(if (isSelected) 1.5.dp else 1.dp, optionBorder),
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clip(RoundedCornerShape(14.dp))
@@ -401,7 +439,7 @@ fun CbtExamScreen(
                                                 .testTag("cbt_option_$oi")
                                         ) {
                                             Row(
-                                                modifier = Modifier.padding(14.dp),
+                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                                             ) {
@@ -409,25 +447,21 @@ fun CbtExamScreen(
                                                     modifier = Modifier
                                                         .size(28.dp)
                                                         .clip(RoundedCornerShape(8.dp))
-                                                        .background(
-                                                            if (isSelected) {
-                                                                MaterialTheme.colorScheme.primary
-                                                            } else {
-                                                                MaterialTheme.colorScheme.surfaceVariant
-                                                            }
-                                                        ),
+                                                        .background(badgeBg),
                                                     contentAlignment = Alignment.Center
                                                 ) {
                                                     Text(
                                                         text = "${'A' + oi}",
-                                                        style = MaterialTheme.typography.labelMedium,
-                                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                                                        color = badgeFg,
                                                         fontWeight = FontWeight.Bold
                                                     )
                                                 }
                                                 Text(
                                                     text = optionText,
                                                     style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                    color = optionTextColor,
                                                     modifier = Modifier.weight(1f)
                                                 )
                                             }
@@ -447,34 +481,45 @@ fun CbtExamScreen(
                         OutlinedButton(
                             onClick = onClearResponse,
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.testTag("cbt_clear_btn")
+                            border = BorderStroke(1.dp, editorial.borderSubtle),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("cbt_clear_btn")
                         ) {
                             Text("Clear", style = MaterialTheme.typography.labelMedium)
                         }
-                        Button(
+                        OutlinedButton(
                             onClick = onMarkForReviewAndNext,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MutedPlumFill,
-                                contentColor = WarmWhite
-                            ),
                             shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, SemanticReviewFill),
                             modifier = Modifier
                                 .weight(1f)
+                                .heightIn(min = 48.dp)
                                 .testTag("cbt_mark_next_btn")
                         ) {
-                            Text("Mark & Next", style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            Text(
+                                "Mark & Next",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
+                            )
                         }
                         Button(
                             onClick = onSaveAndNext,
                             shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
                             modifier = Modifier
                                 .weight(1f)
+                                .heightIn(min = 48.dp)
                                 .testTag("cbt_save_next_btn")
                         ) {
                             Text(
                                 when {
                                     session.currentIndex < session.activeSectionRange.last -> "Save & Next"
-                                    session.hasSectionLock && !session.isLastSection -> "Lock & Next Sec"
+                                    session.hasSectionLock && !session.isLastSection -> "Lock & Next"
                                     else -> "Save & Finish"
                                 },
                                 style = MaterialTheme.typography.labelMedium,
@@ -491,8 +536,9 @@ fun CbtExamScreen(
                             .width(320.dp)
                             .fillMaxHeight(),
                         shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                        colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                        border = BorderStroke(1.dp, editorial.borderSubtle),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
                         CbtPaletteContent(
                             session = session,
@@ -509,7 +555,8 @@ fun CbtExamScreen(
     if (paletteSheetOpen) {
         ModalBottomSheet(
             onDismissRequest = { paletteSheetOpen = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = editorial.cardSurface
         ) {
             CbtPaletteContent(
                 session = session,
@@ -531,17 +578,18 @@ fun CbtExamScreen(
     if (session.showTimeoutDialog) {
         AlertDialog(
             onDismissRequest = {},
-            title = { Text("Time's Up!") },
+            containerColor = editorial.cardSurface,
+            title = { Text("Time's Up!", fontWeight = FontWeight.Bold) },
             text = { Text("Exam time has expired. Submit now to generate your Subject-Wise Score Card.") },
             confirmButton = {
                 Button(
                     onClick = onConfirmSubmit,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = CalmSageFill,
-                        contentColor = WarmWhite
+                        containerColor = editorial.acidLime,
+                        contentColor = editorial.onAcidLime
                     )
                 ) {
-                    Text("View Score Card")
+                    Text("View Score Card", fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -553,24 +601,29 @@ fun CbtExamScreen(
         val secTotal = secRange.count()
         AlertDialog(
             onDismissRequest = onDismissNextSection,
-            title = { Text("Lock Section ${session.currentSectionIndex + 1} & Continue?") },
+            containerColor = editorial.cardSurface,
+            title = { Text("Lock Section ${session.currentSectionIndex + 1}?", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "You have answered $secAnswered of $secTotal questions in ${session.currentSectionLabel}. " +
-                        "Per AIIMS NORCET CBT rules, once you advance to Section ${session.currentSectionIndex + 2}, this section is locked and cannot be revisited."
+                    "You answered $secAnswered of $secTotal in ${session.currentSectionLabel}. " +
+                        "Once you advance to Section ${session.currentSectionIndex + 2}, this section cannot be revisited."
                 )
             },
             confirmButton = {
                 Button(
                     onClick = onConfirmNextSection,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = editorial.acidLime,
+                        contentColor = editorial.onAcidLime
+                    ),
                     modifier = Modifier.testTag("cbt_confirm_next_section_btn")
                 ) {
-                    Text("Lock & Next Section")
+                    Text("Lock & Continue", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = onDismissNextSection) {
-                    Text("Stay in Section")
+                    Text("Stay")
                 }
             }
         )
@@ -580,20 +633,21 @@ fun CbtExamScreen(
         val ansCount = session.selectedAnswers.size
         AlertDialog(
             onDismissRequest = onDismissSubmitConfirm,
-            title = { Text("Submit CBT Exam?") },
+            containerColor = editorial.cardSurface,
+            title = { Text("Submit CBT Exam?", fontWeight = FontWeight.Bold) },
             text = {
-                Text("You have answered $ansCount of ${session.questions.size} questions. Submit and view Subject-Wise Analytics?")
+                Text("You answered $ansCount of ${session.questions.size} questions. Submit to view your Score Card and Review?")
             },
             confirmButton = {
                 Button(
                     onClick = onConfirmSubmit,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = CalmSageFill,
-                        contentColor = WarmWhite
+                        containerColor = editorial.acidLime,
+                        contentColor = editorial.onAcidLime
                     ),
                     modifier = Modifier.testTag("cbt_confirm_submit_btn")
                 ) {
-                    Text("Submit Exam")
+                    Text("Submit Exam", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -607,7 +661,8 @@ fun CbtExamScreen(
     if (showQuitConfirm) {
         AlertDialog(
             onDismissRequest = { showQuitConfirm = false },
-            title = { Text("Quit CBT Exam?") },
+            containerColor = editorial.cardSurface,
+            title = { Text("Quit CBT Exam?", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
                     if (session.hasCountdown) {
@@ -624,11 +679,11 @@ fun CbtExamScreen(
                         onExit()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MutedCrimsonFill,
-                        contentColor = WarmWhite
+                        containerColor = SemanticWrongFill,
+                        contentColor = PureWhite
                     )
                 ) {
-                    Text("Quit Exam")
+                    Text("Quit Exam", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -645,31 +700,31 @@ private fun CbtPaletteContent(
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val editorial = MaterialTheme.editorialColors
     val counts = remember(session.paletteStatuses) {
         val map = mutableMapOf<CbtPaletteStatus, Int>().withDefault { 0 }
         session.paletteStatuses.values.forEach { st -> map[st] = map.getValue(st) + 1 }
         map
     }
-    val unvisitedColor = MaterialTheme.editorialColors.unvisitedSwatch
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Question Palette", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         if (session.hasSectionLock) {
             Text(
-                text = "${session.currentSectionLabel} (Q${session.activeSectionRange.first + 1}–Q${session.activeSectionRange.last + 1}) • Other sections locked",
+                text = "${session.currentSectionLabel} (Q${session.activeSectionRange.first + 1}–Q${session.activeSectionRange.last + 1}) · Other sections locked",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LegendChip(color = CalmSageFill, text = "Ans (${counts.getValue(CbtPaletteStatus.ANSWERED)})", modifier = Modifier.weight(1f))
-            LegendChip(color = MutedCrimsonFill, text = "Not Ans (${counts.getValue(CbtPaletteStatus.NOT_ANSWERED)})", modifier = Modifier.weight(1f))
+            LegendChip(color = SemanticCorrectFill, text = "Ans (${counts.getValue(CbtPaletteStatus.ANSWERED)})", modifier = Modifier.weight(1f))
+            LegendChip(color = SemanticWrongFill, text = "Not Ans (${counts.getValue(CbtPaletteStatus.NOT_ANSWERED)})", modifier = Modifier.weight(1f))
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val markedTotal = counts.getValue(CbtPaletteStatus.MARKED) + counts.getValue(CbtPaletteStatus.ANSWERED_MARKED)
-            LegendChip(color = MutedPlumFill, text = "Marked ($markedTotal)", modifier = Modifier.weight(1f))
-            LegendChip(color = unvisitedColor, text = "Unvisited (${counts.getValue(CbtPaletteStatus.NOT_VISITED)})", modifier = Modifier.weight(1f))
+            LegendChip(color = SemanticReviewFill, text = "Marked ($markedTotal)", modifier = Modifier.weight(1f))
+            LegendChip(color = editorial.unvisitedSwatch, text = "Unvisited (${counts.getValue(CbtPaletteStatus.NOT_VISITED)})", modifier = Modifier.weight(1f))
         }
 
         LazyVerticalGrid(
@@ -682,19 +737,26 @@ private fun CbtPaletteContent(
         ) {
             items(session.questions.size) { idx ->
                 val inActiveSection = session.isIndexInActiveSection(idx)
+                val isCurrent = idx == session.currentIndex
                 val st = session.paletteStatuses[idx] ?: CbtPaletteStatus.NOT_VISITED
-                val baseBg = when (st) {
-                    CbtPaletteStatus.ANSWERED -> CalmSageFill
-                    CbtPaletteStatus.NOT_ANSWERED -> MutedCrimsonFill
-                    CbtPaletteStatus.MARKED, CbtPaletteStatus.ANSWERED_MARKED -> MutedPlumFill
-                    CbtPaletteStatus.NOT_VISITED -> MaterialTheme.colorScheme.surfaceVariant
+                val baseBg = when {
+                    isCurrent -> editorial.acidLime
+                    st == CbtPaletteStatus.ANSWERED -> SemanticCorrectFill
+                    st == CbtPaletteStatus.NOT_ANSWERED -> SemanticWrongFill
+                    st == CbtPaletteStatus.MARKED || st == CbtPaletteStatus.ANSWERED_MARKED -> SemanticReviewFill
+                    else -> editorial.elevatedSurface
                 }
-                val bg = if (inActiveSection) baseBg else baseBg.copy(alpha = 0.28f)
-                val baseFg = if (st == CbtPaletteStatus.NOT_VISITED) MaterialTheme.colorScheme.onSurface else WarmWhite
-                val fg = if (inActiveSection) baseFg else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                val bg = if (inActiveSection) baseBg else baseBg.copy(alpha = 0.25f)
+                val baseFg = when {
+                    isCurrent -> editorial.onAcidLime
+                    st == CbtPaletteStatus.NOT_VISITED -> MaterialTheme.colorScheme.onSurface
+                    else -> PureWhite
+                }
+                val fg = if (inActiveSection) baseFg else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                 val border = when {
-                    idx == session.currentIndex -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-                    st == CbtPaletteStatus.ANSWERED_MARKED && inActiveSection -> BorderStroke(2.dp, CalmSageFill)
+                    isCurrent -> BorderStroke(1.5.dp, PureBlack)
+                    st == CbtPaletteStatus.ANSWERED_MARKED && inActiveSection -> BorderStroke(2.dp, editorial.acidLime)
+                    st == CbtPaletteStatus.NOT_VISITED && inActiveSection -> BorderStroke(1.dp, editorial.borderSubtle)
                     else -> null
                 }
 
@@ -722,11 +784,13 @@ private fun CbtPaletteContent(
         Button(
             onClick = onSubmit,
             colors = ButtonDefaults.buttonColors(
-                containerColor = CalmSageFill,
-                contentColor = WarmWhite
+                containerColor = editorial.acidLime,
+                contentColor = editorial.onAcidLime
             ),
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
         ) {
             Text("Submit Exam", fontWeight = FontWeight.Bold)
         }
@@ -738,11 +802,11 @@ private fun LegendChip(color: Color, text: String, modifier: Modifier = Modifier
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(
             modifier = Modifier
-                .size(12.dp)
+                .size(10.dp)
                 .clip(RoundedCornerShape(3.dp))
                 .background(color)
         )
-        Text(text, style = MaterialTheme.typography.labelSmall)
+        Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -754,6 +818,7 @@ private fun CbtResultScreen(
     onExit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val editorial = MaterialTheme.editorialColors
     data class SubjTotals(var total: Int = 0, var right: Int = 0, var wrong: Int = 0)
     var right = 0
     var wrong = 0
@@ -807,7 +872,8 @@ private fun CbtResultScreen(
                 Card(
                     shape = RoundedCornerShape(22.dp),
                     colors = CardDefaults.cardColors(containerColor = EditorialBannerSurface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
+                    border = BorderStroke(1.dp, AmoledBorder),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(
@@ -816,11 +882,28 @@ private fun CbtResultScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("CBT Score Card", style = MaterialTheme.typography.labelMedium, color = EditorialBannerKpiAccent)
-                                Text(session.title, style = MaterialTheme.typography.titleLarge, color = EditorialBannerTitle, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "CBT SCORE CARD",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                    color = EditorialBannerKpiAccent,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    session.title,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = EditorialBannerTitle,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
-                            Button(onClick = onExit) {
-                                Text("Dashboard")
+                            Button(
+                                onClick = onExit,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = AcidLime,
+                                    contentColor = PureBlack
+                                ),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("Done", fontWeight = FontWeight.Bold)
                             }
                         }
 
@@ -851,28 +934,24 @@ private fun CbtResultScreen(
             item {
                 Card(
                     shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                    colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                    border = BorderStroke(1.dp, editorial.borderSubtle),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Subject-Wise Accuracy Breakdown", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Subject Breakdown", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         subjMap.forEach { (subj, d) ->
                             val pct = if (d.total > 0) ((d.right.toFloat() / d.total) * 100f).toInt() else 0
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text(subj, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                                     Text(
                                         "${d.right}/${d.total} ($pct%)",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily)
+                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                LinearProgressIndicator(
-                                    progress = { pct / 100f },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(6.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                )
+                                AcidLimeProgressBar(progress = pct / 100f, height = 5.dp)
                             }
                         }
                     }
@@ -881,16 +960,16 @@ private fun CbtResultScreen(
 
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Detailed Answer Review (${filtered.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Answer Review (${filtered.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Row(
                         modifier = Modifier.horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         CbtReviewFilter.entries.forEach { f ->
-                            FilterChip(
+                            MonochromeFilterPill(
+                                label = f.label,
                                 selected = session.reviewFilter == f,
-                                onClick = { onChangeFilter(f) },
-                                label = { Text(f.label) }
+                                onClick = { onChangeFilter(f) }
                             )
                         }
                     }
@@ -899,13 +978,13 @@ private fun CbtResultScreen(
 
             itemsIndexed(filtered) { _, (idx, item, ans) ->
                 val q = item.question
-                val editorial = MaterialTheme.editorialColors
                 Card(
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                    colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                    border = BorderStroke(1.dp, editorial.borderSubtle),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -916,7 +995,11 @@ private fun CbtResultScreen(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text("Q${idx + 1} • ${q.subject}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "Q${idx + 1} · ${q.subject}",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                                    fontWeight = FontWeight.Bold
+                                )
                                 PyqSourceBadge(question = q)
                             }
                             Text(
@@ -936,12 +1019,24 @@ private fun CbtResultScreen(
                         }
                         Text(q.questionText, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                         Text(
-                            "Correct Answer: ${'A' + q.correctIndex}. ${q.options.getOrElse(q.correctIndex) { "" }}",
+                            "Correct: ${'A' + q.correctIndex}. ${q.options.getOrElse(q.correctIndex) { "" }}",
                             style = MaterialTheme.typography.labelMedium,
-                            color = editorial.correctText
+                            color = editorial.correctText,
+                            fontWeight = FontWeight.Bold
                         )
                         if (q.explanation.isNotBlank()) {
-                            Text(q.explanation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = editorial.explanationSurface,
+                                border = BorderStroke(1.dp, editorial.borderSubtle)
+                            ) {
+                                Text(
+                                    text = q.explanation,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
                         }
                         if (q.isVerifiedSource) {
                             Text(

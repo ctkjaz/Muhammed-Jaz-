@@ -6,6 +6,7 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,11 +21,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -49,7 +49,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,9 +56,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -84,9 +86,12 @@ import com.example.data.local.ThemePreference
 import com.example.data.model.StudyGoalLogic
 import com.example.data.update.AppUpdateStatus
 import com.example.data.update.AppUpdateUiState
+import com.example.ui.components.MonochromeFilterPill
+import com.example.ui.theme.AcidLime
 import com.example.ui.theme.MonoFontFamily
-import com.example.ui.theme.MutedCrimsonFill
-import com.example.ui.theme.WarmWhite
+import com.example.ui.theme.PureBlack
+import com.example.ui.theme.PureWhite
+import com.example.ui.theme.SemanticWrongFill
 import com.example.ui.theme.editorialColors
 import kotlin.math.roundToInt
 
@@ -127,12 +132,22 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val editorial = MaterialTheme.editorialColors
     val versionName = remember(context) { readAppVersionName(context) }
     val negMarkText = remember(activeExamNegativeMarks) {
         String.format(java.util.Locale.US, "%.2f", activeExamNegativeMarks)
     }
     var showResetStatsDialog by remember { mutableStateOf(false) }
     var showRestoreOptionsDialog by remember { mutableStateOf(false) }
+
+    val limeSwitchColors = SwitchDefaults.colors(
+        checkedThumbColor = PureBlack,
+        checkedTrackColor = AcidLime,
+        checkedBorderColor = AcidLime,
+        uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        uncheckedTrackColor = editorial.elevatedSurface,
+        uncheckedBorderColor = editorial.borderSubtle
+    )
 
     BackHandler(onBack = onBack)
 
@@ -170,7 +185,7 @@ fun SettingsScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Personal preferences, timer, study options & data",
+                            text = "Appearance, timer, backup & app updates",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -198,7 +213,7 @@ fun SettingsScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Shown on your profile")
+                                Text("Shown in greeting & profile")
                                 Text(
                                     text = "${profileName.length}/${SettingsPreferences.MAX_PROFILE_NAME_LENGTH}",
                                     fontFamily = MonoFontFamily
@@ -212,7 +227,7 @@ fun SettingsScreen(
                 }
             }
 
-            // 2. Appearance
+            // 2. Appearance (Light / AMOLED Dark / System)
             item {
                 SettingsSectionCard(
                     title = "Appearance",
@@ -221,8 +236,8 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.selectableGroup()) {
                         val themeOptions = listOf(
-                            Triple(ThemePreference.LIGHT, "Light (Default)", "settings_theme_light"),
-                            Triple(ThemePreference.DARK, "Dark", "settings_theme_dark"),
+                            Triple(ThemePreference.LIGHT, "Light (Pure White)", "settings_theme_light"),
+                            Triple(ThemePreference.DARK, "AMOLED Dark (True Black)", "settings_theme_dark"),
                             Triple(ThemePreference.SYSTEM, "Match my phone", "settings_theme_system")
                         )
                         themeOptions.forEach { (pref, label, tag) ->
@@ -242,12 +257,17 @@ fun SettingsScreen(
                             ) {
                                 RadioButton(
                                     selected = selected,
-                                    onClick = null
+                                    onClick = null,
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = if (editorial.isDark) AcidLime else PureBlack,
+                                        unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
                                     text = label,
-                                    style = MaterialTheme.typography.bodyLarge
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
                                 )
                             }
                         }
@@ -287,7 +307,7 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "Turn off to run timed practice and custom CBT tests without a countdown.",
+                                text = "Turn off for untimed practice and custom CBT sets.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -295,11 +315,12 @@ fun SettingsScreen(
                         Switch(
                             checked = useTimeLimit,
                             onCheckedChange = onUseTimeLimitChange,
+                            colors = limeSwitchColors,
                             modifier = Modifier.testTag("settings_timer_switch")
                         )
                     }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    HorizontalDivider(color = editorial.borderSubtle)
 
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         val contentAlpha = if (useTimeLimit) 1f else 0.45f
@@ -318,7 +339,7 @@ fun SettingsScreen(
                                 text = "$secondsPerQuestion sec",
                                 style = MaterialTheme.typography.titleSmall.copy(fontFamily = MonoFontFamily),
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = contentAlpha),
+                                color = (if (editorial.isDark) AcidLime else PureBlack).copy(alpha = contentAlpha),
                                 modifier = Modifier.testTag("settings_seconds_value")
                             )
                         }
@@ -336,6 +357,11 @@ fun SettingsScreen(
                             valueRange = sliderRange,
                             steps = sliderSteps,
                             enabled = useTimeLimit,
+                            colors = SliderDefaults.colors(
+                                thumbColor = if (editorial.isDark) AcidLime else PureBlack,
+                                activeTrackColor = if (editorial.isDark) AcidLime else PureBlack,
+                                inactiveTrackColor = editorial.elevatedSurface
+                            ),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("settings_seconds_slider")
@@ -345,15 +371,15 @@ fun SettingsScreen(
                             text = if (useTimeLimit) {
                                 "30 questions = $example30Mins min"
                             } else {
-                                "Timer is off — 30 questions = untimed"
+                                "Timer is off · 30 questions = untimed"
                             },
                             style = MaterialTheme.typography.labelLarge.copy(fontFamily = MonoFontFamily),
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = contentAlpha),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha),
                             modifier = Modifier.testTag("settings_timer_example")
                         )
 
                         Text(
-                            text = "The Full Official 100Q mock stays fixed at $activeExamDefaultMinutes minutes for the active exam.",
+                            text = "Full Official 100Q mock stays fixed at $activeExamDefaultMinutes minutes.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -386,7 +412,7 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "Deduct $negMarkText marks for each wrong answer in practice drills.",
+                                text = "Deduct $negMarkText marks per wrong answer in practice drills.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -394,12 +420,13 @@ fun SettingsScreen(
                         Switch(
                             checked = negativeMarking,
                             onCheckedChange = onNegativeMarkingChange,
+                            colors = limeSwitchColors,
                             modifier = Modifier.testTag("settings_neg_marking_switch")
                         )
                     }
 
                     Text(
-                        text = "CBT mocks score +1 for correct and -$negMarkText for wrong answers under your active exam pattern.",
+                        text = "CBT mocks score +1 correct and -$negMarkText wrong for your active exam.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -424,7 +451,7 @@ fun SettingsScreen(
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = "Target $dailyGoalQuestions questions/day (~$estDailyMins min) to build your daily study streak.",
+                            text = "$dailyGoalQuestions questions/day (~$estDailyMins min) to build your streak.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -435,22 +462,17 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             StudyGoalLogic.DAILY_GOAL_PRESETS.forEach { preset ->
-                                FilterChip(
+                                MonochromeFilterPill(
+                                    label = "$preset Qs",
                                     selected = dailyGoalQuestions == preset,
                                     onClick = { onDailyGoalChange(preset) },
-                                    label = {
-                                        Text(
-                                            text = "$preset Qs",
-                                            style = MaterialTheme.typography.labelLarge.copy(fontFamily = MonoFontFamily)
-                                        )
-                                    },
                                     modifier = Modifier.testTag("settings_daily_goal_$preset")
                                 )
                             }
                         }
                     }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    HorizontalDivider(color = editorial.borderSubtle)
 
                     Row(
                         modifier = Modifier
@@ -470,7 +492,7 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "Active only during practice and CBT mock sessions.",
+                                text = "Active during practice and CBT mock sessions.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -478,11 +500,12 @@ fun SettingsScreen(
                         Switch(
                             checked = keepScreenOn,
                             onCheckedChange = onKeepScreenOnChange,
+                            colors = limeSwitchColors,
                             modifier = Modifier.testTag("settings_keep_screen_on_switch")
                         )
                     }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    HorizontalDivider(color = editorial.borderSubtle)
 
                     SettingsActionRow(
                         icon = Icons.Filled.Tune,
@@ -501,11 +524,10 @@ fun SettingsScreen(
                     icon = Icons.Filled.Storage,
                     cardTag = "settings_card_data"
                 ) {
-                    // Active Backup Folder Card
                     Surface(
                         shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
+                        color = editorial.elevatedSurface,
+                        border = BorderStroke(1.dp, editorial.borderSubtle),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("settings_backup_folder_card")
@@ -527,7 +549,7 @@ fun SettingsScreen(
                                     Icon(
                                         imageVector = Icons.Filled.FolderOpen,
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
+                                        tint = MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Column {
@@ -547,15 +569,15 @@ fun SettingsScreen(
                                     onClick = onChooseBackupFolder,
                                     modifier = Modifier.testTag("settings_choose_backup_folder_btn")
                                 ) {
-                                    Text("Choose")
+                                    Text("Choose", fontWeight = FontWeight.Bold)
                                 }
                             }
 
                             val folderMeta = when {
                                 backupFolderSummary.backupCount > 0 && !backupFolderSummary.latestBackupName.isNullOrBlank() ->
-                                    "${backupFolderSummary.backupCount} backup(s) saved • Latest: ${backupFolderSummary.latestBackupName}"
+                                    "${backupFolderSummary.backupCount} backup(s) · Latest: ${backupFolderSummary.latestBackupName}"
                                 else ->
-                                    "No backups saved in this folder yet. Backups include student profile, plan, progress & custom MCQs."
+                                    "Includes student profile, active plan, progress & custom MCQs."
                             }
                             Text(
                                 text = folderMeta,
@@ -571,6 +593,10 @@ fun SettingsScreen(
                                     onClick = onCreateBackup,
                                     enabled = !isBackupBusy,
                                     shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    ),
                                     modifier = Modifier
                                         .weight(1f)
                                         .heightIn(min = 48.dp)
@@ -605,6 +631,7 @@ fun SettingsScreen(
                                     },
                                     enabled = !isBackupBusy,
                                     shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, editorial.borderSubtle),
                                     modifier = Modifier
                                         .weight(1f)
                                         .heightIn(min = 48.dp)
@@ -633,7 +660,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    HorizontalDivider(color = editorial.borderSubtle)
 
                     SettingsActionRow(
                         icon = Icons.Filled.AddCircleOutline,
@@ -642,7 +669,7 @@ fun SettingsScreen(
                         onClick = onOpenImporter,
                         testTag = "settings_open_importer_row"
                     )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    HorizontalDivider(color = editorial.borderSubtle)
                     SettingsActionRow(
                         icon = Icons.Filled.PictureAsPdf,
                         title = "Export PDF worksheet",
@@ -650,12 +677,12 @@ fun SettingsScreen(
                         onClick = onOpenPdfExport,
                         testTag = "settings_open_pdf_row"
                     )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    HorizontalDivider(color = editorial.borderSubtle)
                     SettingsActionRow(
                         icon = Icons.Filled.DeleteOutline,
                         title = "Reset my statistics",
-                        subtitle = "Clear attempt counts and mock history. Bookmarks are kept.",
-                        tint = MaterialTheme.editorialColors.wrongText,
+                        subtitle = "Clear attempt counts and mock history. Bookmarks stay.",
+                        tint = editorial.wrongText,
                         onClick = { showResetStatsDialog = true },
                         testTag = "settings_reset_stats_row"
                     )
@@ -664,7 +691,6 @@ fun SettingsScreen(
 
             // 7. About & In-App Updates
             item {
-                val editorial = MaterialTheme.editorialColors
                 SettingsSectionCard(
                     title = "About & Updates",
                     icon = Icons.Filled.Info,
@@ -681,14 +707,14 @@ fun SettingsScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Version $versionName",
+                            text = "v$versionName",
                             style = MaterialTheme.typography.labelLarge.copy(fontFamily = MonoFontFamily),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.testTag("settings_version_text")
                         )
                     }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    HorizontalDivider(color = editorial.borderSubtle)
 
                     Row(
                         modifier = Modifier
@@ -715,7 +741,7 @@ fun SettingsScreen(
                             tint = if (appUpdateState.status == AppUpdateStatus.UPDATE_AVAILABLE) {
                                 editorial.correctText
                             } else {
-                                MaterialTheme.colorScheme.primary
+                                MaterialTheme.colorScheme.onSurface
                             },
                             modifier = Modifier.size(22.dp)
                         )
@@ -758,6 +784,10 @@ fun SettingsScreen(
                         Button(
                             onClick = onOpenUpdateDialog,
                             shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = editorial.acidLime,
+                                contentColor = editorial.onAcidLime
+                            ),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 48.dp)
@@ -769,6 +799,7 @@ fun SettingsScreen(
                         OutlinedButton(
                             onClick = onOpenReleasesPage,
                             shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, editorial.borderSubtle),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 48.dp)
@@ -778,10 +809,10 @@ fun SettingsScreen(
                         }
                     }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    HorizontalDivider(color = editorial.borderSubtle)
 
                     Text(
-                        text = "Practice material only. Always check clinical answers against your textbooks and current guidelines.",
+                        text = "Practice material only. Verify clinical guidelines against official textbooks.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -798,7 +829,8 @@ fun SettingsScreen(
     if (showRestoreOptionsDialog) {
         AlertDialog(
             onDismissRequest = { showRestoreOptionsDialog = false },
-            title = { Text("Restore Backup") },
+            containerColor = editorial.cardSurface,
+            title = { Text("Restore Backup", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -807,9 +839,9 @@ fun SettingsScreen(
                     )
                     if (!backupFolderSummary.latestBackupName.isNullOrBlank()) {
                         Text(
-                            text = "Latest in folder: ${backupFolderSummary.latestBackupName}",
+                            text = "Latest: ${backupFolderSummary.latestBackupName}",
                             style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
@@ -820,9 +852,13 @@ fun SettingsScreen(
                         showRestoreOptionsDialog = false
                         onRestoreLatestBackup()
                     },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = editorial.acidLime,
+                        contentColor = editorial.onAcidLime
+                    ),
                     modifier = Modifier.testTag("settings_restore_latest_btn")
                 ) {
-                    Text("Restore Latest")
+                    Text("Restore Latest", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -842,10 +878,11 @@ fun SettingsScreen(
     if (showResetStatsDialog) {
         AlertDialog(
             onDismissRequest = { showResetStatsDialog = false },
-            title = { Text("Reset my statistics?") },
+            containerColor = editorial.cardSurface,
+            title = { Text("Reset my statistics?", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "This clears all question attempt counts, accuracy stats, and CBT mock history. Your bookmarks and imported questions will be kept."
+                    "This clears all question attempt counts, accuracy stats, and CBT mock history. Bookmarks and imported questions stay intact."
                 )
             },
             confirmButton = {
@@ -855,12 +892,12 @@ fun SettingsScreen(
                         onResetStatistics()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MutedCrimsonFill,
-                        contentColor = WarmWhite
+                        containerColor = SemanticWrongFill,
+                        contentColor = PureWhite
                     ),
                     modifier = Modifier.testTag("settings_confirm_reset_stats_btn")
                 ) {
-                    Text("Reset Statistics")
+                    Text("Reset Statistics", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -882,10 +919,12 @@ private fun SettingsSectionCard(
     cardTag: String,
     content: @Composable () -> Unit
 ) {
+    val editorial = MaterialTheme.editorialColors
     Card(
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+        border = BorderStroke(1.dp, editorial.borderSubtle),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .testTag(cardTag)
@@ -903,8 +942,8 @@ private fun SettingsSectionCard(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(18.dp)
                 )
                 Text(
                     text = title,

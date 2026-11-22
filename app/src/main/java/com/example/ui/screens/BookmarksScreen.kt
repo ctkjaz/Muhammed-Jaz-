@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,7 +21,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -37,8 +37,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.model.QuestionItem
 import com.example.ui.components.QuestionSummaryCard
-import com.example.ui.theme.WarmOchreFill
-import com.example.ui.theme.WarmWhite
+import com.example.ui.components.SegmentedPillBar
+import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.DashboardDerivedState
 
 @Composable
@@ -50,11 +50,12 @@ fun BookmarksScreen(
     modifier: Modifier = Modifier
 ) {
     var showMistakesOnly by remember { mutableStateOf(false) }
+    val editorial = MaterialTheme.editorialColors
 
     val saved = remember(state.questions) { state.questions.filter { it.isBookmarked } }
     val mistakes = remember(state.questions) { state.questions.filter { it.lastOutcome == "wrong" } }
     val activeList = if (showMistakesOnly) mistakes else saved
-    val activeTitle = if (showMistakesOnly) "Mistakes Revision Deck" else "Personal Revision Deck"
+    val activeTitle = if (showMistakesOnly) "Mistakes Deck" else "Revision Deck"
 
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
@@ -63,19 +64,23 @@ fun BookmarksScreen(
                 .widthIn(max = 960.dp)
                 .align(Alignment.TopCenter),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(activeTitle, style = MaterialTheme.typography.titleLarge)
                             Text(
-                                "${activeList.size} questions ready for rapid clinical revision",
+                                activeTitle,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "${activeList.size} questions ready for revision",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -87,7 +92,10 @@ fun BookmarksScreen(
                                         onOpenPdfExport(if (showMistakesOnly) "MISTAKES" else "BOOKMARKS")
                                     },
                                     shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.testTag("deck_export_pdf_btn")
+                                    border = BorderStroke(1.dp, editorial.borderSubtle),
+                                    modifier = Modifier
+                                        .heightIn(min = 44.dp)
+                                        .testTag("deck_export_pdf_btn")
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.PictureAsPdf,
@@ -97,11 +105,13 @@ fun BookmarksScreen(
                                 Button(
                                     onClick = { onPracticeDeck(activeList, activeTitle) },
                                     colors = ButtonDefaults.buttonColors(
-                                        containerColor = WarmOchreFill,
-                                        contentColor = WarmWhite
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
                                     ),
                                     shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.testTag("practice_deck_btn")
+                                    modifier = Modifier
+                                        .heightIn(min = 44.dp)
+                                        .testTag("practice_deck_btn")
                                 ) {
                                     Text("Practice (${activeList.size})", fontWeight = FontWeight.Bold)
                                 }
@@ -109,20 +119,17 @@ fun BookmarksScreen(
                         }
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = !showMistakesOnly,
-                            onClick = { showMistakesOnly = false },
-                            label = { Text("Bookmarks (${saved.size})") },
-                            modifier = Modifier.testTag("deck_tab_bookmarks")
-                        )
-                        FilterChip(
-                            selected = showMistakesOnly,
-                            onClick = { showMistakesOnly = true },
-                            label = { Text("Recent Mistakes (${mistakes.size})") },
-                            modifier = Modifier.testTag("deck_tab_mistakes")
-                        )
-                    }
+                    SegmentedPillBar(
+                        options = listOf(false, true),
+                        selected = showMistakesOnly,
+                        labelOf = { isMistakes ->
+                            if (isMistakes) "Recent Mistakes (${mistakes.size})" else "Bookmarks (${saved.size})"
+                        },
+                        onSelect = { showMistakesOnly = it },
+                        testTagOf = { isMistakes ->
+                            if (isMistakes) "deck_tab_mistakes" else "deck_tab_bookmarks"
+                        }
+                    )
                 }
             }
 
@@ -130,8 +137,9 @@ fun BookmarksScreen(
                 item {
                     Card(
                         shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                        colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                        border = BorderStroke(1.dp, editorial.borderSubtle),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
                         Column(
                             modifier = Modifier
@@ -147,9 +155,9 @@ fun BookmarksScreen(
                             )
                             Text(
                                 text = if (showMistakesOnly) {
-                                    "No recent mistakes yet! Keep practicing."
+                                    "No recent mistakes yet. Keep practicing."
                                 } else {
-                                    "No questions bookmarked yet. Tap the bookmark icon on any question during practice to save it here."
+                                    "No bookmarked questions yet. Tap the bookmark icon during practice to save items here."
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant

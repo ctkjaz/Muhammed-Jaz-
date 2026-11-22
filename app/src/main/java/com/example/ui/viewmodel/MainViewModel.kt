@@ -33,9 +33,11 @@ import com.example.data.model.DifficultyFilter
 import com.example.data.model.Exam
 import com.example.data.model.ExamQuestionLink
 import com.example.data.model.ExamSection
+import com.example.data.model.ExamStage
 import com.example.data.model.Flashcard
 import com.example.data.model.MockHistory
 import com.example.data.model.PlatformCatalogDefaults
+import com.example.data.model.PracticePathway
 import com.example.data.model.Profession
 import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
@@ -44,6 +46,7 @@ import com.example.data.model.QuestionSourceType
 import com.example.data.model.SessionCheckResult
 import com.example.data.model.StudyGoalLogic
 import com.example.data.model.SubjectCatalog
+import com.example.data.model.SubjectPracticeLogic
 import com.example.data.model.SubjectStat
 import com.example.data.model.Topic
 import com.example.data.parser.BulkQuestionParser
@@ -177,7 +180,9 @@ data class TimedPracticeConfigState(
     val sourceKey: String = "MIXED",
     val questionCount: Int = 30,
     val durationMinutes: Int = 30,
-    val difficultyFilter: DifficultyFilter = DifficultyFilter.ALL
+    val difficultyFilter: DifficultyFilter = DifficultyFilter.ALL,
+    val useCrossExamPool: Boolean = false,
+    val crossExamFilterId: String? = null
 )
 
 data class ImporterUiState(
@@ -228,6 +233,17 @@ data class DashboardDerivedState(
     val examQuestionCounts: Map<String, Int> = emptyMap(),
     val topicsById: Map<String, Topic> = emptyMap(),
     val questions: List<QuestionItem> = emptyList(),
+    val activeExamSupportsStages: Boolean = false,
+    val activeExamStage: ExamStage = ExamStage.PRELIMS,
+    val stageQuestions: List<QuestionItem> = emptyList(),
+    val stageSubjectStats: List<SubjectStat> = emptyList(),
+    val prelimsQuestionCount: Int = 0,
+    val mainsQuestionCount: Int = 0,
+    val prelimsAttemptedCount: Int = 0,
+    val mainsAttemptedCount: Int = 0,
+    val crossExamQuestions: List<QuestionItem> = emptyList(),
+    val crossExamSubjectStats: List<SubjectStat> = emptyList(),
+    val crossExamLinks: List<ExamQuestionLink> = emptyList(),
     val overall: OverallStats = OverallStats(),
     val subjectStats: List<SubjectStat> = emptyList(),
     val categoryStats: List<CategoryStat> = emptyList(),
@@ -321,13 +337,25 @@ class MainViewModel(
         repository.observeExamSections(examId)
     }
 
+    private val _activeExamStage = MutableStateFlow(ExamStage.PRELIMS)
+    val activeExamStage: StateFlow<ExamStage> = _activeExamStage.asStateFlow()
+
+    private val _practicePathway = MutableStateFlow(PracticePathway.BY_EXAM)
+    val practicePathway: StateFlow<PracticePathway> = _practicePathway.asStateFlow()
+
+    private val _subjectPracticeExamFilter = MutableStateFlow<String?>(null)
+    val subjectPracticeExamFilter: StateFlow<String?> = _subjectPracticeExamFilter.asStateFlow()
+
     private data class CatalogBundle(
         val activeExamId: String,
         val professions: List<Profession>,
         val exams: List<Exam>,
         val sections: List<ExamSection>,
         val topics: List<Topic>,
-        val links: List<ExamQuestionLink>
+        val links: List<ExamQuestionLink>,
+        val allQuestions: List<QuestionItem>,
+        val activeStage: ExamStage,
+        val subjectExamFilter: String?
     )
 
     private val catalogBundle = combine(
@@ -343,10 +371,19 @@ class MainViewModel(
             exams = exams,
             sections = sections,
             topics = topics,
-            links = emptyList()
+            links = emptyList(),
+            allQuestions = emptyList(),
+            activeStage = ExamStage.PRELIMS,
+            subjectExamFilter = null
         )
     }.combine(allPlatformLinks) { bundle, links ->
         bundle.copy(links = links)
+    }.combine(allPlatformQuestions) { bundle, allQs ->
+        bundle.copy(allQuestions = allQs)
+    }.combine(_activeExamStage) { bundle, stage ->
+        bundle.copy(activeStage = stage)
+    }.combine(_subjectPracticeExamFilter) { bundle, filterId ->
+        bundle.copy(subjectExamFilter = filterId)
     }
 
     val mainState: StateFlow<DashboardDerivedState> = combine(
@@ -356,18 +393,42 @@ class MainViewModel(
         _isSeeded,
         catalogBundle
     ) { items, history, cards, seeded, catalog ->
-        val attemptedUnique = items.count { it.attemptsCount > 0 }
-        val totalAttempts = items.sumOf { it.attemptsCount }
-        val totalCorrect = items.sumOf { it.correctCount }
-        val totalWrong = items.sumOf { it.wrongCount }
-        val acc = if (totalAttempts > 0) ((totalCorrect.toFloat() / totalAttempts) * 100f).toInt() else 0
-        val latestRight = items.count { it.lastOutcome == "right" }
-        val latestWrong = items.count { it.lastOutcome == "wrong" }
         val activeExam = catalog.exams.firstOrNull { it.id == catalog.activeExamId }
             ?: catalog.exams.firstOrNull()
             ?: PlatformCatalogDefaults.DEFAULT_EXAMS.first()
+        val supportsStages = PlatformCatalogDefaults.supportsStages(activeExam.id)
+        val stageItems = if (supportsStages) {
+            PlatformCatalogDefaults.filterQuestionsForExamStage(activeExam.id, catalog.activeStage, items)
+        } else {
+            items
+        }
+        val prelimsItems = if (supportsStages) {
+            PlatformCatalogDefaults.filterQuestionsForExamStage(activeExam.id, ExamStage.PRELIMS, items)
+        } else {
+            emptyList()
+        }
+        val mainsItems = if (supportsStages) {
+            PlatformCatalogDefaults.filterQuestionsForExamStage(activeExam.id, ExamStage.MAINS, items)
+        } else {
+            emptyList()
+        }
+
+        val statsPool = if (supportsStages) stageItems else items
+        val attemptedUnique = statsPool.count { it.attemptsCount > 0 }
+        val totalAttempts = statsPool.sumOf { it.attemptsCount }
+        val totalCorrect = statsPool.sumOf { it.correctCount }
+        val totalWrong = statsPool.sumOf { it.wrongCount }
+        val acc = if (totalAttempts > 0) ((totalCorrect.toFloat() / totalAttempts) * 100f).toInt() else 0
+        val latestRight = statsPool.count { it.lastOutcome == "right" }
+        val latestWrong = statsPool.count { it.lastOutcome == "wrong" }
         val netScore = latestRight - (latestWrong * activeExam.negativeMarks)
         val countsByExam = catalog.links.groupingBy { it.examId }.eachCount()
+        val dedupedCrossExam = SubjectPracticeLogic.deduplicateQuestions(catalog.allQuestions.ifEmpty { items })
+        val crossSubjectStats = SubjectPracticeLogic.computeCrossExamSubjectStats(
+            allQuestions = dedupedCrossExam,
+            allLinks = catalog.links,
+            examIdFilter = catalog.subjectExamFilter
+        )
         DashboardDerivedState(
             activeExam = activeExam,
             activeExamSections = catalog.sections,
@@ -376,8 +437,19 @@ class MainViewModel(
             examQuestionCounts = countsByExam,
             topicsById = catalog.topics.associateBy { it.id },
             questions = items,
+            activeExamSupportsStages = supportsStages,
+            activeExamStage = catalog.activeStage,
+            stageQuestions = stageItems,
+            stageSubjectStats = repository.computeSubjectStats(stageItems),
+            prelimsQuestionCount = prelimsItems.size,
+            mainsQuestionCount = mainsItems.size,
+            prelimsAttemptedCount = prelimsItems.count { it.attemptsCount > 0 },
+            mainsAttemptedCount = mainsItems.count { it.attemptsCount > 0 },
+            crossExamQuestions = dedupedCrossExam,
+            crossExamSubjectStats = crossSubjectStats,
+            crossExamLinks = catalog.links,
             overall = OverallStats(
-                totalQuestions = items.size,
+                totalQuestions = statsPool.size,
                 attemptedUnique = attemptedUnique,
                 totalAttempts = totalAttempts,
                 totalCorrect = totalCorrect,
@@ -385,12 +457,12 @@ class MainViewModel(
                 accuracyPercent = acc,
                 netPracticeScore = netScore,
                 bookmarkCount = items.count { it.isBookmarked },
-                mistakeCount = items.count { it.lastOutcome == "wrong" },
+                mistakeCount = statsPool.count { it.lastOutcome == "wrong" },
                 customCount = items.count { it.question.isCustom }
             ),
-            subjectStats = repository.computeSubjectStats(items),
-            categoryStats = repository.computeCategoryStats(items, activeExam.id),
-            lowestAccuracyQuestions = repository.findLowestAccuracyQuestions(items),
+            subjectStats = repository.computeSubjectStats(stageItems),
+            categoryStats = repository.computeCategoryStats(stageItems, activeExam.id),
+            lowestAccuracyQuestions = repository.findLowestAccuracyQuestions(stageItems),
             flashcards = cards,
             mockHistory = history,
             isLoaded = seeded
@@ -972,6 +1044,8 @@ class MainViewModel(
         settings.setActiveExamId(examId)
         _isExamPickerOpen.value = false
         if (changed) {
+            _activeExamStage.value = ExamStage.PRELIMS
+            _subjectHubSection.value = SubjectHubSection.NURSING
             scheduleProfileCloudPush()
             stopActiveTimer()
             _practiceSession.value = null
@@ -982,6 +1056,21 @@ class MainViewModel(
                 showMessage("Switched exam track to $targetName")
             }
         }
+    }
+
+    fun selectExamStage(stage: ExamStage) {
+        _activeExamStage.value = stage
+        if (stage == ExamStage.MAINS && (_subjectHubSection.value == SubjectHubSection.CA_GK || _subjectHubSection.value == SubjectHubSection.NON_TECH)) {
+            _subjectHubSection.value = SubjectHubSection.NURSING
+        }
+    }
+
+    fun selectPracticePathway(pathway: PracticePathway) {
+        _practicePathway.value = pathway
+    }
+
+    fun selectSubjectPracticeExamFilter(examId: String?) {
+        _subjectPracticeExamFilter.value = examId
     }
 
     fun selectSubjectSection(section: SubjectHubSection) {
@@ -998,8 +1087,45 @@ class MainViewModel(
         _cbtSession.value = null
         _isSettingsOpen.value = false
         _isProfileOpen.value = false
+        _practicePathway.value = PracticePathway.BY_EXAM
         _subjectHubSection.value = section
         _selectedTab.value = MainTab.SUBJECTS
+    }
+
+    fun openSubjectPracticeMode() {
+        stopActiveTimer()
+        _practiceSession.value = null
+        _cbtSession.value = null
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = false
+        _practicePathway.value = PracticePathway.BY_SUBJECT
+        _selectedTab.value = MainTab.SUBJECTS
+    }
+
+    fun startCrossExamSubjectPractice(
+        subjectCode: String,
+        examIdFilter: String? = _subjectPracticeExamFilter.value,
+        difficultyFilter: DifficultyFilter = _difficultyFilter.value
+    ) {
+        val state = mainState.value
+        val items = SubjectPracticeLogic.collectQuestionsForSubject(
+            allQuestions = state.crossExamQuestions,
+            allLinks = state.crossExamLinks,
+            subjectCode = subjectCode,
+            examIdFilter = examIdFilter,
+            difficultyFilter = difficultyFilter
+        )
+        if (items.isEmpty()) {
+            showMessage("No questions match this subject filter.")
+            return
+        }
+        val subjectName = SubjectCatalog.displayNameFor(subjectCode)
+        val scopeLabel = if (examIdFilter == null) {
+            "All Exams"
+        } else {
+            state.availableExams.firstOrNull { it.id == examIdFilter }?.shortName ?: "Filtered"
+        }
+        startPractice(items = items, title = "$subjectName • $scopeLabel")
     }
 
     fun toggleTheme(currentlyDark: Boolean) {
@@ -1180,7 +1306,7 @@ class MainViewModel(
     }
 
     fun startDailyGoalDrill() {
-        val all = mainState.value.questions
+        val all = mainState.value.stageQuestions.ifEmpty { mainState.value.questions }
         if (all.isEmpty()) {
             showMessage("Loading question bank, please wait a moment.")
             return
@@ -1349,13 +1475,37 @@ class MainViewModel(
     // ------------------------------------------------------------------------
     // TIMED PRACTICE CONFIGURATOR
     // ------------------------------------------------------------------------
+    private fun timedConfigBasePool(cfg: TimedPracticeConfigState): List<QuestionItem> {
+        val st = mainState.value
+        if (cfg.useCrossExamPool) {
+            val filterId = cfg.crossExamFilterId
+            val allowedIds = if (!filterId.isNullOrBlank()) {
+                st.crossExamLinks.asSequence().filter { it.examId == filterId }.map { it.questionId }.toHashSet()
+            } else {
+                null
+            }
+            return if (allowedIds == null) st.crossExamQuestions else st.crossExamQuestions.filter { it.id in allowedIds }
+        }
+        return st.stageQuestions.ifEmpty { st.questions }
+    }
+
     private fun suggestedTimedPracticeMinutes(
         questionCount: Int,
         sourceKey: String,
-        difficultyFilter: DifficultyFilter
+        difficultyFilter: DifficultyFilter,
+        useCrossExamPool: Boolean = false,
+        crossExamFilterId: String? = null
     ): Int {
+        val base = timedConfigBasePool(
+            TimedPracticeConfigState(
+                sourceKey = sourceKey,
+                difficultyFilter = difficultyFilter,
+                useCrossExamPool = useCrossExamPool,
+                crossExamFilterId = crossExamFilterId
+            )
+        )
         val effectiveCount = if (questionCount <= 0) {
-            filteredQuestionsForSource(sourceKey, mainState.value.questions, difficultyFilter).size
+            filteredQuestionsForSource(sourceKey, base, difficultyFilter).size
         } else {
             questionCount
         }
@@ -1369,15 +1519,25 @@ class MainViewModel(
     fun openTimedPracticeConfig(
         defaultSource: String = "MIXED",
         defaultCount: Int = 30,
-        defaultDifficulty: DifficultyFilter = _difficultyFilter.value
+        defaultDifficulty: DifficultyFilter = _difficultyFilter.value,
+        useCrossExamPool: Boolean = false,
+        crossExamFilterId: String? = null
     ) {
-        val defaultMins = suggestedTimedPracticeMinutes(defaultCount, defaultSource, defaultDifficulty)
+        val defaultMins = suggestedTimedPracticeMinutes(
+            questionCount = defaultCount,
+            sourceKey = defaultSource,
+            difficultyFilter = defaultDifficulty,
+            useCrossExamPool = useCrossExamPool,
+            crossExamFilterId = crossExamFilterId
+        )
         _timedConfig.value = TimedPracticeConfigState(
             isVisible = true,
             sourceKey = defaultSource,
             questionCount = defaultCount,
             durationMinutes = defaultMins,
-            difficultyFilter = defaultDifficulty
+            difficultyFilter = defaultDifficulty,
+            useCrossExamPool = useCrossExamPool,
+            crossExamFilterId = crossExamFilterId
         )
     }
 
@@ -1388,7 +1548,7 @@ class MainViewModel(
     fun updateTimedConfigSource(sourceKey: String) {
         _timedConfig.update { cfg ->
             val updatedMins = if (cfg.questionCount <= 0) {
-                suggestedTimedPracticeMinutes(cfg.questionCount, sourceKey, cfg.difficultyFilter)
+                suggestedTimedPracticeMinutes(cfg.questionCount, sourceKey, cfg.difficultyFilter, cfg.useCrossExamPool, cfg.crossExamFilterId)
             } else {
                 cfg.durationMinutes
             }
@@ -1399,7 +1559,7 @@ class MainViewModel(
     fun updateTimedConfigDifficulty(filter: DifficultyFilter) {
         _timedConfig.update { cfg ->
             val updatedMins = if (cfg.questionCount <= 0) {
-                suggestedTimedPracticeMinutes(cfg.questionCount, cfg.sourceKey, filter)
+                suggestedTimedPracticeMinutes(cfg.questionCount, cfg.sourceKey, filter, cfg.useCrossExamPool, cfg.crossExamFilterId)
             } else {
                 cfg.durationMinutes
             }
@@ -1409,7 +1569,7 @@ class MainViewModel(
 
     fun updateTimedConfigCount(count: Int) {
         _timedConfig.update { cfg ->
-            val suggestedMinutes = suggestedTimedPracticeMinutes(count, cfg.sourceKey, cfg.difficultyFilter)
+            val suggestedMinutes = suggestedTimedPracticeMinutes(count, cfg.sourceKey, cfg.difficultyFilter, cfg.useCrossExamPool, cfg.crossExamFilterId)
             cfg.copy(questionCount = count, durationMinutes = suggestedMinutes)
         }
     }
@@ -1435,11 +1595,17 @@ class MainViewModel(
         return bySource.filter { it.question.difficulty == targetDiff }
     }
 
+    fun timedConfigMatchingCount(sourceKey: String, difficultyFilter: DifficultyFilter): Int {
+        val cfg = _timedConfig.value
+        val base = timedConfigBasePool(cfg)
+        return filteredQuestionsForSource(sourceKey, base, difficultyFilter).size
+    }
+
     fun launchConfiguredTimedPractice() {
         val cfg = _timedConfig.value
         val pool = filteredQuestionsForSource(
             sourceKey = cfg.sourceKey,
-            all = mainState.value.questions,
+            all = timedConfigBasePool(cfg),
             difficultyFilter = cfg.difficultyFilter
         ).shuffled()
         if (pool.isEmpty()) {
@@ -1453,7 +1619,7 @@ class MainViewModel(
             "MIXED" -> "Mixed Set"
             "PYQ" -> when {
                 PlatformCatalogDefaults.isPgimerExam(activeExamId) -> "PGIMER PYQs"
-                PlatformCatalogDefaults.isNorcetExam(activeExamId) -> "NORCET PYQs"
+                PlatformCatalogDefaults.isNorcetExam(activeExamId) -> "NORCET Prelims PYQs"
                 else -> "PYQs"
             }
             "NURSING" -> "Nursing ($nursingPct%)"
@@ -1461,13 +1627,14 @@ class MainViewModel(
             "GEN" -> if (PlatformCatalogDefaults.isNorcetExam(activeExamId)) "Aptitude & Science" else "Sci/Math/Reas"
             else -> SubjectCatalog.displayNameFor(cfg.sourceKey)
         }
+        val crossSuffix = if (cfg.useCrossExamPool && cfg.crossExamFilterId == null) " • All Exams" else ""
         val diffSuffix = cfg.difficultyFilter.difficulty?.let { " • ${it.label}" } ?: ""
         val useLimit = settings.useTimeLimit.value
         val titlePrefix = if (useLimit) "Timed" else "Drill"
         _timedConfig.update { it.copy(isVisible = false) }
         startPractice(
             items = picked,
-            title = "$titlePrefix: $sourceLabel$diffSuffix (${picked.size}Q)",
+            title = "$titlePrefix: $sourceLabel$crossSuffix$diffSuffix (${picked.size}Q)",
             timedMode = true,
             durationMinutes = if (useLimit) cfg.durationMinutes else 0,
             hasCountdown = useLimit
@@ -1475,7 +1642,7 @@ class MainViewModel(
     }
 
     // ------------------------------------------------------------------------
-    // CBT MOCK SIMULATOR
+    // CBT MOCK SIMULATOR (STRICT PRELIMS / MAINS SEPARATION FOR NORCET)
     // ------------------------------------------------------------------------
     fun startCbtStandardMock(
         totalQuestions: Int,
@@ -1483,12 +1650,20 @@ class MainViewModel(
         title: String,
         isOfficialFullMock: Boolean = false
     ) {
-        val all = mainState.value.questions
-        if (all.isEmpty()) return
         val activeExamId = settings.activeExamId.value
-        val isNorcetFullPrelims = isOfficialFullMock &&
-            PlatformCatalogDefaults.isNorcetExam(activeExamId) &&
-            totalQuestions == 100
+        val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExamId)
+        // Strictly restrict NORCET Prelims mocks to the Prelims-only pool (zero Mains mixing)
+        val all = if (isNorcet) {
+            PlatformCatalogDefaults.filterQuestionsForExamStage(
+                examId = activeExamId,
+                stage = ExamStage.PRELIMS,
+                questions = mainState.value.questions
+            )
+        } else {
+            mainState.value.questions
+        }
+        if (all.isEmpty()) return
+        val isNorcetFullPrelims = isOfficialFullMock && isNorcet && totalQuestions == 100
         val nursingPct = PlatformCatalogDefaults.nursingWeightagePercent(activeExamId)
         val nursingCount = (totalQuestions * nursingPct) / 100
         val nonNursingCount = totalQuestions - nursingCount
@@ -1520,25 +1695,34 @@ class MainViewModel(
         )
     }
 
-    fun startNorcetMainsMock() {
-        val all = mainState.value.questions
-        if (all.isEmpty()) return
-        val nursingPool = all.filter { SubjectCatalog.isNursing(it.question) }
-        // Prioritize dedicated NORCET clinical scenarios & Hard nursing questions for authentic Stage II Mains
-        val dedicatedNorcetNur = nursingPool.filter { it.id.startsWith("N_") }.shuffled()
-        val hardClinicalExtra = nursingPool.filter {
-            !it.id.startsWith("N_") && it.question.difficulty == QuestionDifficulty.HARD
+    fun startNorcetMainsMock(
+        totalQuestions: Int = 160,
+        durationMinutes: Int = 180,
+        title: String = "NORCET Stage II Mains (160Q Clinical CBT)"
+    ) {
+        // Strictly restrict NORCET Mains mocks to the Stage II Mains clinical nursing pool only
+        val mainsPool = PlatformCatalogDefaults.filterQuestionsForExamStage(
+            examId = PlatformCatalogDefaults.EXAM_AIIMS_NORCET,
+            stage = ExamStage.MAINS,
+            questions = mainState.value.questions
+        )
+        if (mainsPool.isEmpty()) {
+            showMessage("No Mains clinical questions available.")
+            return
+        }
+        val dedicatedMainsCases = mainsPool.filter {
+            it.question.questionText.contains("[Mains", ignoreCase = true)
         }.shuffled()
-        val remainingNursing = nursingPool.filter { q ->
-            !q.id.startsWith("N_") && q.question.difficulty != QuestionDifficulty.HARD
+        val otherMainsClinical = mainsPool.filter {
+            !it.question.questionText.contains("[Mains", ignoreCase = true)
         }.shuffled()
-        val selected = (dedicatedNorcetNur + hardClinicalExtra + remainingNursing).take(160)
-        val useSectionLock = selected.size >= 160
+        val selected = (dedicatedMainsCases + otherMainsClinical).take(totalQuestions)
+        val useSectionLock = totalQuestions >= 160 && selected.size >= 160
         startCbtCustom(
             items = selected,
-            title = "NORCET Stage II Mains (160Q Clinical CBT)",
-            durationMinutes = 180,
-            isOfficialFullMock = true,
+            title = title,
+            durationMinutes = durationMinutes,
+            isOfficialFullMock = totalQuestions >= 160,
             sectionSize = if (useSectionLock) 40 else 0,
             sectionDurationMinutes = if (useSectionLock) 45 else 0,
             sectionLabels = if (useSectionLock) {
