@@ -20,11 +20,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -63,6 +67,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.data.backup.BackupFolderSummary
 import com.example.data.export.PdfWorksheetWriter
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.Exam
@@ -71,6 +76,7 @@ import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
 import com.example.data.model.QuestionSourceType
 import com.example.data.model.SubjectCatalog
+import com.example.data.update.AppUpdateUiState
 import com.example.ui.theme.CalmSageFill
 import com.example.ui.theme.MonoFontFamily
 import com.example.ui.theme.MutedCrimsonFill
@@ -295,10 +301,14 @@ fun TimedPracticeConfigDialog(
 fun ImporterModalSheet(
     state: ImporterUiState,
     activeExamShortName: String = "RRB Nursing",
+    backupFolderSummary: BackupFolderSummary = BackupFolderSummary(),
+    isBackupBusy: Boolean = false,
     onUpdate: ((ImporterUiState) -> ImporterUiState) -> Unit,
     onPreviewPdf: () -> Unit,
     onCommitPdf: () -> Unit,
     onImportJson: () -> Unit,
+    onChooseBackupFolder: () -> Unit = {},
+    onResetBackupFolder: () -> Unit = {},
     onExportBackup: () -> Unit,
     onRestoreBackup: () -> Unit,
     onOpenPdfExport: () -> Unit,
@@ -327,9 +337,9 @@ fun ImporterModalSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Add & Manage Questions", style = MaterialTheme.typography.titleLarge)
+                    Text("Import, Backup & Restore", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        "Import shift PDFs, JSON sets, or back up your progress",
+                        "Import shift questions or back up your student profile, plan & progress",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -360,7 +370,7 @@ fun ImporterModalSheet(
                 Tab(
                     selected = state.selectedTab == 1,
                     onClick = { onUpdate { it.copy(selectedTab = 1) } },
-                    text = { Text("JSON / Backup") }
+                    text = { Text("Backup & Batch") }
                 )
             }
 
@@ -374,8 +384,12 @@ fun ImporterModalSheet(
             } else {
                 JsonBackupPane(
                     state = state,
+                    backupFolderSummary = backupFolderSummary,
+                    isBackupBusy = isBackupBusy,
                     onUpdate = onUpdate,
                     onImportJson = onImportJson,
+                    onChooseBackupFolder = onChooseBackupFolder,
+                    onResetBackupFolder = onResetBackupFolder,
                     onExportBackup = onExportBackup,
                     onRestoreBackup = onRestoreBackup,
                     onOpenPdfExport = onOpenPdfExport,
@@ -690,17 +704,121 @@ private fun PdfTextImportPane(
 @Composable
 private fun JsonBackupPane(
     state: ImporterUiState,
+    backupFolderSummary: BackupFolderSummary,
+    isBackupBusy: Boolean,
     onUpdate: ((ImporterUiState) -> ImporterUiState) -> Unit,
     onImportJson: () -> Unit,
+    onChooseBackupFolder: () -> Unit,
+    onResetBackupFolder: () -> Unit,
     onExportBackup: () -> Unit,
     onRestoreBackup: () -> Unit,
     onOpenPdfExport: () -> Unit,
     onRequestClearCustom: () -> Unit
 ) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.FolderOpen,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "Backup & Restore Folder",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = backupFolderSummary.displayLabel,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                TextButton(
+                    onClick = onChooseBackupFolder,
+                    modifier = Modifier.testTag("importer_choose_backup_folder_btn")
+                ) {
+                    Text("Change")
+                }
+            }
+
+            Text(
+                text = "Includes your student profile, active plan, study goal, bookmarks, progress, and custom MCQs.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onExportBackup,
+                    enabled = !isBackupBusy,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("export_backup_button"),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Backup,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Backup")
+                }
+                OutlinedButton(
+                    onClick = onRestoreBackup,
+                    enabled = !isBackupBusy,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("restore_backup_button"),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Restore,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Restore")
+                }
+            }
+
+            if (backupFolderSummary.isCustomFolder) {
+                TextButton(
+                    onClick = onResetBackupFolder,
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Use Default Folder")
+                }
+            }
+        }
+    }
+
     OutlinedTextField(
         value = state.jsonText,
         onValueChange = { txt -> onUpdate { it.copy(jsonText = txt) } },
-        label = { Text("Compact JSON Array") },
+        label = { Text("Batch Question Import") },
         placeholder = {
             Text(
                 """[{"c":"pyq","y":"2025-S2","s":"MSN","d":"Medium","q":"...","o":["A","B","C","D"],"a":0,"e":"...","sourceStatus":"verified","sourceNote":"Official RRB 2025-S2 key"}]""",
@@ -713,42 +831,21 @@ private fun JsonBackupPane(
                 style = MaterialTheme.typography.bodySmall
             )
         },
-        minLines = 5,
-        maxLines = 8,
+        minLines = 4,
+        maxLines = 7,
         modifier = Modifier
             .fillMaxWidth()
             .testTag("json_batch_input")
     )
 
-    Button(
+    OutlinedButton(
         onClick = onImportJson,
         modifier = Modifier
             .fillMaxWidth()
             .testTag("import_json_button"),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Text("Import JSON Questions")
-    }
-
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(
-            onClick = onExportBackup,
-            modifier = Modifier
-                .weight(1f)
-                .testTag("export_backup_button"),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text("Export JSON")
-        }
-        OutlinedButton(
-            onClick = onRestoreBackup,
-            modifier = Modifier
-                .weight(1f)
-                .testTag("restore_backup_button"),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text("Restore JSON")
-        }
+        Text("Import Question Batch")
     }
 
     FilledTonalButton(
@@ -843,7 +940,7 @@ fun PdfExportModalSheet(
                     Column {
                         Text("Export Printable PDF Worksheet", style = MaterialTheme.typography.titleLarge)
                         Text(
-                            "Generate clean A4 study booklets offline",
+                            "Clean A4 study booklets with ClinEdge watermark on every page",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1169,4 +1266,76 @@ fun ExamPickerModalSheet(
         }
     }
 }
+
+@Composable
+fun AppUpdateAvailableDialog(
+    updateState: AppUpdateUiState,
+    onDownloadUpdate: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (!updateState.showDialog || updateState.downloadUrl.isBlank()) return
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Filled.SystemUpdate,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = {
+            Text(
+                text = updateState.releaseTitle.ifBlank { "Update Available" },
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Text(
+                        text = "v${updateState.currentVersion}  →  v${updateState.latestVersion}",
+                        style = MaterialTheme.typography.labelLarge.copy(fontFamily = MonoFontFamily),
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
+                }
+                Text(
+                    text = updateState.releaseNotes.ifBlank {
+                        "A newer version of ClinEdge is ready to download."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDownloadUpdate,
+                modifier = Modifier.testTag("update_dialog_download_btn")
+            ) {
+                Text("Download Update", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("update_dialog_later_btn")
+            ) {
+                Text("Later")
+            }
+        }
+    )
+}
+
 

@@ -79,6 +79,21 @@ class SettingsPreferences(context: Context) {
     private val _studyGoalState = MutableStateFlow(readStudyGoalState())
     val studyGoalState: StateFlow<DailyStudyGoalState> = _studyGoalState.asStateFlow()
 
+    private val _profileAvatarPath = MutableStateFlow(
+        prefs.getString(KEY_PROFILE_AVATAR_PATH, "") ?: ""
+    )
+    val profileAvatarPath: StateFlow<String> = _profileAvatarPath.asStateFlow()
+
+    private val _backupTreeUri = MutableStateFlow(
+        prefs.getString(KEY_BACKUP_TREE_URI, "") ?: ""
+    )
+    val backupTreeUri: StateFlow<String> = _backupTreeUri.asStateFlow()
+
+    private val _backupTreeLabel = MutableStateFlow(
+        prefs.getString(KEY_BACKUP_TREE_LABEL, "") ?: ""
+    )
+    val backupTreeLabel: StateFlow<String> = _backupTreeLabel.asStateFlow()
+
     private fun readTheme(): ThemePreference {
         val raw = prefs.getString(KEY_THEME, ThemePreference.LIGHT.name)
         return runCatching { ThemePreference.valueOf(raw ?: "") }.getOrDefault(ThemePreference.LIGHT)
@@ -193,6 +208,32 @@ class SettingsPreferences(context: Context) {
             .putString(KEY_LAST_GOAL_MET_DATE, clean.lastGoalMetDate)
             .apply()
         _studyGoalState.value = clean
+    }
+
+    fun setProfileAvatarPath(path: String) {
+        val clean = path.trim()
+        prefs.edit().putString(KEY_PROFILE_AVATAR_PATH, clean).apply()
+        _profileAvatarPath.value = clean
+    }
+
+    fun setBackupFolder(treeUri: String, displayLabel: String) {
+        val cleanUri = treeUri.trim()
+        val cleanLabel = displayLabel.trim()
+        prefs.edit()
+            .putString(KEY_BACKUP_TREE_URI, cleanUri)
+            .putString(KEY_BACKUP_TREE_LABEL, cleanLabel)
+            .apply()
+        _backupTreeUri.value = cleanUri
+        _backupTreeLabel.value = cleanLabel
+    }
+
+    fun clearBackupFolder() {
+        prefs.edit()
+            .remove(KEY_BACKUP_TREE_URI)
+            .remove(KEY_BACKUP_TREE_LABEL)
+            .apply()
+        _backupTreeUri.value = ""
+        _backupTreeLabel.value = ""
     }
 
     fun resetGoalStateForAccountSwitch() {
@@ -366,6 +407,9 @@ class SettingsPreferences(context: Context) {
         private const val KEY_FRESH_SIGN_IN_PENDING = "fresh_sign_in_pending"
         private const val KEY_SKIP_AUTO_SIGN_IN_ONCE = "skip_auto_sign_in_once"
         private const val KEY_FORCED_SIGN_OUT_NOTICE = "forced_sign_out_notice"
+        private const val KEY_PROFILE_AVATAR_PATH = "profile_avatar_path"
+        private const val KEY_BACKUP_TREE_URI = "backup_tree_uri"
+        private const val KEY_BACKUP_TREE_LABEL = "backup_tree_label"
 
         fun calculateSuggestedMinutes(questionCount: Int, secondsPerQuestion: Int): Int {
             if (questionCount <= 0 || secondsPerQuestion <= 0) return 0

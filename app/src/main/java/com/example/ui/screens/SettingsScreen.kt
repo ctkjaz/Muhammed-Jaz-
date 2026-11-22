@@ -28,15 +28,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.AddCircleOutline
+import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BrightnessHigh
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
@@ -44,14 +48,17 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -71,9 +78,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.data.backup.BackupFolderSummary
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.data.model.StudyGoalLogic
+import com.example.data.update.AppUpdateStatus
+import com.example.data.update.AppUpdateUiState
 import com.example.ui.theme.MonoFontFamily
 import com.example.ui.theme.MutedCrimsonFill
 import com.example.ui.theme.WarmWhite
@@ -89,6 +99,9 @@ fun SettingsScreen(
     negativeMarking: Boolean,
     keepScreenOn: Boolean,
     dailyGoalQuestions: Int,
+    backupFolderSummary: BackupFolderSummary = BackupFolderSummary(),
+    isBackupBusy: Boolean = false,
+    appUpdateState: AppUpdateUiState = AppUpdateUiState(),
     onProfileNameChange: (String) -> Unit,
     onThemePreferenceChange: (ThemePreference) -> Unit,
     onUseTimeLimitChange: (Boolean) -> Unit,
@@ -97,8 +110,15 @@ fun SettingsScreen(
     onKeepScreenOnChange: (Boolean) -> Unit,
     onDailyGoalChange: (Int) -> Unit,
     onReopenOnboarding: () -> Unit,
+    onChooseBackupFolder: () -> Unit = {},
+    onResetBackupFolder: () -> Unit = {},
+    onCreateBackup: () -> Unit = {},
+    onRestoreLatestBackup: () -> Unit = {},
+    onPickRestoreFile: () -> Unit = {},
     onOpenImporter: () -> Unit,
     onOpenPdfExport: () -> Unit,
+    onCheckForUpdates: () -> Unit = {},
+    onOpenUpdateDialog: () -> Unit = {},
     onResetStatistics: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
@@ -106,6 +126,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val versionName = remember(context) { readAppVersionName(context) }
     var showResetStatsDialog by remember { mutableStateOf(false) }
+    var showRestoreOptionsDialog by remember { mutableStateOf(false) }
 
     BackHandler(onBack = onBack)
 
@@ -467,17 +488,151 @@ fun SettingsScreen(
                 }
             }
 
-            // 6. Your data
+            // 6. Backup, Restore & Study Data
             item {
                 SettingsSectionCard(
-                    title = "Your data",
+                    title = "Backup, Restore & Study Data",
                     icon = Icons.Filled.Storage,
                     cardTag = "settings_card_data"
                 ) {
+                    // Active Backup Folder Card
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("settings_backup_folder_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.FolderOpen,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "Backup Directory",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = backupFolderSummary.displayLabel,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                TextButton(
+                                    onClick = onChooseBackupFolder,
+                                    modifier = Modifier.testTag("settings_choose_backup_folder_btn")
+                                ) {
+                                    Text("Choose")
+                                }
+                            }
+
+                            val folderMeta = when {
+                                backupFolderSummary.backupCount > 0 && !backupFolderSummary.latestBackupName.isNullOrBlank() ->
+                                    "${backupFolderSummary.backupCount} backup(s) saved • Latest: ${backupFolderSummary.latestBackupName}"
+                                else ->
+                                    "No backups saved in this folder yet. Backups include student profile, plan, progress & custom MCQs."
+                            }
+                            Text(
+                                text = folderMeta,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Button(
+                                    onClick = onCreateBackup,
+                                    enabled = !isBackupBusy,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .testTag("settings_backup_now_btn")
+                                ) {
+                                    if (isBackupBusy) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Working...")
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Filled.Backup,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Backup", fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        if (backupFolderSummary.backupCount > 0) {
+                                            showRestoreOptionsDialog = true
+                                        } else {
+                                            onPickRestoreFile()
+                                        }
+                                    },
+                                    enabled = !isBackupBusy,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .testTag("settings_restore_backup_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Restore,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Restore", fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+
+                            if (backupFolderSummary.isCustomFolder) {
+                                TextButton(
+                                    onClick = onResetBackupFolder,
+                                    modifier = Modifier
+                                        .align(Alignment.End)
+                                        .testTag("settings_reset_backup_folder_btn")
+                                ) {
+                                    Text("Reset to Default Directory")
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+
                     SettingsActionRow(
-                        icon = Icons.Filled.Download,
-                        title = "Import, backup & restore",
-                        subtitle = "Import PDF/JSON questions or back up and restore progress",
+                        icon = Icons.Filled.AddCircleOutline,
+                        title = "Import questions",
+                        subtitle = "Paste shift PDF text or bulk MCQ sets into your bank",
                         onClick = onOpenImporter,
                         testTag = "settings_open_importer_row"
                     )
@@ -485,7 +640,7 @@ fun SettingsScreen(
                     SettingsActionRow(
                         icon = Icons.Filled.PictureAsPdf,
                         title = "Export PDF worksheet",
-                        subtitle = "Generate printable A4 question sheets offline",
+                        subtitle = "Generate watermarked A4 study sheets & mock booklets offline",
                         onClick = onOpenPdfExport,
                         testTag = "settings_open_pdf_row"
                     )
@@ -501,10 +656,11 @@ fun SettingsScreen(
                 }
             }
 
-            // 7. About
+            // 7. About & In-App Updates
             item {
+                val editorial = MaterialTheme.editorialColors
                 SettingsSectionCard(
-                    title = "About",
+                    title = "About & Updates",
                     icon = Icons.Filled.Info,
                     cardTag = "settings_card_about"
                 ) {
@@ -525,6 +681,75 @@ fun SettingsScreen(
                             modifier = Modifier.testTag("settings_version_text")
                         )
                     }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 52.dp)
+                            .clickable(
+                                enabled = appUpdateState.status != AppUpdateStatus.CHECKING,
+                                onClick = {
+                                    if (appUpdateState.status == AppUpdateStatus.UPDATE_AVAILABLE) {
+                                        onOpenUpdateDialog()
+                                    } else {
+                                        onCheckForUpdates()
+                                    }
+                                }
+                            )
+                            .padding(vertical = 6.dp)
+                            .testTag("settings_check_updates_row"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.SystemUpdate,
+                            contentDescription = null,
+                            tint = if (appUpdateState.status == AppUpdateStatus.UPDATE_AVAILABLE) {
+                                editorial.correctText
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (appUpdateState.status == AppUpdateStatus.UPDATE_AVAILABLE) {
+                                    "Update available (v${appUpdateState.latestVersion})"
+                                } else {
+                                    "Check for app updates"
+                                },
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = if (appUpdateState.status == AppUpdateStatus.UPDATE_AVAILABLE) {
+                                    editorial.correctText
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                            Text(
+                                text = appUpdateState.statusMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (appUpdateState.status == AppUpdateStatus.CHECKING) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+
                     Text(
                         text = "Practice material only. Always check clinical answers against your textbooks and current guidelines.",
                         style = MaterialTheme.typography.bodySmall,
@@ -538,6 +763,50 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showRestoreOptionsDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestoreOptionsDialog = false },
+            title = { Text("Restore Backup") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Restore your student profile, active plan, study progress, and custom questions.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (!backupFolderSummary.latestBackupName.isNullOrBlank()) {
+                        Text(
+                            text = "Latest in folder: ${backupFolderSummary.latestBackupName}",
+                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showRestoreOptionsDialog = false
+                        onRestoreLatestBackup()
+                    },
+                    modifier = Modifier.testTag("settings_restore_latest_btn")
+                ) {
+                    Text("Restore Latest")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showRestoreOptionsDialog = false
+                        onPickRestoreFile()
+                    },
+                    modifier = Modifier.testTag("settings_restore_pick_file_btn")
+                ) {
+                    Text("Choose File...")
+                }
+            }
+        )
     }
 
     if (showResetStatsDialog) {

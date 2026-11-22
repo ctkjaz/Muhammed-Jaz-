@@ -420,10 +420,10 @@ class NursingPrepRepository(
         dao.deleteCustomQuestions()
     }
 
-    suspend fun restoreBackup(
+    suspend fun restoreBackupWithDetails(
         jsonText: String,
         defaultExamId: String = PlatformCatalogDefaults.EXAM_RRB_NURSING
-    ): Int = withContext(Dispatchers.IO) {
+    ): BulkQuestionParser.RestoredBackup = withContext(Dispatchers.IO) {
         val restored = BulkQuestionParser.parseBackupJson(jsonText)
         if (restored.customQuestions.isNotEmpty()) {
             saveCustomQuestions(
@@ -435,8 +435,13 @@ class NursingPrepRepository(
         if (restored.progressList.isNotEmpty()) {
             dao.upsertProgressList(restored.progressList)
         }
-        restored.customQuestions.size
+        restored
     }
+
+    suspend fun restoreBackup(
+        jsonText: String,
+        defaultExamId: String = PlatformCatalogDefaults.EXAM_RRB_NURSING
+    ): Int = restoreBackupWithDetails(jsonText, defaultExamId).customQuestions.size
 
     suspend fun saveMockHistory(
         title: String,

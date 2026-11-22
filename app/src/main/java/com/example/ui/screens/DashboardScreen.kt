@@ -22,7 +22,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CheckCircle
@@ -30,7 +29,6 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocalFireDepartment
-import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.Timer
@@ -93,8 +91,6 @@ fun DashboardScreen(
     onAdjustDailyGoal: () -> Unit,
     onOpenSubjectSection: (SubjectHubSection) -> Unit,
     onSelectTab: (MainTab) -> Unit,
-    onOpenImporter: () -> Unit,
-    onOpenPdfExport: () -> Unit,
     onStartDrill: (List<QuestionItem>, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -591,67 +587,6 @@ fun DashboardScreen(
                     }
                 }
             }
-
-            // Bulk Importer & PDF Export Card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.AddCircleOutline,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Import, Backup & Printable PDF Export", style = MaterialTheme.typography.titleSmall)
-                                Text(
-                                    "Import shift PDF text or JSON backups, or generate printable A4 MCQ worksheets.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = onOpenImporter,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("dashboard_import_card")
-                            ) {
-                                Text("Import / JSON")
-                            }
-                            FilledTonalButton(
-                                onClick = onOpenPdfExport,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("dashboard_export_pdf_btn")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.PictureAsPdf,
-                                    contentDescription = null
-                                )
-                                Text(" Export PDF")
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -675,8 +610,9 @@ private fun ModuleGridCard(data: ModuleCardData, modifier: Modifier = Modifier) 
             .clickable(onClick = data.onClick)
             .testTag(data.tag),
         shape = RoundedCornerShape(18.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.85f))
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(

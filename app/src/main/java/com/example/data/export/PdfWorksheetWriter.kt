@@ -22,7 +22,10 @@ data class PdfWorksheetOptions(
     val title: String,
     val subtitle: String,
     val inlineAnswers: Boolean = false,
-    val includeAnswerKey: Boolean = true
+    val includeAnswerKey: Boolean = true,
+    val watermarkStudentName: String = "",
+    val watermarkPlanName: String = "ClinEdge Free",
+    val watermarkEmail: String = ""
 )
 
 object PdfWorksheetWriter {
@@ -107,6 +110,32 @@ object PdfWorksheetWriter {
         return "Q${index + 1}  •  ${qTagParts.joinToString("  •  ")}"
     }
 
+    fun buildWatermarkLines(
+        studentName: String,
+        planName: String = "ClinEdge Free",
+        email: String = ""
+    ): Pair<String, String> {
+        val cleanName = studentName.trim()
+        val cleanPlan = planName.trim().ifBlank { "ClinEdge Free" }
+        val cleanEmail = email.trim()
+        val subLine = when {
+            cleanName.isNotBlank() -> "$cleanName  •  $cleanPlan"
+            cleanEmail.isNotBlank() -> "$cleanEmail  •  $cleanPlan"
+            else -> "$cleanPlan  •  Practice Material"
+        }
+        return "CLINEDGE" to subLine
+    }
+
+    fun buildFooterBranding(studentName: String, planName: String = "ClinEdge Free"): String {
+        val cleanName = studentName.trim()
+        val cleanPlan = planName.trim().ifBlank { "ClinEdge Free" }
+        return if (cleanName.isNotBlank()) {
+            "ClinEdge • Prepared for $cleanName ($cleanPlan) • Practice Only"
+        } else {
+            "ClinEdge • $cleanPlan • Offline Practice Worksheet"
+        }
+    }
+
     fun writeWorksheetPdf(
         questions: List<QuestionItem>,
         options: PdfWorksheetOptions,
@@ -163,11 +192,44 @@ object PdfWorksheetWriter {
             color = Color.rgb(114, 108, 115)
             textSize = 8.5f
         }
+        val watermarkPrimaryPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(24, 84, 47, 59)
+            textSize = 44f
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+        }
+        val watermarkSubPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(22, 87, 82, 87)
+            textSize = 13f
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+        }
+        val (watermarkPrimary, watermarkSecondary) = buildWatermarkLines(
+            studentName = options.watermarkStudentName,
+            planName = options.watermarkPlanName,
+            email = options.watermarkEmail
+        )
+        val footerBranding = buildFooterBranding(
+            studentName = options.watermarkStudentName,
+            planName = options.watermarkPlanName
+        )
 
         var pageNumber = 0
         var page: PdfDocument.Page? = null
         var canvas: Canvas? = null
         var y = MARGIN_TOP
+
+        fun drawPageWatermark(targetCanvas: Canvas) {
+            val centerX = PAGE_WIDTH / 2f
+            val anchorYs = floatArrayOf(210f, 440f, 670f)
+            anchorYs.forEach { anchorY ->
+                targetCanvas.save()
+                targetCanvas.rotate(-30f, centerX, anchorY)
+                targetCanvas.drawText(watermarkPrimary, centerX, anchorY, watermarkPrimaryPaint)
+                targetCanvas.drawText(watermarkSecondary, centerX, anchorY + 19f, watermarkSubPaint)
+                targetCanvas.restore()
+            }
+        }
 
         fun finishCurrentPage() {
             val currentCanvas = canvas
@@ -175,7 +237,7 @@ object PdfWorksheetWriter {
             if (currentCanvas != null && currentPage != null) {
                 currentCanvas.drawLine(MARGIN_X, PAGE_HEIGHT - 28f, PAGE_WIDTH - MARGIN_X, PAGE_HEIGHT - 28f, dividerPaint)
                 currentCanvas.drawText(
-                    "ClinEdge • Offline Practice Worksheet",
+                    footerBranding,
                     MARGIN_X,
                     PAGE_HEIGHT - 16f,
                     footerPaint
@@ -200,6 +262,7 @@ object PdfWorksheetWriter {
             val info = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, pageNumber).create()
             page = doc.startPage(info)
             canvas = page?.canvas
+            canvas?.let { drawPageWatermark(it) }
             y = MARGIN_TOP
         }
 
@@ -233,8 +296,12 @@ object PdfWorksheetWriter {
             drawLayout(c1, titleLayout, MARGIN_X + 14f, y + 24f)
             drawLayout(c1, subLayout, MARGIN_X + 14f, y + 24f + titleLayout.height + 5f)
             val metaLineY = y + headerHeight - 9f
+            val studentField = options.watermarkStudentName.trim()
+                .takeIf { it.isNotBlank() }
+                ?.let { "Student: ${it.take(24)}" }
+                ?: "Name: ____________________"
             c1.drawText(
-                "${questions.size} MCQs   |   Date: $dateStr   |   Name: ______________________   Score: ____ / ${questions.size}",
+                "${questions.size} MCQs   |   Date: $dateStr   |   $studentField   |   Score: ____ / ${questions.size}",
                 MARGIN_X + 14f,
                 metaLineY,
                 subPaint

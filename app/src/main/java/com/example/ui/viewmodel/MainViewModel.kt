@@ -1,8 +1,12 @@
 package com.example.ui.viewmodel
 
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.BuildConfig
+import com.example.data.backup.BackupFolderSummary
+import com.example.data.backup.BackupStorageManager
 import com.example.data.cloud.CloudAccountSnapshot
 import com.example.data.cloud.CloudCustomQuestion
 import com.example.data.cloud.CloudMergeLogic
@@ -19,6 +23,9 @@ import com.example.data.export.PdfWorksheetOptions
 import com.example.data.export.PdfWorksheetWriter
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
+import com.example.data.update.AppUpdateChecker
+import com.example.data.update.AppUpdateStatus
+import com.example.data.update.AppUpdateUiState
 import com.example.data.model.AccountSessionLogic
 import com.example.data.model.CategoryStat
 import com.example.data.model.DailyStudyGoalState
@@ -200,7 +207,8 @@ class MainViewModel(
     private val currentUserId: String,
     accountDisplayName: String = "",
     accountEmail: String = "",
-    accountPhotoUrl: String? = null
+    accountPhotoUrl: String? = null,
+    private val backupStorage: BackupStorageManager? = null
 ) : ViewModel() {
 
     val signedInAccount: SignedInAccountInfo = SignedInAccountInfo(
@@ -217,6 +225,7 @@ class MainViewModel(
     val targetYear: StateFlow<String> = settings.targetYear
     val focusSubject: StateFlow<String> = settings.focusSubject
     val phoneNumber: StateFlow<String> = settings.phoneNumber
+    val profileAvatarPath: StateFlow<String> = settings.profileAvatarPath
     val useTimeLimit: StateFlow<Boolean> = settings.useTimeLimit
     val secondsPerQuestion: StateFlow<Int> = settings.secondsPerQuestion
     val keepScreenOn: StateFlow<Boolean> = settings.keepScreenOn
@@ -231,6 +240,17 @@ class MainViewModel(
 
     private val _cloudSyncState = MutableStateFlow(CloudSyncUiState())
     val cloudSyncState: StateFlow<CloudSyncUiState> = _cloudSyncState.asStateFlow()
+
+    private val _backupFolderSummary = MutableStateFlow(BackupFolderSummary())
+    val backupFolderSummary: StateFlow<BackupFolderSummary> = _backupFolderSummary.asStateFlow()
+
+    private val _isBackupBusy = MutableStateFlow(false)
+    val isBackupBusy: StateFlow<Boolean> = _isBackupBusy.asStateFlow()
+
+    private val _appUpdateState = MutableStateFlow(
+        AppUpdateUiState(currentVersion = BuildConfig.VERSION_NAME)
+    )
+    val appUpdateState: StateFlow<AppUpdateUiState> = _appUpdateState.asStateFlow()
 
     private val _flashcards = MutableStateFlow<List<Flashcard>>(emptyList())
     private val _isSeeded = MutableStateFlow(false)
@@ -408,6 +428,8 @@ class MainViewModel(
                     startRealtimeCloudObservers()
                 }
             }
+            refreshBackupFolderSummary()
+            checkForAppUpdates(userInitiated = false)
         }
     }
 
@@ -975,6 +997,66 @@ class MainViewModel(
     fun setPhoneNumber(phone: String) {
         settings.setPhoneNumber(phone)
         scheduleProfileCloudPush()
+    }
+
+    fun onProfileAvatarSaved(filePath: String) {
+        settings.setProfileAvatarPath(filePath)
+        showMessage("Profile photo updated!")
+    }
+
+    fun onProfileAvatarRemoved() {
+        settings.setProfileAvatarPath("")
+        showMessage("Profile photo removed.")
+    }
+
+    // ------------------------------------------------------------------------
+    // IN-APP UPDATES (GITHUB RELEASES)
+    // ------------------------------------------------------------------------
+    fun checkForAppUpdates(userInitiated: Boolean) {
+        if (_appUpdateState.value.status == AppUpdateStatus.CHECKING) return
+        val currentVersion = BuildConfig.VERSION_NAME
+        _appUpdateState.update {
+            it.copy(
+                status = AppUpdateStatus.CHECKING,
+                currentVersion = currentVersion,
+                statusMessage = "Checking for updates..."
+            )
+        }
+        viewModelScope.launch {
+            val result = AppUpdateChecker.checkLatestRelease(currentVersion)
+            _appUpdateState.value = if (userInitiated) {
+                result
+            } else {
+                // Silent background check: only pop dialog if a newer version is actually available
+                result.copy(
+                    showDialog = result.status == AppUpdateStatus.UPDATE_AVAILABLE,
+                    statusMessage = if (result.status == AppUpdateStatus.ERROR) {
+                        "Tap to check for new versions"
+                    } else {
+                        result.statusMessage
+                    },
+                    status = if (result.status == AppUpdateStatus.ERROR) AppUpdateStatus.IDLE else result.status
+                )
+            }
+            if (userInitiated) {
+                when (result.status) {
+                    AppUpdateStatus.UPDATE_AVAILABLE -> showMessage("ClinEdge v${result.latestVersion} is available!")
+                    AppUpdateStatus.UP_TO_DATE -> showMessage("You're on the latest version (v$currentVersion).")
+                    AppUpdateStatus.ERROR -> showMessage(result.statusMessage)
+                    else -> Unit
+                }
+            }
+        }
+    }
+
+    fun openUpdateDialog() {
+        if (_appUpdateState.value.status == AppUpdateStatus.UPDATE_AVAILABLE) {
+            _appUpdateState.update { it.copy(showDialog = true) }
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        _appUpdateState.update { it.copy(showDialog = false) }
     }
 
     fun setUseTimeLimit(enabled: Boolean) {
@@ -1732,31 +1814,183 @@ class MainViewModel(
         }
     }
 
+    fun refreshBackupFolderSummary() {
+        val storage = backupStorage ?: return
+        viewModelScope.launch {
+            _backupFolderSummary.value = storage.inspectActiveFolder(
+                customTreeUri = settings.backupTreeUri.value,
+                customLabel = settings.backupTreeLabel.value
+            )
+        }
+    }
+
+    fun onBackupFolderSelected(treeUri: Uri) {
+        val storage = backupStorage ?: return
+        viewModelScope.launch {
+            val oldUri = settings.backupTreeUri.value
+            if (oldUri.isNotBlank() && oldUri != treeUri.toString()) {
+                storage.releaseTreePermission(oldUri)
+            }
+            val label = storage.persistTreePermission(treeUri)
+            settings.setBackupFolder(treeUri.toString(), label)
+            _backupFolderSummary.value = storage.inspectActiveFolder(
+                customTreeUri = treeUri.toString(),
+                customLabel = label
+            )
+            showMessage("Backup folder set to $label")
+        }
+    }
+
+    fun resetBackupFolderToDefault() {
+        val storage = backupStorage ?: return
+        viewModelScope.launch {
+            val oldUri = settings.backupTreeUri.value
+            if (oldUri.isNotBlank()) {
+                storage.releaseTreePermission(oldUri)
+            }
+            settings.clearBackupFolder()
+            _backupFolderSummary.value = storage.inspectActiveFolder(
+                customTreeUri = "",
+                customLabel = ""
+            )
+            showMessage("Backup folder reset to default ClinEdgeBackups.")
+        }
+    }
+
+    fun createBackupInActiveFolder() {
+        val storage = backupStorage
+        if (storage == null) {
+            showMessage("Backup storage is not available right now.")
+            return
+        }
+        if (_isBackupBusy.value) return
+        viewModelScope.launch {
+            _isBackupBusy.value = true
+            val content = buildBackupJson()
+            val result = storage.saveBackupToActiveFolder(
+                backupContent = content,
+                customTreeUri = settings.backupTreeUri.value,
+                customLabel = settings.backupTreeLabel.value
+            )
+            _backupFolderSummary.value = storage.inspectActiveFolder(
+                customTreeUri = settings.backupTreeUri.value,
+                customLabel = settings.backupTreeLabel.value
+            )
+            _isBackupBusy.value = false
+            result.onSuccess { saved ->
+                showMessage("Backup saved to ${saved.folderLabel}")
+            }.onFailure { err ->
+                showMessage("Backup failed: ${err.message}")
+            }
+        }
+    }
+
+    fun restoreLatestFromActiveFolder() {
+        val storage = backupStorage
+        if (storage == null) {
+            showMessage("Backup storage is not available right now.")
+            return
+        }
+        if (_isBackupBusy.value) return
+        viewModelScope.launch {
+            _isBackupBusy.value = true
+            val loaded = storage.readLatestBackupFromActiveFolder(
+                customTreeUri = settings.backupTreeUri.value,
+                customLabel = settings.backupTreeLabel.value
+            )
+            _isBackupBusy.value = false
+            loaded.onSuccess { file ->
+                restoreBackupFromText(file.content)
+            }.onFailure { err ->
+                showMessage(err.message ?: "No backup file found in folder.")
+            }
+        }
+    }
+
     fun buildBackupJson(): String {
         val backupItems = allPlatformQuestions.value.ifEmpty { mainState.value.questions }
         val linksByQuestion = allPlatformLinks.value
             .groupBy { it.questionId }
             .mapValues { (_, links) -> links.map { it.examId }.distinct() }
+        val goal = settings.studyGoalState.value
+        val studentInfo = BulkQuestionParser.BackupStudentInfo(
+            displayName = settings.profileName.value.ifBlank { signedInAccount.displayName },
+            email = signedInAccount.email,
+            role = settings.profileRole.value,
+            targetYear = settings.targetYear.value,
+            focusSubject = settings.focusSubject.value,
+            phoneNumber = settings.phoneNumber.value,
+            activeExamId = settings.activeExamId.value,
+            dailyGoalQuestions = goal.dailyGoalQuestions,
+            currentStreakDays = goal.currentStreakDays,
+            longestStreakDays = goal.longestStreakDays,
+            todayStudyDate = goal.todayStudyDate,
+            todayAnsweredCount = goal.todayAnsweredCount,
+            lastGoalMetDate = goal.lastGoalMetDate
+        )
+        val planInfo = BulkQuestionParser.BackupPlanInfo(
+            planName = "ClinEdge Free",
+            status = "Active",
+            tier = "free",
+            appVersion = BuildConfig.VERSION_NAME
+        )
         return BulkQuestionParser.buildBackupJson(
             items = backupItems,
             questionExamLinks = linksByQuestion,
-            activeExamId = settings.activeExamId.value
+            activeExamId = settings.activeExamId.value,
+            studentInfo = studentInfo,
+            planInfo = planInfo
         )
     }
 
     fun restoreBackupFromText(jsonText: String) {
         viewModelScope.launch {
-            runCatching { repository.restoreBackup(jsonText, defaultExamId = settings.activeExamId.value) }
-                .onSuccess { count ->
-                    _importerState.update { it.copy(isVisible = false) }
-                    if (currentUserId.isNotBlank() && !isSigningOut) {
-                        performBidirectionalSync(showFeedbackToast = false)
+            runCatching {
+                repository.restoreBackupWithDetails(jsonText, defaultExamId = settings.activeExamId.value)
+            }.onSuccess { restored ->
+                restored.studentInfo?.let { st ->
+                    if (st.displayName.isNotBlank()) settings.setProfileName(st.displayName)
+                    if (st.role.isNotBlank()) settings.setProfileRole(st.role)
+                    if (st.targetYear.isNotBlank()) settings.setTargetYear(st.targetYear)
+                    if (st.focusSubject.isNotBlank()) settings.setFocusSubject(st.focusSubject)
+                    if (st.phoneNumber.isNotBlank()) {
+                        settings.setPhoneNumber(AccountSessionLogic.sanitizePhoneNumber(st.phoneNumber))
                     }
-                    showMessage("Backup restored ($count custom questions + progress synced).")
+                    val restoredGoal = DailyStudyGoalState(
+                        dailyGoalQuestions = st.dailyGoalQuestions.coerceIn(
+                            StudyGoalLogic.MIN_DAILY_GOAL,
+                            StudyGoalLogic.MAX_DAILY_GOAL
+                        ),
+                        todayStudyDate = StudyGoalLogic.sanitizeDateKey(st.todayStudyDate),
+                        todayAnsweredCount = st.todayAnsweredCount.coerceIn(0, StudyGoalLogic.MAX_COUNT_BOUND),
+                        currentStreakDays = st.currentStreakDays.coerceIn(0, StudyGoalLogic.MAX_COUNT_BOUND),
+                        longestStreakDays = st.longestStreakDays.coerceIn(0, StudyGoalLogic.MAX_COUNT_BOUND),
+                        lastGoalMetDate = StudyGoalLogic.sanitizeDateKey(st.lastGoalMetDate)
+                    )
+                    settings.setStudyGoalState(
+                        StudyGoalLogic.mergeCloudGoalState(settings.studyGoalState.value, restoredGoal)
+                    )
                 }
-                .onFailure {
-                    showMessage("Failed to restore backup: ${it.message}")
+                restored.activeExamId?.takeIf { it.isNotBlank() }?.let { examId ->
+                    settings.setActiveExamId(examId)
                 }
+                _importerState.update { it.copy(isVisible = false) }
+                if (currentUserId.isNotBlank() && !isSigningOut) {
+                    scheduleProfileCloudPush()
+                    performBidirectionalSync(showFeedbackToast = false)
+                }
+                val profileSummary = restored.studentInfo?.displayName?.takeIf { it.isNotBlank() }
+                    ?.let { " • Profile: $it" }
+                    .orEmpty()
+                val planSummary = restored.planInfo?.planName?.takeIf { it.isNotBlank() }
+                    ?.let { " ($it)" }
+                    .orEmpty()
+                showMessage(
+                    "Backup restored (${restored.customQuestions.size} custom Qs, ${restored.progressList.size} progress items$profileSummary$planSummary)."
+                )
+            }.onFailure {
+                showMessage("Failed to restore backup: ${it.message}")
+            }
         }
     }
 
@@ -1835,11 +2069,16 @@ class MainViewModel(
             config.includeAnswerKey -> "Mock Test Booklet (Answer Key Included)"
             else -> "Practice Question Sheet"
         }
+        val studentName = settings.profileName.value.trim()
+            .ifBlank { signedInAccount.displayName.trim() }
         val options = PdfWorksheetOptions(
             title = "$sourceTitle Worksheet",
             subtitle = "Difficulty: $diffLabel  •  Format: $modeLabel",
             inlineAnswers = config.inlineAnswers,
-            includeAnswerKey = config.includeAnswerKey
+            includeAnswerKey = config.includeAnswerKey,
+            watermarkStudentName = studentName,
+            watermarkPlanName = "ClinEdge Free",
+            watermarkEmail = signedInAccount.email
         )
 
         viewModelScope.launch {

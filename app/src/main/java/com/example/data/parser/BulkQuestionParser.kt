@@ -279,10 +279,35 @@ object BulkQuestionParser {
         return list
     }
 
+    data class BackupStudentInfo(
+        val displayName: String = "",
+        val email: String = "",
+        val role: String = "",
+        val targetYear: String = "",
+        val focusSubject: String = "",
+        val phoneNumber: String = "",
+        val activeExamId: String = PlatformCatalogDefaults.EXAM_RRB_NURSING,
+        val dailyGoalQuestions: Int = 25,
+        val currentStreakDays: Int = 0,
+        val longestStreakDays: Int = 0,
+        val todayStudyDate: String = "",
+        val todayAnsweredCount: Int = 0,
+        val lastGoalMetDate: String = ""
+    )
+
+    data class BackupPlanInfo(
+        val planName: String = "ClinEdge Free",
+        val status: String = "Active",
+        val tier: String = "free",
+        val appVersion: String = ""
+    )
+
     fun buildBackupJson(
         items: List<QuestionItem>,
         questionExamLinks: Map<String, List<String>> = emptyMap(),
-        activeExamId: String = PlatformCatalogDefaults.EXAM_RRB_NURSING
+        activeExamId: String = PlatformCatalogDefaults.EXAM_RRB_NURSING,
+        studentInfo: BackupStudentInfo? = null,
+        planInfo: BackupPlanInfo = BackupPlanInfo()
     ): String {
         val root = JSONObject()
         val customArr = JSONArray()
@@ -332,9 +357,41 @@ object BulkQuestionParser {
             }
         }
 
-        root.put("version", 3)
+        root.put("version", 4)
+        root.put("app", "ClinEdge")
         root.put("activeExamId", activeExamId)
         root.put("exportedAt", System.currentTimeMillis())
+
+        val resolvedStudent = studentInfo ?: BackupStudentInfo(activeExamId = activeExamId)
+        root.put(
+            "student",
+            JSONObject().apply {
+                put("displayName", resolvedStudent.displayName)
+                put("email", resolvedStudent.email)
+                put("role", resolvedStudent.role)
+                put("targetYear", resolvedStudent.targetYear)
+                put("focusSubject", resolvedStudent.focusSubject)
+                put("phoneNumber", resolvedStudent.phoneNumber)
+                put("activeExamId", resolvedStudent.activeExamId.ifBlank { activeExamId })
+                put("dailyGoalQuestions", resolvedStudent.dailyGoalQuestions)
+                put("currentStreakDays", resolvedStudent.currentStreakDays)
+                put("longestStreakDays", resolvedStudent.longestStreakDays)
+                put("todayStudyDate", resolvedStudent.todayStudyDate)
+                put("todayAnsweredCount", resolvedStudent.todayAnsweredCount)
+                put("lastGoalMetDate", resolvedStudent.lastGoalMetDate)
+            }
+        )
+
+        root.put(
+            "plan",
+            JSONObject().apply {
+                put("planName", planInfo.planName)
+                put("status", planInfo.status)
+                put("tier", planInfo.tier)
+                put("appVersion", planInfo.appVersion)
+            }
+        )
+
         root.put("customQB", customArr)
         root.put("bookmarks", bookmarksArr)
         root.put("progress", progressArr)
@@ -345,7 +402,9 @@ object BulkQuestionParser {
         val customQuestions: List<Question>,
         val progressList: List<QuestionProgressEntity>,
         val customQuestionExamIds: Map<String, List<String>> = emptyMap(),
-        val activeExamId: String? = null
+        val activeExamId: String? = null,
+        val studentInfo: BackupStudentInfo? = null,
+        val planInfo: BackupPlanInfo? = null
     )
 
     fun parseBackupJson(jsonText: String): RestoredBackup {
@@ -415,11 +474,46 @@ object BulkQuestionParser {
 
         val parsedActiveExamId = root.optString("activeExamId", "").trim().takeIf { it.isNotBlank() }
 
+        val studentObj = root.optJSONObject("student")
+        val parsedStudent = if (studentObj != null) {
+            BackupStudentInfo(
+                displayName = studentObj.optString("displayName", "").trim(),
+                email = studentObj.optString("email", "").trim(),
+                role = studentObj.optString("role", "").trim(),
+                targetYear = studentObj.optString("targetYear", "").trim(),
+                focusSubject = studentObj.optString("focusSubject", "").trim(),
+                phoneNumber = studentObj.optString("phoneNumber", "").trim(),
+                activeExamId = studentObj.optString("activeExamId", parsedActiveExamId ?: PlatformCatalogDefaults.EXAM_RRB_NURSING).trim(),
+                dailyGoalQuestions = studentObj.optInt("dailyGoalQuestions", 25),
+                currentStreakDays = studentObj.optInt("currentStreakDays", 0),
+                longestStreakDays = studentObj.optInt("longestStreakDays", 0),
+                todayStudyDate = studentObj.optString("todayStudyDate", "").trim(),
+                todayAnsweredCount = studentObj.optInt("todayAnsweredCount", 0),
+                lastGoalMetDate = studentObj.optString("lastGoalMetDate", "").trim()
+            )
+        } else {
+            null
+        }
+
+        val planObj = root.optJSONObject("plan")
+        val parsedPlan = if (planObj != null) {
+            BackupPlanInfo(
+                planName = planObj.optString("planName", "ClinEdge Free").trim().ifBlank { "ClinEdge Free" },
+                status = planObj.optString("status", "Active").trim().ifBlank { "Active" },
+                tier = planObj.optString("tier", "free").trim().ifBlank { "free" },
+                appVersion = planObj.optString("appVersion", "").trim()
+            )
+        } else {
+            null
+        }
+
         return RestoredBackup(
             customQuestions = customQuestions,
             progressList = progressMap.values.toList(),
             customQuestionExamIds = customExamMap,
-            activeExamId = parsedActiveExamId
+            activeExamId = parsedActiveExamId ?: parsedStudent?.activeExamId?.takeIf { it.isNotBlank() },
+            studentInfo = parsedStudent,
+            planInfo = parsedPlan
         )
     }
 }

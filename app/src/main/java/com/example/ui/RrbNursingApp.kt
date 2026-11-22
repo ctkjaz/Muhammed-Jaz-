@@ -4,8 +4,10 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.net.Uri
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,13 +29,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.MonitorHeart
-import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Analytics
@@ -44,7 +43,7 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -84,13 +83,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.R
+import com.example.data.backup.BackupStorageManager
 import com.example.data.cloud.CloudSyncRepository
 import com.example.data.local.AppDatabase
+import com.example.data.local.ProfileAvatarStorage
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.data.repository.NursingPrepRepository
 import com.example.ui.auth.authStateFlow
 import com.example.ui.auth.signOut
+import com.example.ui.components.AppUpdateAvailableDialog
 import com.example.ui.components.ExamPickerModalSheet
 import com.example.ui.components.ImporterModalSheet
 import com.example.ui.components.PdfExportModalSheet
@@ -118,9 +120,6 @@ import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
 fun ClinEdgeRootApp(auth: FirebaseAuth = Firebase.auth) {
@@ -173,6 +172,7 @@ private fun AuthenticatedClinEdgeApp(user: FirebaseUser) {
                 val repository = NursingPrepRepository(app, localDb.questionDao())
                 val settings = SettingsPreferences(app)
                 val cloudSync = CloudSyncRepository(firestore)
+                val backupStorage = BackupStorageManager(app)
                 MainViewModel(
                     repository = repository,
                     settings = settings,
@@ -180,7 +180,8 @@ private fun AuthenticatedClinEdgeApp(user: FirebaseUser) {
                     currentUserId = uid,
                     accountDisplayName = displayName,
                     accountEmail = email,
-                    accountPhotoUrl = photoUrl
+                    accountPhotoUrl = photoUrl,
+                    backupStorage = backupStorage
                 )
             }
         }
@@ -220,6 +221,7 @@ fun RrbNursingApp(vm: MainViewModel) {
         val targetYear by vm.targetYear.collectAsStateWithLifecycle()
         val focusSubject by vm.focusSubject.collectAsStateWithLifecycle()
         val phoneNumber by vm.phoneNumber.collectAsStateWithLifecycle()
+        val profileAvatarPath by vm.profileAvatarPath.collectAsStateWithLifecycle()
         val useTimeLimit by vm.useTimeLimit.collectAsStateWithLifecycle()
         val secondsPerQuestion by vm.secondsPerQuestion.collectAsStateWithLifecycle()
         val keepScreenOn by vm.keepScreenOn.collectAsStateWithLifecycle()
@@ -227,6 +229,9 @@ fun RrbNursingApp(vm: MainViewModel) {
         val studyGoal by vm.studyGoalState.collectAsStateWithLifecycle()
         val snackbarMessage by vm.snackbarMessage.collectAsStateWithLifecycle()
         val cloudSyncState by vm.cloudSyncState.collectAsStateWithLifecycle()
+        val backupFolderSummary by vm.backupFolderSummary.collectAsStateWithLifecycle()
+        val isBackupBusy by vm.isBackupBusy.collectAsStateWithLifecycle()
+        val appUpdateState by vm.appUpdateState.collectAsStateWithLifecycle()
         val forcedSignOutEvent by vm.forcedSignOutEvent.collectAsStateWithLifecycle()
         val signedInAccount = vm.signedInAccount
 
@@ -274,19 +279,24 @@ fun RrbNursingApp(vm: MainViewModel) {
             }
         }
 
-        // Zero-permission SAF Backup Export & Restore
-        val exportLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("application/json")
-        ) { uri ->
-            if (uri != null) {
-                runCatching {
-                    val json = vm.buildBackupJson()
-                    context.contentResolver.openOutputStream(uri)?.use { out ->
-                        out.write(json.toByteArray(Charsets.UTF_8))
-                    }
-                    vm.showMessage("Backup exported successfully!")
-                }.onFailure {
-                    vm.showMessage("Export failed: ${it.message}")
+        // Zero-permission SAF Backup Directory Picker
+        val backupFolderLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocumentTree()
+        ) { treeUri ->
+            if (treeUri != null) {
+                vm.onBackupFolderSelected(treeUri)
+            }
+        }
+
+        // Zero-permission Android Photo Picker for Optional Profile Picture
+        val profilePhotoLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.PickVisualMedia()
+        ) { photoUri ->
+            if (photoUri != null) {
+                scope.launch {
+                    ProfileAvatarStorage.savePickedAvatar(context, photoUri)
+                        .onSuccess { savedPath -> vm.onProfileAvatarSaved(savedPath) }
+                        .onFailure { err -> vm.showMessage("Could not save photo: ${err.message}") }
                 }
             }
         }
@@ -365,6 +375,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                     profileRole = profileRole,
                     targetYear = targetYear,
                     focusSubject = focusSubject,
+                    avatarPath = profileAvatarPath,
                     account = signedInAccount,
                     cloudSyncState = cloudSyncState,
                     studyGoal = studyGoal,
@@ -422,97 +433,91 @@ fun RrbNursingApp(vm: MainViewModel) {
                     snackbarHost = { SnackbarHost(snackbarHostState) },
                     topBar = {
                         if (!inActiveSession && !isSettingsOpen && !isProfileOpen) {
-                            TopAppBar(
-                                colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.surface
-                                ),
-                                navigationIcon = {
-                                    IconButton(
-                                        onClick = { scope.launch { drawerState.open() } },
-                                        modifier = Modifier
-                                            .padding(start = 4.dp)
-                                            .testTag("top_profile_avatar_btn")
-                                    ) {
-                                        ProfileAvatarCircle(
-                                            name = profileName,
-                                            size = 36.dp
-                                        )
-                                    }
-                                },
-                                title = {
-                                    val activeExamShort = state.activeExam?.shortName ?: "RRB Nursing"
-                                    val approxCount = formatApproxQuestionCount(state.overall.totalQuestions)
-                                    Column(
-                                        modifier = Modifier
-                                            .heightIn(min = 48.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .clickable(onClick = vm::openExamPicker)
-                                            .padding(horizontal = 4.dp, vertical = 4.dp)
-                                            .testTag("top_exam_picker_btn"),
-                                        verticalArrangement = Arrangement.Center
-                                    ) {
-                                        Text(
-                                            text = "ClinEdge",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = "$activeExamShort • $approxCount",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                fontWeight = FontWeight.SemiBold,
-                                                maxLines = 1
-                                            )
-                                            Icon(
-                                                imageVector = Icons.Filled.KeyboardArrowDown,
-                                                contentDescription = "Switch active exam",
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(16.dp)
+                            Column {
+                                TopAppBar(
+                                    colors = TopAppBarDefaults.topAppBarColors(
+                                        containerColor = MaterialTheme.colorScheme.surface
+                                    ),
+                                    navigationIcon = {
+                                        IconButton(
+                                            onClick = { scope.launch { drawerState.open() } },
+                                            modifier = Modifier
+                                                .padding(start = 4.dp)
+                                                .testTag("top_profile_avatar_btn")
+                                        ) {
+                                            ProfileAvatarCircle(
+                                                name = profileName,
+                                                size = 36.dp,
+                                                avatarPath = profileAvatarPath
                                             )
                                         }
-                                    }
-                                },
-                            actions = {
-                                IconButton(
-                                    onClick = { vm.openPdfExport() },
-                                    modifier = Modifier.testTag("top_export_pdf_btn")
-                                ) {
-                                    Icon(Icons.Filled.PictureAsPdf, contentDescription = "Export PDF worksheet")
-                                }
-                                FilledTonalIconButton(
-                                    onClick = { vm.openImporter() },
-                                    modifier = Modifier.testTag("top_import_btn")
-                                ) {
-                                    Icon(Icons.Filled.Add, contentDescription = "Import questions")
-                                }
-                                IconButton(
-                                    onClick = { vm.selectTab(MainTab.DECK) },
-                                    modifier = Modifier.testTag("top_bookmarks_btn")
-                                ) {
-                                    BadgedBox(
-                                        badge = {
-                                            if (state.overall.bookmarkCount > 0) {
-                                                Badge { Text("${state.overall.bookmarkCount}") }
+                                    },
+                                    title = {
+                                        val activeExamShort = state.activeExam?.shortName ?: "RRB Nursing"
+                                        val approxCount = formatApproxQuestionCount(state.overall.totalQuestions)
+                                        Column(
+                                            modifier = Modifier
+                                                .heightIn(min = 48.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .clickable(onClick = vm::openExamPicker)
+                                                .padding(horizontal = 4.dp, vertical = 4.dp)
+                                                .testTag("top_exam_picker_btn"),
+                                            verticalArrangement = Arrangement.Center
+                                        ) {
+                                            Text(
+                                                text = "ClinEdge",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = "$activeExamShort • $approxCount",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1
+                                                )
+                                                Icon(
+                                                    imageVector = Icons.Filled.KeyboardArrowDown,
+                                                    contentDescription = "Switch active exam",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
                                             }
                                         }
-                                    ) {
-                                        Icon(Icons.Filled.Bookmark, contentDescription = "Revision Deck")
+                                    },
+                                    actions = {
+                                        IconButton(
+                                            onClick = { vm.selectTab(MainTab.DECK) },
+                                            modifier = Modifier.testTag("top_bookmarks_btn")
+                                        ) {
+                                            BadgedBox(
+                                                badge = {
+                                                    if (state.overall.bookmarkCount > 0) {
+                                                        Badge { Text("${state.overall.bookmarkCount}") }
+                                                    }
+                                                }
+                                            ) {
+                                                Icon(Icons.Filled.Bookmark, contentDescription = "Revision Deck")
+                                            }
+                                        }
+                                        IconButton(
+                                            onClick = vm::openSettings,
+                                            modifier = Modifier.testTag("top_settings_btn")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Settings,
+                                                contentDescription = "Settings"
+                                            )
+                                        }
                                     }
-                                }
-                                IconButton(
-                                    onClick = vm::openSettings,
-                                    modifier = Modifier.testTag("top_settings_btn")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Settings,
-                                        contentDescription = "Settings"
-                                    )
-                                }
+                                )
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                                )
                             }
-                        )
-                    }
-                },
+                        }
+                    },
                 bottomBar = {
                     if (!inActiveSession && !useRail) {
                         NavigationBar {
@@ -596,6 +601,9 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     negativeMarking = negMarking,
                                     keepScreenOn = keepScreenOn,
                                     dailyGoalQuestions = studyGoal.dailyGoalQuestions,
+                                    backupFolderSummary = backupFolderSummary,
+                                    isBackupBusy = isBackupBusy,
+                                    appUpdateState = appUpdateState,
                                     onProfileNameChange = vm::setProfileName,
                                     onThemePreferenceChange = vm::setThemePreference,
                                     onUseTimeLimitChange = vm::setUseTimeLimit,
@@ -604,8 +612,17 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     onKeepScreenOnChange = vm::setKeepScreenOn,
                                     onDailyGoalChange = vm::setDailyGoalQuestions,
                                     onReopenOnboarding = vm::reopenOnboarding,
+                                    onChooseBackupFolder = { backupFolderLauncher.launch(null) },
+                                    onResetBackupFolder = vm::resetBackupFolderToDefault,
+                                    onCreateBackup = vm::createBackupInActiveFolder,
+                                    onRestoreLatestBackup = vm::restoreLatestFromActiveFolder,
+                                    onPickRestoreFile = {
+                                        restoreLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                                    },
                                     onOpenImporter = vm::openImporter,
                                     onOpenPdfExport = { vm.openPdfExport() },
+                                    onCheckForUpdates = { vm.checkForAppUpdates(userInitiated = true) },
+                                    onOpenUpdateDialog = vm::openUpdateDialog,
                                     onResetStatistics = vm::clearAllStatistics,
                                     onBack = vm::closeSettings
                                 )
@@ -618,6 +635,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     targetYear = targetYear,
                                     focusSubject = focusSubject,
                                     phoneNumber = phoneNumber,
+                                    avatarPath = profileAvatarPath,
                                     currentDeviceName = vm.currentDeviceName,
                                     account = signedInAccount,
                                     cloudSyncState = cloudSyncState,
@@ -628,6 +646,17 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     onTargetYearChange = vm::setTargetYear,
                                     onFocusSubjectChange = vm::setFocusSubject,
                                     onPhoneNumberChange = vm::setPhoneNumber,
+                                    onPickProfilePhoto = {
+                                        profilePhotoLauncher.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                        )
+                                    },
+                                    onRemoveProfilePhoto = {
+                                        scope.launch {
+                                            ProfileAvatarStorage.removeAvatar(context, profileAvatarPath)
+                                            vm.onProfileAvatarRemoved()
+                                        }
+                                    },
                                     onDailyGoalChange = vm::setDailyGoalQuestions,
                                     onStartDailyGoalDrill = {
                                         vm.closeProfile()
@@ -672,8 +701,6 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onAdjustDailyGoal = vm::openSettings,
                                         onOpenSubjectSection = vm::openSubjectHub,
                                         onSelectTab = vm::selectTab,
-                                        onOpenImporter = vm::openImporter,
-                                        onOpenPdfExport = { vm.openPdfExport() },
                                         onStartDrill = { list, title -> vm.startPractice(list, title) }
                                     )
 
@@ -740,16 +767,21 @@ fun RrbNursingApp(vm: MainViewModel) {
             ImporterModalSheet(
                 state = importerState,
                 activeExamShortName = state.activeExam?.shortName ?: "RRB Nursing",
+                backupFolderSummary = backupFolderSummary,
+                isBackupBusy = isBackupBusy,
                 onUpdate = vm::updateImporter,
                 onPreviewPdf = vm::previewPdfTextImport,
                 onCommitPdf = vm::commitPreviewImport,
                 onImportJson = vm::importJsonBatch,
-                onExportBackup = {
-                    val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-                    exportLauncher.launch("clinedge-backup-$dateStr.json")
-                },
+                onChooseBackupFolder = { backupFolderLauncher.launch(null) },
+                onResetBackupFolder = vm::resetBackupFolderToDefault,
+                onExportBackup = vm::createBackupInActiveFolder,
                 onRestoreBackup = {
-                    restoreLauncher.launch(arrayOf("application/json", "text/plain"))
+                    if (backupFolderSummary.backupCount > 0) {
+                        vm.restoreLatestFromActiveFolder()
+                    } else {
+                        restoreLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                    }
                 },
                 onOpenPdfExport = {
                     vm.closeImporter()
@@ -784,6 +816,22 @@ fun RrbNursingApp(vm: MainViewModel) {
                     pdfExportLauncher.launch(suggestedPdfName)
                 },
                 onDismiss = vm::closePdfExport
+            )
+
+            AppUpdateAvailableDialog(
+                updateState = appUpdateState,
+                onDownloadUpdate = {
+                    val url = appUpdateState.downloadUrl.ifBlank { appUpdateState.releasePageUrl }
+                    vm.dismissUpdateDialog()
+                    if (url.startsWith("https://")) {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        }.onFailure {
+                            vm.showMessage("Could not open browser for update link.")
+                        }
+                    }
+                },
+                onDismiss = vm::dismissUpdateDialog
             )
             }
         }

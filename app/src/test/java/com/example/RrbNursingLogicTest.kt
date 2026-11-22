@@ -28,11 +28,14 @@ import com.example.data.model.SessionCheckResult
 import com.example.data.model.StudyGoalLogic
 import com.example.data.parser.BulkQuestionParser
 import com.example.data.repository.NursingPrepRepository
+import com.example.data.update.AppUpdateStatus
+import com.example.data.update.AppUpdateVersionLogic
 import com.example.ui.components.formatApproxQuestionCount
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -1192,6 +1195,88 @@ class RrbNursingLogicTest {
 
         reloaded.resetGoalStateForAccountSwitch()
         assertEquals("", reloaded.phoneNumber.value)
+    }
+
+    @Test
+    fun backupV4IncludesStudentAndPlanInfoAndParsesGitHubReleaseJson() {
+        val customQ = Question(
+            id = "C_V4_TEST",
+            category = "nur",
+            shiftYear = "",
+            subject = "MSN",
+            difficulty = QuestionDifficulty.MEDIUM,
+            questionText = "Which electrolyte imbalance causes peaked T waves?",
+            options = listOf("Hyponatremia", "Hyperkalemia", "Hypocalcemia", "Hypomagnesemia"),
+            correctIndex = 1,
+            explanation = "Hyperkalemia produces tall peaked T waves on ECG.",
+            isCustom = true
+        )
+        val item = QuestionItem(
+            question = customQ,
+            progress = QuestionProgress(
+                questionId = "C_V4_TEST",
+                isBookmarked = true,
+                attemptsCount = 3,
+                correctCount = 2,
+                wrongCount = 1,
+                lastOutcome = "right",
+                updatedAt = 1700000000000L
+            )
+        )
+        val student = BulkQuestionParser.BackupStudentInfo(
+            displayName = "Ananya Nair",
+            email = "ananya@example.com",
+            role = "B.Sc. Nursing",
+            targetYear = "2026",
+            focusSubject = "MSN",
+            phoneNumber = "+919876543210",
+            activeExamId = "aiims_norcet",
+            dailyGoalQuestions = 40,
+            currentStreakDays = 6,
+            longestStreakDays = 14
+        )
+        val plan = BulkQuestionParser.BackupPlanInfo(
+            planName = "ClinEdge Free",
+            status = "Active",
+            tier = "free",
+            appVersion = "1.6"
+        )
+
+        val serialized = BulkQuestionParser.buildBackupJson(
+            items = listOf(item),
+            questionExamLinks = mapOf("C_V4_TEST" to listOf("aiims_norcet")),
+            activeExamId = "aiims_norcet",
+            studentInfo = student,
+            planInfo = plan
+        )
+        val restored = BulkQuestionParser.parseBackupJson(serialized)
+        assertEquals("aiims_norcet", restored.activeExamId)
+        assertNotNull(restored.studentInfo)
+        assertEquals("Ananya Nair", restored.studentInfo?.displayName)
+        assertEquals("B.Sc. Nursing", restored.studentInfo?.role)
+        assertEquals(40, restored.studentInfo?.dailyGoalQuestions)
+        assertNotNull(restored.planInfo)
+        assertEquals("ClinEdge Free", restored.planInfo?.planName)
+        assertEquals("1.6", restored.planInfo?.appVersion)
+
+        val releaseJson = """
+            {
+              "tag_name": "v1.7",
+              "name": "ClinEdge v1.7",
+              "body": "NORCET clinical bank update",
+              "html_url": "https://github.com/ctkjaz/Muhammed-Jaz-/releases/tag/v1.7",
+              "assets": [
+                {
+                  "name": "ClinEdge-v1.7.apk",
+                  "browser_download_url": "https://github.com/ctkjaz/Muhammed-Jaz-/releases/download/v1.7/ClinEdge-v1.7.apk"
+                }
+              ]
+            }
+        """.trimIndent()
+        val parsedUpdate = AppUpdateVersionLogic.parseGitHubReleaseJson(releaseJson, currentVersion = "1.6")
+        assertEquals(AppUpdateStatus.UPDATE_AVAILABLE, parsedUpdate.status)
+        assertEquals("1.7", parsedUpdate.latestVersion)
+        assertTrue(parsedUpdate.downloadUrl.endsWith("ClinEdge-v1.7.apk"))
     }
 }
 

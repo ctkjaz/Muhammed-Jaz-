@@ -31,11 +31,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Person
@@ -92,6 +95,7 @@ fun ProfileDrawerContent(
     profileRole: String,
     targetYear: String,
     focusSubject: String,
+    avatarPath: String = "",
     account: SignedInAccountInfo,
     cloudSyncState: CloudSyncUiState,
     studyGoal: DailyStudyGoalState,
@@ -152,6 +156,7 @@ fun ProfileDrawerContent(
                         ProfileAvatarCircle(
                             name = profileName,
                             size = 58.dp,
+                            avatarPath = avatarPath,
                             modifier = Modifier.testTag("drawer_profile_avatar_circle")
                         )
                         Column(
@@ -474,6 +479,7 @@ fun ProfileScreen(
     targetYear: String,
     focusSubject: String,
     phoneNumber: String,
+    avatarPath: String = "",
     currentDeviceName: String,
     account: SignedInAccountInfo,
     cloudSyncState: CloudSyncUiState,
@@ -484,6 +490,8 @@ fun ProfileScreen(
     onTargetYearChange: (String) -> Unit,
     onFocusSubjectChange: (String) -> Unit,
     onPhoneNumberChange: (String) -> Unit,
+    onPickProfilePhoto: () -> Unit = {},
+    onRemoveProfilePhoto: () -> Unit = {},
     onDailyGoalChange: (Int) -> Unit,
     onStartDailyGoalDrill: () -> Unit,
     onOpenExamPicker: () -> Unit,
@@ -569,11 +577,68 @@ fun ProfileScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        ProfileAvatarCircle(
-                            name = profileName,
-                            size = 78.dp,
-                            modifier = Modifier.testTag("profile_hero_avatar_circle")
-                        )
+                        Box(
+                            contentAlignment = Alignment.BottomEnd,
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable(onClick = onPickProfilePhoto)
+                                .testTag("profile_avatar_picker_trigger")
+                        ) {
+                            ProfileAvatarCircle(
+                                name = profileName,
+                                size = 86.dp,
+                                avatarPath = avatarPath,
+                                modifier = Modifier.testTag("profile_hero_avatar_circle")
+                            )
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary,
+                                border = BorderStroke(2.dp, MaterialTheme.colorScheme.surface),
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Filled.AddAPhoto,
+                                        contentDescription = "Add or change profile picture",
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(
+                                onClick = onPickProfilePhoto,
+                                modifier = Modifier.testTag("profile_pick_photo_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.AddAPhoto,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(if (avatarPath.isBlank()) "Add Photo" else "Change Photo")
+                            }
+                            if (avatarPath.isNotBlank()) {
+                                TextButton(
+                                    onClick = onRemoveProfilePhoto,
+                                    modifier = Modifier.testTag("profile_remove_photo_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.DeleteOutline,
+                                        contentDescription = null,
+                                        tint = editorial.wrongText,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Remove", color = editorial.wrongText)
+                                }
+                            }
+                        }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
                                 text = displayName,

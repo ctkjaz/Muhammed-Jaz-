@@ -1,12 +1,15 @@
 package com.example.ui.components
 
+import android.graphics.BitmapFactory
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -35,16 +38,20 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.io.File
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
@@ -79,6 +86,7 @@ fun formatApproxQuestionCount(total: Int, verbose: Boolean = false): String {
 fun ProfileAvatarCircle(
     name: String,
     size: Dp = 40.dp,
+    avatarPath: String = "",
     modifier: Modifier = Modifier
 ) {
     val initials = name.trim()
@@ -87,6 +95,21 @@ fun ProfileAvatarCircle(
         .take(2)
         .mapNotNull { it.firstOrNull()?.uppercaseChar() }
         .joinToString("")
+
+    val avatarBitmap = remember(avatarPath) {
+        if (avatarPath.isBlank()) {
+            null
+        } else {
+            runCatching {
+                val file = File(avatarPath)
+                if (file.exists() && file.length() > 0L) {
+                    BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
+                } else {
+                    null
+                }
+            }.getOrNull()
+        }
+    }
 
     Box(
         modifier = modifier
@@ -100,7 +123,14 @@ fun ProfileAvatarCircle(
             ),
         contentAlignment = Alignment.Center
     ) {
-        if (initials.isNotEmpty()) {
+        if (avatarBitmap != null) {
+            Image(
+                bitmap = avatarBitmap,
+                contentDescription = "Profile picture",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (initials.isNotEmpty()) {
             Text(
                 text = initials,
                 color = WarmWhite,
