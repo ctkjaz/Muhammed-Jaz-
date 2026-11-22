@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -97,6 +98,8 @@ import com.example.data.local.ThemePreference
 import com.example.data.model.ExamStage
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.repository.NursingPrepRepository
+import com.example.data.subscription.DeviceLockManager
+import com.example.data.subscription.SubscriptionRepository
 import com.example.data.update.AppUpdateVersionLogic
 import com.example.ui.auth.authStateFlow
 import com.example.ui.auth.signOut
@@ -107,12 +110,16 @@ import com.example.ui.components.ImporterModalSheet
 import com.example.ui.components.PdfExportModalSheet
 import com.example.ui.components.ProfileAvatarCircle
 import com.example.ui.components.TimedPracticeConfigDialog
+import com.example.ui.screens.AdminConsoleScreen
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.BookmarksScreen
 import com.example.ui.screens.CbtExamScreen
 import com.example.ui.screens.CbtHubScreen
 import com.example.ui.screens.DashboardScreen
+import com.example.ui.screens.DeviceLockSupportDialog
 import com.example.ui.screens.OnboardingScreen
+import com.example.ui.screens.PaywallPromptDialog
+import com.example.ui.screens.PlansAndAccessScreen
 import com.example.ui.screens.PracticeScreen
 import com.example.ui.screens.ProfileDrawerContent
 import com.example.ui.screens.ProfileScreen
@@ -182,6 +189,8 @@ private fun AuthenticatedClinEdgeApp(user: FirebaseUser) {
                 val settings = SettingsPreferences(app)
                 val cloudSync = CloudSyncRepository(firestore)
                 val backupStorage = BackupStorageManager(app)
+                val subscriptionRepo = SubscriptionRepository(firestore)
+                val deviceLockManager = DeviceLockManager(app)
                 MainViewModel(
                     repository = repository,
                     settings = settings,
@@ -190,7 +199,9 @@ private fun AuthenticatedClinEdgeApp(user: FirebaseUser) {
                     accountDisplayName = displayName,
                     accountEmail = email,
                     accountPhotoUrl = photoUrl,
-                    backupStorage = backupStorage
+                    backupStorage = backupStorage,
+                    subscriptionRepo = subscriptionRepo,
+                    deviceLockManager = deviceLockManager
                 )
             }
         }
@@ -216,6 +227,8 @@ fun RrbNursingApp(vm: MainViewModel) {
         val selectedTab by vm.selectedTab.collectAsStateWithLifecycle()
         val isSettingsOpen by vm.isSettingsOpen.collectAsStateWithLifecycle()
         val isProfileOpen by vm.isProfileOpen.collectAsStateWithLifecycle()
+        val isPlansOpen by vm.isPlansOpen.collectAsStateWithLifecycle()
+        val isAdminOpen by vm.isAdminOpen.collectAsStateWithLifecycle()
         val isExamPickerOpen by vm.isExamPickerOpen.collectAsStateWithLifecycle()
         val activeExamId by vm.activeExamId.collectAsStateWithLifecycle()
         val practicePathway by vm.practicePathway.collectAsStateWithLifecycle()
@@ -245,6 +258,12 @@ fun RrbNursingApp(vm: MainViewModel) {
         val isBackupBusy by vm.isBackupBusy.collectAsStateWithLifecycle()
         val appUpdateState by vm.appUpdateState.collectAsStateWithLifecycle()
         val forcedSignOutEvent by vm.forcedSignOutEvent.collectAsStateWithLifecycle()
+        val subscriptionState by vm.subscriptionState.collectAsStateWithLifecycle()
+        val paywallPrompt by vm.paywallPrompt.collectAsStateWithLifecycle()
+        val deviceLockConflict by vm.deviceLockConflict.collectAsStateWithLifecycle()
+        val isTrialBusy by vm.isTrialBusy.collectAsStateWithLifecycle()
+        val isRedeemBusy by vm.isRedeemBusy.collectAsStateWithLifecycle()
+        val adminState by vm.adminState.collectAsStateWithLifecycle()
         val signedInAccount = vm.signedInAccount
 
         val snackbarHostState = remember { SnackbarHostState() }
@@ -346,7 +365,18 @@ fun RrbNursingApp(vm: MainViewModel) {
             }
         }
 
+        // Zero-permission SAF Document Picker for Owner Admin OTA Question Packs (PDF / TXT / JSON)
+        val adminPackFileLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            if (uri != null) {
+                val fileName = resolveDisplayFileName(context, uri)
+                vm.adminExtractDocumentForPack(context, uri, fileName)
+            }
+        }
+
         val inActiveSession = practiceSession != null || cbtSession != null
+        val inSubScreen = isSettingsOpen || isProfileOpen || isPlansOpen || isAdminOpen
         val shouldKeepScreenOn = keepScreenOn && inActiveSession
 
         DisposableEffect(context, shouldKeepScreenOn) {
@@ -380,7 +410,7 @@ fun RrbNursingApp(vm: MainViewModel) {
 
         ModalNavigationDrawer(
             drawerState = drawerState,
-            gesturesEnabled = !inActiveSession && !isSettingsOpen && !isProfileOpen,
+            gesturesEnabled = !inActiveSession && !inSubScreen,
             drawerContent = {
                 ProfileDrawerContent(
                     profileName = profileName,
@@ -392,10 +422,17 @@ fun RrbNursingApp(vm: MainViewModel) {
                     cloudSyncState = cloudSyncState,
                     studyGoal = studyGoal,
                     state = state,
+                    subscription = subscriptionState,
                     onOpenFullProfile = {
                         scope.launch {
                             drawerState.close()
                             vm.openProfile()
+                        }
+                    },
+                    onOpenPlans = {
+                        scope.launch {
+                            drawerState.close()
+                            vm.openPlans()
                         }
                     },
                     onOpenExamPicker = {
@@ -445,7 +482,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                     containerColor = MaterialTheme.colorScheme.background,
                     snackbarHost = { SnackbarHost(snackbarHostState) },
                     topBar = {
-                        if (!inActiveSession && !isSettingsOpen && !isProfileOpen) {
+                        if (!inActiveSession && !inSubScreen) {
                             Column {
                                 TopAppBar(
                                     colors = TopAppBarDefaults.topAppBarColors(
@@ -552,7 +589,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                         }
                     },
                     bottomBar = {
-                        if (!inActiveSession && !useRail) {
+                        if (!inActiveSession && !isAdminOpen && !useRail) {
                             Column {
                                 HorizontalDivider(color = editorial.borderSubtle)
                                 NavigationBar(
@@ -560,7 +597,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     tonalElevation = 0.dp
                                 ) {
                                     MainTab.entries.forEach { tab ->
-                                        val selected = !isSettingsOpen && !isProfileOpen && tab == selectedTab
+                                        val selected = !inSubScreen && tab == selectedTab
                                         NavigationBarItem(
                                             selected = selected,
                                             onClick = { vm.selectTab(tab) },
@@ -595,13 +632,13 @@ fun RrbNursingApp(vm: MainViewModel) {
                             .fillMaxSize()
                             .padding(innerPadding)
                     ) {
-                        if (!inActiveSession && useRail) {
+                        if (!inActiveSession && !isAdminOpen && useRail) {
                             NavigationRail(
                                 containerColor = MaterialTheme.colorScheme.background
                             ) {
                                 Spacer(modifier = Modifier.weight(0.1f))
                                 MainTab.entries.forEach { tab ->
-                                    val selected = !isSettingsOpen && !isProfileOpen && tab == selectedTab
+                                    val selected = !inSubScreen && tab == selectedTab
                                     NavigationRailItem(
                                         selected = selected,
                                         onClick = { vm.selectTab(tab) },
@@ -653,9 +690,16 @@ fun RrbNursingApp(vm: MainViewModel) {
                                 }
 
                                 practiceSession != null -> {
+                                    val activeSession = practiceSession!!
+                                    val currentQ = activeSession.questions.getOrNull(activeSession.currentIndex)
+                                    val poolForBookmark = state.crossExamQuestions.ifEmpty { state.questions }
+                                    val isCurrentBookmarked = remember(currentQ?.id, poolForBookmark) {
+                                        if (currentQ == null) false
+                                        else poolForBookmark.firstOrNull { it.id == currentQ.id }?.isBookmarked ?: currentQ.isBookmarked
+                                    }
                                     PracticeScreen(
-                                        session = practiceSession!!,
-                                        allQuestions = state.crossExamQuestions.ifEmpty { state.questions },
+                                        session = activeSession,
+                                        isCurrentBookmarked = isCurrentBookmarked,
                                         negativeMarking = negMarking,
                                         onToggleNegativeMarking = vm::toggleNegativeMarking,
                                         onSelectOption = vm::answerPracticeQuestion,
@@ -666,6 +710,46 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onConfirmSubmit = vm::submitTimedPractice,
                                         onChangeReviewFilter = vm::setPracticeReviewFilter,
                                         onExit = vm::exitPracticeOrCbt
+                                    )
+                                }
+
+                                isAdminOpen && subscriptionState.isAdmin -> {
+                                    AdminConsoleScreen(
+                                        state = adminState,
+                                        config = subscriptionState.config,
+                                        onSelectTab = vm::selectAdminTab,
+                                        onRefresh = vm::refreshAdminDashboard,
+                                        onUpdateUserPlan = vm::adminGrantOrUpdateUserPlan,
+                                        onGenerateCode = vm::adminGenerateAccessCode,
+                                        onRevokeCode = vm::adminRevokeAccessCode,
+                                        onResetDeviceLock = vm::adminResetDeviceLock,
+                                        onSaveConfig = vm::adminSavePricingConfig,
+                                        onPickContentFile = {
+                                            adminPackFileLauncher.launch(
+                                                arrayOf("application/pdf", "text/plain", "application/json", "*/*")
+                                            )
+                                        },
+                                        onUpdateContentDraft = vm::adminUpdateContentDraft,
+                                        onPreviewContentPack = vm::adminPreviewContentPack,
+                                        onRemovePreviewQuestion = vm::adminRemovePreviewQuestion,
+                                        onPublishContentPack = vm::adminPublishContentPack,
+                                        onDeleteQuestionPack = vm::adminDeleteQuestionPack,
+                                        onShowMessage = vm::showMessage,
+                                        onBack = vm::closeAdminConsole
+                                    )
+                                }
+
+                                isPlansOpen -> {
+                                    PlansAndAccessScreen(
+                                        subscription = subscriptionState,
+                                        account = signedInAccount,
+                                        deviceName = vm.currentDeviceName,
+                                        isTrialBusy = isTrialBusy,
+                                        isRedeemBusy = isRedeemBusy,
+                                        onStartTrial = vm::claimThreeDayFreeTrial,
+                                        onRedeemCode = vm::redeemAccessCode,
+                                        onShowMessage = vm::showMessage,
+                                        onBack = vm::closePlans
                                     )
                                 }
 
@@ -681,6 +765,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         backupFolderSummary = backupFolderSummary,
                                         isBackupBusy = isBackupBusy,
                                         appUpdateState = appUpdateState,
+                                        subscription = subscriptionState,
                                         activeExamNegativeMarks = state.activeExam?.negativeMarks ?: 0.33,
                                         activeExamDefaultMinutes = state.activeExam?.defaultMockMinutes ?: 90,
                                         onProfileNameChange = vm::setProfileName,
@@ -691,6 +776,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onKeepScreenOnChange = vm::setKeepScreenOn,
                                         onDailyGoalChange = vm::setDailyGoalQuestions,
                                         onReopenOnboarding = vm::reopenOnboarding,
+                                        onOpenPlans = vm::openPlans,
+                                        onOpenAdminConsole = vm::openAdminConsole,
                                         onChooseBackupFolder = { backupFolderLauncher.launch(null) },
                                         onResetBackupFolder = vm::resetBackupFolderToDefault,
                                         onCreateBackup = vm::createBackupInActiveFolder,
@@ -730,6 +817,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         cloudSyncState = cloudSyncState,
                                         studyGoal = studyGoal,
                                         state = state,
+                                        subscription = subscriptionState,
                                         onProfileNameChange = vm::setProfileName,
                                         onProfileRoleChange = vm::setProfileRole,
                                         onTargetYearChange = vm::setTargetYear,
@@ -751,6 +839,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             vm.closeProfile()
                                             vm.startDailyGoalDrill()
                                         },
+                                        onOpenPlans = vm::openPlans,
                                         onOpenExamPicker = vm::openExamPicker,
                                         onPracticeSubject = { list, title ->
                                             vm.closeProfile()
@@ -800,7 +889,9 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onOpenSubjectSection = vm::openSubjectHub,
                                             onOpenSubjectPracticeMode = vm::openSubjectPracticeMode,
                                             onSelectTab = vm::selectTab,
-                                            onStartDrill = { list, title -> vm.startPractice(list, title) }
+                                            onStartDrill = { list, title -> vm.startPractice(list, title) },
+                                            subscription = subscriptionState,
+                                            onOpenPlans = vm::openPlans
                                         )
 
                                         MainTab.SUBJECTS -> SubjectsHubScreen(
@@ -946,6 +1037,26 @@ fun RrbNursingApp(vm: MainViewModel) {
                     },
                     onDismiss = vm::dismissUpdateDialog
                 )
+
+                paywallPrompt?.let { prompt ->
+                    PaywallPromptDialog(
+                        prompt = prompt,
+                        canStartTrial = !subscriptionState.trialUsed && !subscriptionState.isAdmin,
+                        onDismiss = vm::dismissPaywallPrompt,
+                        onOpenPlans = vm::openPlans,
+                        onStartTrial = vm::claimThreeDayFreeTrial
+                    )
+                }
+
+                deviceLockConflict?.let { conflict ->
+                    DeviceLockSupportDialog(
+                        conflict = conflict,
+                        subscription = subscriptionState,
+                        account = signedInAccount,
+                        onDismiss = vm::dismissDeviceLockConflict,
+                        onShowMessage = vm::showMessage
+                    )
+                }
             }
         }
     }
@@ -961,6 +1072,17 @@ private fun NavTabIcon(tab: MainTab, selected: Boolean) {
         MainTab.DECK -> if (selected) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder
     }
     Icon(imageVector = icon, contentDescription = tab.label)
+}
+
+private fun resolveDisplayFileName(context: Context, uri: Uri): String {
+    return runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0) cursor.getString(idx) else null
+            } else null
+        }
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment.orEmpty().substringAfterLast('/').ifBlank { "uploaded_pack.pdf" }
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {

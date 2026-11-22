@@ -2,12 +2,20 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "Authenticated learner profile, study preferences, and active exam track synced across devices. Clients must write FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "description": "Authenticated learner profile, study preferences, single-device session lock, and active exam track synced across devices. Clients must write FieldValue.serverTimestamp() for createdAt and updatedAt.",
       "type": "object",
       "properties": {
         "userId": {
           "type": "string",
           "description": "Firebase Auth UID of the profile owner."
+        },
+        "email": {
+          "type": "string",
+          "description": "Optional Google account email for owner admin lookup (max 120 chars)."
+        },
+        "lastDeviceHash": {
+          "type": "string",
+          "description": "Optional SHA-256 hex digest of device ANDROID_ID for support lookup (max 64 chars)."
         },
         "displayName": {
           "type": "string",
@@ -27,7 +35,7 @@
         },
         "activeExamId": {
           "type": "string",
-          "description": "Active exam track ID (e.g. rrb_nursing or aiims_norcet)."
+          "description": "Active exam track ID (e.g. rrb_nursing, aiims_norcet, or pgimer_nursing)."
         },
         "themePreference": {
           "type": "string",
@@ -36,7 +44,7 @@
         },
         "negativeMarking": {
           "type": "boolean",
-          "description": "Whether -1/3 negative marking is enabled."
+          "description": "Whether negative marking is enabled in practice."
         },
         "useTimeLimit": {
           "type": "boolean",
@@ -52,7 +60,7 @@
         },
         "onboardingCompleted": {
           "type": "boolean",
-          "description": "Optional flag indicating whether the learner finished or skipped the first-launch onboarding wizard."
+          "description": "Optional flag indicating whether the learner finished or skipped onboarding."
         },
         "dailyGoalQuestions": {
           "type": "integer",
@@ -80,11 +88,11 @@
         },
         "phoneNumber": {
           "type": "string",
-          "description": "Optional learner mobile number for profile contact (max 20 chars, no OTP required)."
+          "description": "Optional learner mobile number for profile contact (max 20 chars)."
         },
         "activeSessionId": {
           "type": "string",
-          "description": "Optional active single-device session UUID used to enforce 1 phone at a time (max 64 chars)."
+          "description": "Optional active single-device session UUID (max 64 chars)."
         },
         "activeDeviceName": {
           "type": "string",
@@ -127,49 +135,16 @@
       "description": "Per-question mastery, attempt counts, and bookmark state for a user. Clients must write FieldValue.serverTimestamp() for createdAt and updatedAt.",
       "type": "object",
       "properties": {
-        "userId": {
-          "type": "string",
-          "description": "Owner UID."
-        },
-        "questionId": {
-          "type": "string",
-          "description": "Question identifier matching the document ID."
-        },
-        "bookmarked": {
-          "type": "boolean",
-          "description": "Whether the question is saved in the revision deck."
-        },
-        "attemptsCount": {
-          "type": "integer",
-          "description": "Total number of attempts."
-        },
-        "correctCount": {
-          "type": "integer",
-          "description": "Total correct attempts."
-        },
-        "wrongCount": {
-          "type": "integer",
-          "description": "Total wrong attempts."
-        },
-        "lastOutcome": {
-          "type": "string",
-          "enum": ["right", "wrong"],
-          "description": "Optional latest outcome (omitted when unattempted or reset)."
-        },
-        "clientUpdatedAtMs": {
-          "type": "integer",
-          "description": "Client epoch milliseconds used for offline-first merge ordering."
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server creation timestamp (FieldValue.serverTimestamp())."
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server last update timestamp (FieldValue.serverTimestamp())."
-        }
+        "userId": { "type": "string" },
+        "questionId": { "type": "string" },
+        "bookmarked": { "type": "boolean" },
+        "attemptsCount": { "type": "integer" },
+        "correctCount": { "type": "integer" },
+        "wrongCount": { "type": "integer" },
+        "lastOutcome": { "type": "string", "enum": ["right", "wrong"] },
+        "clientUpdatedAtMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": [
         "userId",
@@ -188,56 +163,18 @@
       "description": "Completed CBT mock examination score history entry. Clients must write FieldValue.serverTimestamp() for createdAt and updatedAt.",
       "type": "object",
       "properties": {
-        "userId": {
-          "type": "string",
-          "description": "Owner UID."
-        },
-        "title": {
-          "type": "string",
-          "description": "Mock exam display title."
-        },
-        "examId": {
-          "type": "string",
-          "description": "Exam track ID associated with this mock."
-        },
-        "totalQuestions": {
-          "type": "integer",
-          "description": "Total questions in the mock."
-        },
-        "correctCount": {
-          "type": "integer",
-          "description": "Correctly answered questions."
-        },
-        "wrongCount": {
-          "type": "integer",
-          "description": "Incorrectly answered questions."
-        },
-        "skippedCount": {
-          "type": "integer",
-          "description": "Unanswered questions."
-        },
-        "netScore": {
-          "type": "number",
-          "description": "Net score after negative marking."
-        },
-        "accuracyPercent": {
-          "type": "integer",
-          "description": "Accuracy percentage (0-100)."
-        },
-        "completedAtMs": {
-          "type": "integer",
-          "description": "Completion epoch milliseconds."
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server creation timestamp (FieldValue.serverTimestamp())."
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server last update timestamp (FieldValue.serverTimestamp())."
-        }
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "examId": { "type": "string" },
+        "totalQuestions": { "type": "integer" },
+        "correctCount": { "type": "integer" },
+        "wrongCount": { "type": "integer" },
+        "skippedCount": { "type": "integer" },
+        "netScore": { "type": "number" },
+        "accuracyPercent": { "type": "integer" },
+        "completedAtMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": [
         "userId",
@@ -259,82 +196,24 @@
       "description": "User-imported custom MCQ synced across devices. Clients must write FieldValue.serverTimestamp() for createdAt and updatedAt.",
       "type": "object",
       "properties": {
-        "userId": {
-          "type": "string",
-          "description": "Owner UID."
-        },
-        "category": {
-          "type": "string",
-          "description": "Question category (pyq, nur, ca, gen)."
-        },
-        "shiftYear": {
-          "type": "string",
-          "description": "Shift/year tag if PYQ."
-        },
-        "subject": {
-          "type": "string",
-          "description": "Subject code."
-        },
-        "difficulty": {
-          "type": "string",
-          "enum": ["Easy", "Medium", "Hard"],
-          "description": "Question difficulty label."
-        },
-        "questionText": {
-          "type": "string",
-          "description": "Question stem text."
-        },
-        "options": {
-          "type": "array",
-          "description": "2 to 6 answer choice strings."
-        },
-        "correctIndex": {
-          "type": "integer",
-          "description": "Zero-based index of the correct option."
-        },
-        "explanation": {
-          "type": "string",
-          "description": "Clinical rationale or explanation."
-        },
-        "sourceStatus": {
-          "type": "string",
-          "enum": ["verified", "unverified"],
-          "description": "Verification status."
-        },
-        "sourceNote": {
-          "type": "string",
-          "description": "Reference note for verified sources."
-        },
-        "topicId": {
-          "type": "string",
-          "description": "Topic identifier."
-        },
-        "sourceType": {
-          "type": "string",
-          "description": "Source type database value."
-        },
-        "examYear": {
-          "type": "string",
-          "description": "Exam year."
-        },
-        "examShift": {
-          "type": "string",
-          "description": "Exam shift."
-        },
-        "examIds": {
-          "type": "array",
-          "description": "Exam track IDs linked to this custom question."
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server creation timestamp (FieldValue.serverTimestamp())."
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server last update timestamp (FieldValue.serverTimestamp())."
-        }
+        "userId": { "type": "string" },
+        "category": { "type": "string" },
+        "shiftYear": { "type": "string" },
+        "subject": { "type": "string" },
+        "difficulty": { "type": "string", "enum": ["Easy", "Medium", "Hard"] },
+        "questionText": { "type": "string" },
+        "options": { "type": "array" },
+        "correctIndex": { "type": "integer" },
+        "explanation": { "type": "string" },
+        "sourceStatus": { "type": "string", "enum": ["verified", "unverified"] },
+        "sourceNote": { "type": "string" },
+        "topicId": { "type": "string" },
+        "sourceType": { "type": "string" },
+        "examYear": { "type": "string" },
+        "examShift": { "type": "string" },
+        "examIds": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": [
         "userId",
@@ -356,32 +235,259 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "SubscriptionConfig": {
+      "title": "SubscriptionConfig",
+      "description": "Owner-editable INR pricing table, free tier daily quota, trial duration, support contact info, and OTA catalog version.",
+      "type": "object",
+      "properties": {
+        "singleExam1M": { "type": "integer" },
+        "singleExam3M": { "type": "integer" },
+        "singleExam6M": { "type": "integer" },
+        "singleExam1Y": { "type": "integer" },
+        "allExam1M": { "type": "integer" },
+        "allExam3M": { "type": "integer" },
+        "allExam6M": { "type": "integer" },
+        "allExam1Y": { "type": "integer" },
+        "freeDailyQuestionLimit": { "type": "integer" },
+        "trialDays": { "type": "integer" },
+        "supportWhatsAppNumber": { "type": "string" },
+        "supportEmail": { "type": "string" },
+        "catalogVersion": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "singleExam1M",
+        "singleExam3M",
+        "singleExam6M",
+        "singleExam1Y",
+        "allExam1M",
+        "allExam3M",
+        "allExam6M",
+        "allExam1Y",
+        "freeDailyQuestionLimit",
+        "trialDays",
+        "supportWhatsAppNumber",
+        "supportEmail",
+        "catalogVersion",
+        "updatedAt"
+      ]
+    },
+    "UserEntitlement": {
+      "title": "UserEntitlement",
+      "description": "Tamper-protected subscription and 3-day trial entitlement record for a user. Non-admin writes are permitted only via verified atomic transactions (free bootstrap, 3-day trial + device lock, or single-use access code redemption).",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "planTier": { "type": "string", "enum": ["free", "trial", "single_exam", "all_exam"] },
+        "unlockedExamIds": { "type": "array" },
+        "status": { "type": "string", "enum": ["active", "suspended", "expired"] },
+        "startsAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "trialUsed": { "type": "boolean" },
+        "trialDeviceHash": { "type": "string" },
+        "lastCodeId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "email",
+        "displayName",
+        "planTier",
+        "unlockedExamIds",
+        "status",
+        "trialUsed",
+        "trialDeviceHash",
+        "lastCodeId",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AccessCode": {
+      "title": "AccessCode",
+      "description": "Single-use post-payment access voucher generated by the owner admin and redeemed atomically by a learner.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "planTier": { "type": "string", "enum": ["single_exam", "all_exam"] },
+        "unlockedExamIds": { "type": "array" },
+        "tenureDays": { "type": "integer" },
+        "status": { "type": "string", "enum": ["active", "redeemed", "revoked"] },
+        "buyerNote": { "type": "string" },
+        "createdByEmail": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "redeemedByUid": { "type": "string" },
+        "redeemedByEmail": { "type": "string" },
+        "redeemedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "code",
+        "planTier",
+        "unlockedExamIds",
+        "tenureDays",
+        "status",
+        "buyerNote",
+        "createdByEmail",
+        "createdAt"
+      ]
+    },
+    "DeviceTrialLock": {
+      "title": "DeviceTrialLock",
+      "description": "One-time physical device trial lock keyed by SHA-256 hash of ANDROID_ID (no raw PII stored; admin can delete to reset lock).",
+      "type": "object",
+      "properties": {
+        "deviceHash": { "type": "string" },
+        "shortDeviceCode": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "maskedEmail": { "type": "string" },
+        "deviceName": { "type": "string" },
+        "claimedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "deviceHash",
+        "shortDeviceCode",
+        "ownerUid",
+        "maskedEmail",
+        "deviceName",
+        "claimedAt"
+      ]
+    },
+    "QuestionPack": {
+      "title": "QuestionPack",
+      "description": "Admin-published over-the-air question pack metadata synced into student local Room storage.",
+      "type": "object",
+      "properties": {
+        "packId": { "type": "string" },
+        "title": { "type": "string" },
+        "examId": { "type": "string" },
+        "stage": { "type": "string", "enum": ["all", "prelims", "mains"] },
+        "subject": { "type": "string" },
+        "questionCount": { "type": "integer" },
+        "isPremiumOnly": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["draft", "published"] },
+        "version": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "packId",
+        "title",
+        "examId",
+        "stage",
+        "subject",
+        "questionCount",
+        "isPremiumOnly",
+        "status",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PackQuestion": {
+      "title": "PackQuestion",
+      "description": "Individual MCQ inside an admin-published OTA question pack.",
+      "type": "object",
+      "properties": {
+        "packId": { "type": "string" },
+        "packStatus": { "type": "string", "enum": ["draft", "published"] },
+        "examId": { "type": "string" },
+        "category": { "type": "string" },
+        "shiftYear": { "type": "string" },
+        "subject": { "type": "string" },
+        "difficulty": { "type": "string", "enum": ["Easy", "Medium", "Hard"] },
+        "questionText": { "type": "string" },
+        "options": { "type": "array" },
+        "correctIndex": { "type": "integer" },
+        "explanation": { "type": "string" },
+        "sourceStatus": { "type": "string", "enum": ["verified", "unverified"] },
+        "sourceNote": { "type": "string" },
+        "topicId": { "type": "string" },
+        "sourceType": { "type": "string" },
+        "examYear": { "type": "string" },
+        "examShift": { "type": "string" },
+        "sortOrder": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "packId",
+        "packStatus",
+        "examId",
+        "category",
+        "shiftYear",
+        "subject",
+        "difficulty",
+        "questionText",
+        "options",
+        "correctIndex",
+        "explanation",
+        "sourceStatus",
+        "sourceNote",
+        "topicId",
+        "sourceType",
+        "examYear",
+        "examShift",
+        "sortOrder",
+        "createdAt"
+      ]
+    },
+    "ClockSyncPing": {
+      "title": "ClockSyncPing",
+      "description": "Lightweight per-user server timestamp anchor preventing client clock rollback.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "serverTime": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "serverTime"]
     }
   },
   "firestore": {
     "/users/{userId}": {
-      "schema": {
-        "$ref": "#/entities/UserProfile"
-      },
-      "description": "Owner-isolated learner profile and study preferences document."
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Owner-isolated learner profile and preferences (readable by verified owner admin)."
     },
     "/users/{userId}/progress/{questionId}": {
-      "schema": {
-        "$ref": "#/entities/QuestionProgressRecord"
-      },
-      "description": "Owner-isolated question attempt counts, last outcome, and revision deck bookmarks."
+      "schema": { "$ref": "#/entities/QuestionProgressRecord" },
+      "description": "Owner-isolated question attempt counts, last outcome, and bookmarks."
     },
     "/users/{userId}/mockHistory/{mockId}": {
-      "schema": {
-        "$ref": "#/entities/MockHistoryRecord"
-      },
+      "schema": { "$ref": "#/entities/MockHistoryRecord" },
       "description": "Owner-isolated completed CBT mock test history records."
     },
     "/users/{userId}/customQuestions/{questionId}": {
-      "schema": {
-        "$ref": "#/entities/CustomQuestionRecord"
-      },
+      "schema": { "$ref": "#/entities/CustomQuestionRecord" },
       "description": "Owner-isolated user-imported custom MCQs."
+    },
+    "/appConfig/{configId}": {
+      "schema": { "$ref": "#/entities/SubscriptionConfig" },
+      "description": "Global subscription pricing, support contacts, and OTA catalog version config."
+    },
+    "/entitlements/{userId}": {
+      "schema": { "$ref": "#/entities/UserEntitlement" },
+      "description": "Tamper-protected subscription and 3-day free trial entitlement state."
+    },
+    "/accessCodes/{codeId}": {
+      "schema": { "$ref": "#/entities/AccessCode" },
+      "description": "Single-use post-payment access codes created by admin and atomically redeemed by learners."
+    },
+    "/deviceTrialLocks/{deviceHash}": {
+      "schema": { "$ref": "#/entities/DeviceTrialLock" },
+      "description": "Hashed ANDROID_ID device trial lock preventing multi-account trial abuse."
+    },
+    "/questionPacks/{packId}": {
+      "schema": { "$ref": "#/entities/QuestionPack" },
+      "description": "Admin-published over-the-air question pack catalog."
+    },
+    "/questionPacks/{packId}/questions/{questionId}": {
+      "schema": { "$ref": "#/entities/PackQuestion" },
+      "description": "Questions belonging to an admin-published OTA question pack."
+    },
+    "/clockSync/{userId}": {
+      "schema": { "$ref": "#/entities/ClockSyncPing" },
+      "description": "Owner-only server timestamp anchor for tamper-resistant expiry checks."
     }
   }
 }

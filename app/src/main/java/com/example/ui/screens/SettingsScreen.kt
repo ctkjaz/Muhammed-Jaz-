@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AddCircleOutline
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BrightnessHigh
 import androidx.compose.material.icons.filled.CheckCircle
@@ -43,6 +44,7 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -84,6 +86,8 @@ import com.example.data.backup.BackupFolderSummary
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.data.model.StudyGoalLogic
+import com.example.data.subscription.PlanTier
+import com.example.data.subscription.SubscriptionUiState
 import com.example.data.update.AppUpdateStatus
 import com.example.data.update.AppUpdateUiState
 import com.example.ui.components.MonochromeFilterPill
@@ -107,6 +111,7 @@ fun SettingsScreen(
     backupFolderSummary: BackupFolderSummary = BackupFolderSummary(),
     isBackupBusy: Boolean = false,
     appUpdateState: AppUpdateUiState = AppUpdateUiState(),
+    subscription: SubscriptionUiState = SubscriptionUiState(),
     activeExamNegativeMarks: Double = 0.33,
     activeExamDefaultMinutes: Int = 90,
     onProfileNameChange: (String) -> Unit,
@@ -117,6 +122,8 @@ fun SettingsScreen(
     onKeepScreenOnChange: (Boolean) -> Unit,
     onDailyGoalChange: (Int) -> Unit,
     onReopenOnboarding: () -> Unit,
+    onOpenPlans: () -> Unit = {},
+    onOpenAdminConsole: () -> Unit = {},
     onChooseBackupFolder: () -> Unit = {},
     onResetBackupFolder: () -> Unit = {},
     onCreateBackup: () -> Unit = {},
@@ -188,6 +195,105 @@ fun SettingsScreen(
                             text = "Appearance, timer, backup & app updates",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // 0. Subscription Plan, Access Code & Support
+            item {
+                val badgeText = when {
+                    subscription.isAdmin -> "OWNER"
+                    subscription.isSuspended -> "PAUSED"
+                    subscription.isExpired -> "EXPIRED"
+                    subscription.effectiveTier == PlanTier.ALL_EXAM -> "PRO"
+                    subscription.effectiveTier == PlanTier.SINGLE_EXAM -> "PRO"
+                    subscription.effectiveTier == PlanTier.TRIAL -> "TRIAL"
+                    else -> "FREE"
+                }
+                val isProHighlight = subscription.isAdmin || subscription.effectiveTier != PlanTier.FREE
+                SettingsSectionCard(
+                    title = "Plan, Access Code & Support",
+                    icon = Icons.Filled.WorkspacePremium,
+                    cardTag = "settings_card_plan"
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = subscription.planDisplayName,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = subscription.expirySummaryLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (subscription.isExpired || subscription.isSuspended) {
+                                    editorial.wrongText
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = when {
+                                subscription.isExpired || subscription.isSuspended -> editorial.wrongBg
+                                isProHighlight -> editorial.acidLime
+                                else -> editorial.elevatedSurface
+                            },
+                            border = BorderStroke(
+                                1.dp,
+                                when {
+                                    subscription.isExpired || subscription.isSuspended -> editorial.wrongText.copy(alpha = 0.45f)
+                                    isProHighlight -> editorial.acidLime
+                                    else -> editorial.borderSubtle
+                                }
+                            )
+                        ) {
+                            Text(
+                                text = badgeText,
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                fontWeight = FontWeight.Bold,
+                                color = when {
+                                    subscription.isExpired || subscription.isSuspended -> editorial.wrongText
+                                    isProHighlight -> editorial.onAcidLime
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                },
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = editorial.borderSubtle)
+
+                    SettingsActionRow(
+                        icon = Icons.Filled.WorkspacePremium,
+                        title = "Manage Plan, Redeem Code & Support",
+                        subtitle = "Exam plans, 3-day free trial, access code entry & WhatsApp/Email help",
+                        onClick = onOpenPlans,
+                        testTag = "settings_open_plans_row"
+                    )
+                }
+            }
+
+            // 0b. Owner Admin Console (Visible ONLY to verified owner email)
+            if (subscription.isAdmin) {
+                item {
+                    SettingsSectionCard(
+                        title = "Owner Admin Console",
+                        icon = Icons.Filled.AdminPanelSettings,
+                        cardTag = "settings_card_admin"
+                    ) {
+                        SettingsActionRow(
+                            icon = Icons.Filled.AdminPanelSettings,
+                            title = "Open Owner Admin Console",
+                            subtitle = "Users, single-use codes, device-lock resets, OTA PDF packs & INR pricing",
+                            onClick = onOpenAdminConsole,
+                            testTag = "settings_open_admin_row"
                         )
                     }
                 }

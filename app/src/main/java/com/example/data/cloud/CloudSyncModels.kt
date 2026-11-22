@@ -19,6 +19,8 @@ import com.google.firebase.firestore.ServerTimestamp
 data class CloudUserProfile(
     @DocumentId val id: String = "",
     val userId: String = "",
+    val email: String = "",
+    val lastDeviceHash: String = "",
     val displayName: String = "",
     val role: String = "",
     val targetYear: String = SettingsPreferences.DEFAULT_TARGET_YEAR,

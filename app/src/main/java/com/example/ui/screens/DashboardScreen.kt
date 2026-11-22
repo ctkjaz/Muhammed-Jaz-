@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -57,6 +58,8 @@ import com.example.data.model.DifficultyFilter
 import com.example.data.model.ExamStage
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.QuestionItem
+import com.example.data.subscription.PlanTier
+import com.example.data.subscription.SubscriptionUiState
 import com.example.ui.components.AcidLimeProgressBar
 import com.example.ui.components.DifficultyFilterBar
 import com.example.ui.components.SegmentedPillBar
@@ -88,6 +91,8 @@ fun DashboardScreen(
     onOpenSubjectPracticeMode: () -> Unit,
     onSelectTab: (MainTab) -> Unit,
     onStartDrill: (List<QuestionItem>, String) -> Unit,
+    subscription: SubscriptionUiState = SubscriptionUiState(),
+    onOpenPlans: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val editorial = MaterialTheme.editorialColors
@@ -175,32 +180,154 @@ fun DashboardScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = if (activeStreak > 0) editorial.acidLime else editorial.elevatedSurface,
-                        border = BorderStroke(
-                            1.dp,
-                            if (activeStreak > 0) editorial.acidLime else editorial.borderSubtle
-                        ),
-                        modifier = Modifier.testTag("dashboard_streak_pill")
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val planChipLabel = when {
+                            subscription.isAdmin -> "OWNER"
+                            subscription.isSuspended -> "PAUSED"
+                            subscription.isExpired -> "EXPIRED"
+                            subscription.effectiveTier == PlanTier.TRIAL -> "TRIAL ${subscription.daysRemaining}d"
+                            subscription.effectiveTier != PlanTier.FREE -> "PRO ${subscription.daysRemaining}d"
+                            else -> "FREE ${subscription.dailyFreeUsed}/${subscription.dailyFreeLimit}"
+                        }
+                        val isProChip = subscription.isAdmin || subscription.effectiveTier != PlanTier.FREE
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = when {
+                                subscription.isExpired || subscription.isSuspended -> editorial.wrongBg
+                                isProChip -> MaterialTheme.colorScheme.primary
+                                else -> editorial.elevatedSurface
+                            },
+                            border = BorderStroke(
+                                1.dp,
+                                when {
+                                    subscription.isExpired || subscription.isSuspended -> editorial.wrongText.copy(alpha = 0.45f)
+                                    isProChip -> MaterialTheme.colorScheme.primary
+                                    else -> editorial.borderSubtle
+                                }
+                            ),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .clickable(onClick = onOpenPlans)
+                                .testTag("dashboard_plan_chip")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.WorkspacePremium,
+                                    contentDescription = "Subscription plan",
+                                    tint = when {
+                                        subscription.isExpired || subscription.isSuspended -> editorial.wrongText
+                                        isProChip -> MaterialTheme.colorScheme.onPrimary
+                                        else -> MaterialTheme.colorScheme.onSurface
+                                    },
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = planChipLabel,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                    fontWeight = FontWeight.Bold,
+                                    color = when {
+                                        subscription.isExpired || subscription.isSuspended -> editorial.wrongText
+                                        isProChip -> MaterialTheme.colorScheme.onPrimary
+                                        else -> MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = if (activeStreak > 0) editorial.acidLime else editorial.elevatedSurface,
+                            border = BorderStroke(
+                                1.dp,
+                                if (activeStreak > 0) editorial.acidLime else editorial.borderSubtle
+                            ),
+                            modifier = Modifier.testTag("dashboard_streak_pill")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.LocalFireDepartment,
+                                    contentDescription = "Study streak",
+                                    tint = if (activeStreak > 0) editorial.onAcidLime else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "${activeStreak}d",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (activeStreak > 0) editorial.onAcidLime else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 1b. Expired / Suspended Auto-Fallback Banner (zero data loss)
+            if (subscription.isExpired || subscription.isSuspended) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = editorial.elevatedSurface),
+                        border = BorderStroke(1.dp, editorial.wrongText.copy(alpha = 0.45f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("dashboard_expired_banner")
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Filled.LocalFireDepartment,
-                                contentDescription = "Study streak",
-                                tint = if (activeStreak > 0) editorial.onAcidLime else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = "${activeStreak}d",
-                                style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                                fontWeight = FontWeight.Bold,
-                                color = if (activeStreak > 0) editorial.onAcidLime else MaterialTheme.colorScheme.onSurface
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = if (subscription.isSuspended) {
+                                        "Premium Paused · Free Tier Active"
+                                    } else {
+                                        "Plan Expired · Free Tier Active"
+                                    },
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = editorial.wrongText
+                                )
+                                Text(
+                                    text = "All your progress & bookmarks are saved. Redeem a renewal code to resume.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Button(
+                                onClick = onOpenPlans,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = editorial.acidLime,
+                                    contentColor = editorial.onAcidLime
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 42.dp)
+                                    .testTag("dashboard_renew_plan_btn")
+                            ) {
+                                Text("Renew", fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }

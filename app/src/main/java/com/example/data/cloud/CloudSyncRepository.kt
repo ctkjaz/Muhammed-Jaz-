@@ -260,7 +260,9 @@ class CloudSyncRepository(
         longestStreakDays: Int,
         lastGoalMetDate: String,
         todayStudyDate: String,
-        todayAnsweredCount: Int
+        todayAnsweredCount: Int,
+        email: String = "",
+        lastDeviceHash: String = ""
     ): Result<Unit> {
         val docPath = "users/$userId"
         return try {
@@ -300,7 +302,9 @@ class CloudSyncRepository(
                     todayStudyDate = todayStudyDate,
                     todayAnsweredCount = todayAnsweredCount,
                     initialActiveSessionId = safeSessionId,
-                    initialActiveDeviceName = safeDevice
+                    initialActiveDeviceName = safeDevice,
+                    email = email,
+                    lastDeviceHash = lastDeviceHash
                 )
             }
         } catch (e: CancellationException) {
@@ -332,11 +336,15 @@ class CloudSyncRepository(
         todayStudyDate: String,
         todayAnsweredCount: Int,
         initialActiveSessionId: String = "",
-        initialActiveDeviceName: String = ""
+        initialActiveDeviceName: String = "",
+        email: String = "",
+        lastDeviceHash: String = ""
     ): Result<Unit> {
         val docPath = "users/$userId"
         return try {
             val uid = requireUserId(userId)
+            val safeEmail = email.ifBlank { auth.currentUser?.email.orEmpty() }.trim().take(120)
+            val safeDeviceHash = lastDeviceHash.trim().take(64)
             val safeName = displayName.take(SettingsPreferences.MAX_PROFILE_NAME_LENGTH)
             val safeRole = role.take(SettingsPreferences.MAX_PROFILE_ROLE_LENGTH)
             val safeYear = targetYear.trim().take(SettingsPreferences.MAX_TARGET_YEAR_LENGTH)
@@ -361,7 +369,7 @@ class CloudSyncRepository(
             val docRef = userDoc(uid)
             val exists = docRef.get().await().exists()
             if (exists) {
-                val updatePayload = mapOf<String, Any>(
+                val updatePayload = mutableMapOf<String, Any>(
                     "displayName" to safeName,
                     "role" to safeRole,
                     "targetYear" to safeYear,
@@ -382,6 +390,8 @@ class CloudSyncRepository(
                     "todayAnsweredCount" to safeTodayCount,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
+                if (safeEmail.isNotBlank()) updatePayload["email"] = safeEmail
+                if (safeDeviceHash.isNotBlank()) updatePayload["lastDeviceHash"] = safeDeviceHash
                 docRef.update(updatePayload).await()
             } else {
                 val createPayload = mutableMapOf<String, Any>(
@@ -407,6 +417,8 @@ class CloudSyncRepository(
                     "createdAt" to FieldValue.serverTimestamp(),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
+                if (safeEmail.isNotBlank()) createPayload["email"] = safeEmail
+                if (safeDeviceHash.isNotBlank()) createPayload["lastDeviceHash"] = safeDeviceHash
                 val cleanSessionId = initialActiveSessionId.trim().take(AccountSessionLogic.MAX_SESSION_ID_LENGTH)
                 if (cleanSessionId.isNotBlank()) {
                     createPayload["activeSessionId"] = cleanSessionId

@@ -94,6 +94,20 @@ class SettingsPreferences(context: Context) {
     )
     val backupTreeLabel: StateFlow<String> = _backupTreeLabel.asStateFlow()
 
+    private val _freeSampleMockUsed = MutableStateFlow(
+        prefs.getBoolean(KEY_FREE_SAMPLE_MOCK_USED, false)
+    )
+    val freeSampleMockUsed: StateFlow<Boolean> = _freeSampleMockUsed.asStateFlow()
+
+    private val _dailyFreeQuotaUsed = MutableStateFlow(readDailyFreeQuotaUsed())
+    val dailyFreeQuotaUsed: StateFlow<Int> = _dailyFreeQuotaUsed.asStateFlow()
+
+    private fun readDailyFreeQuotaUsed(): Int {
+        val today = StudyGoalLogic.todayDateKey()
+        val storedDate = prefs.getString(KEY_FREE_QUOTA_DATE, "") ?: ""
+        return if (storedDate == today) prefs.getInt(KEY_FREE_QUOTA_USED, 0).coerceAtLeast(0) else 0
+    }
+
     private fun readTheme(): ThemePreference {
         val raw = prefs.getString(KEY_THEME, ThemePreference.LIGHT.name)
         return runCatching { ThemePreference.valueOf(raw ?: "") }.getOrDefault(ThemePreference.LIGHT)
@@ -246,6 +260,42 @@ class SettingsPreferences(context: Context) {
 
     fun setSeededVersion(version: Int) {
         prefs.edit().putInt(KEY_SEEDED_VERSION, version).apply()
+    }
+
+    fun markFreeSampleMockUsed() {
+        prefs.edit().putBoolean(KEY_FREE_SAMPLE_MOCK_USED, true).apply()
+        _freeSampleMockUsed.value = true
+    }
+
+    fun refreshDailyFreeQuotaForToday(): Int {
+        val count = readDailyFreeQuotaUsed()
+        _dailyFreeQuotaUsed.value = count
+        return count
+    }
+
+    fun incrementDailyFreeQuotaUsed(): Int {
+        val today = StudyGoalLogic.todayDateKey()
+        val current = readDailyFreeQuotaUsed()
+        val next = (current + 1).coerceAtMost(1000)
+        prefs.edit()
+            .putString(KEY_FREE_QUOTA_DATE, today)
+            .putInt(KEY_FREE_QUOTA_USED, next)
+            .apply()
+        _dailyFreeQuotaUsed.value = next
+        return next
+    }
+
+    fun getSyncedOtaCatalogVersion(): Long = prefs.getLong(KEY_SYNCED_OTA_VERSION, 0L)
+
+    fun setSyncedOtaCatalogVersion(version: Long) {
+        prefs.edit().putLong(KEY_SYNCED_OTA_VERSION, version).apply()
+    }
+
+    fun getCachedPlanName(): String =
+        prefs.getString(KEY_CACHED_PLAN_NAME, "ClinEdge Free") ?: "ClinEdge Free"
+
+    fun setCachedPlanName(planName: String) {
+        prefs.edit().putString(KEY_CACHED_PLAN_NAME, planName.take(64)).apply()
     }
 
     fun getLastSignedInUid(): String = prefs.getString(KEY_LAST_SIGNED_IN_UID, "") ?: ""
@@ -410,6 +460,11 @@ class SettingsPreferences(context: Context) {
         private const val KEY_PROFILE_AVATAR_PATH = "profile_avatar_path"
         private const val KEY_BACKUP_TREE_URI = "backup_tree_uri"
         private const val KEY_BACKUP_TREE_LABEL = "backup_tree_label"
+        private const val KEY_FREE_SAMPLE_MOCK_USED = "free_sample_mock_used"
+        private const val KEY_FREE_QUOTA_DATE = "free_quota_date"
+        private const val KEY_FREE_QUOTA_USED = "free_quota_used"
+        private const val KEY_SYNCED_OTA_VERSION = "synced_ota_catalog_version"
+        private const val KEY_CACHED_PLAN_NAME = "cached_plan_name"
 
         fun calculateSuggestedMinutes(questionCount: Int, secondsPerQuestion: Int): Int {
             if (questionCount <= 0 || secondsPerQuestion <= 0) return 0

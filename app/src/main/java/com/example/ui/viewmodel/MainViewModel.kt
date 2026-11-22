@@ -50,7 +50,23 @@ import com.example.data.model.SubjectPracticeLogic
 import com.example.data.model.SubjectStat
 import com.example.data.model.Topic
 import com.example.data.parser.BulkQuestionParser
+import com.example.data.parser.PdfTextExtractor
 import com.example.data.repository.NursingPrepRepository
+import com.example.data.subscription.CloudAccessCode
+import com.example.data.subscription.CloudSubscriptionConfig
+import com.example.data.subscription.CloudUserEntitlement
+import com.example.data.subscription.CodeRedeemResult
+import com.example.data.subscription.DeviceIdentity
+import com.example.data.subscription.DeviceLockConflictState
+import com.example.data.subscription.DeviceLockManager
+import com.example.data.subscription.EntitlementEvaluator
+import com.example.data.subscription.PaywallPromptState
+import com.example.data.subscription.PlanTenure
+import com.example.data.subscription.PlanTier
+import com.example.data.subscription.SubscriptionRepository
+import com.example.data.subscription.SubscriptionStatus
+import com.example.data.subscription.SubscriptionUiState
+import com.example.data.subscription.TrialClaimResult
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -262,7 +278,9 @@ class MainViewModel(
     accountDisplayName: String = "",
     accountEmail: String = "",
     accountPhotoUrl: String? = null,
-    private val backupStorage: BackupStorageManager? = null
+    private val backupStorage: BackupStorageManager? = null,
+    private val subscriptionRepo: SubscriptionRepository? = null,
+    private val deviceLockManager: DeviceLockManager? = null
 ) : ViewModel() {
 
     val signedInAccount: SignedInAccountInfo = SignedInAccountInfo(
@@ -312,6 +330,77 @@ class MainViewModel(
     val isExamPickerOpen: StateFlow<Boolean> = _isExamPickerOpen.asStateFlow()
     private val _isProfileOpen = MutableStateFlow(false)
     val isProfileOpen: StateFlow<Boolean> = _isProfileOpen.asStateFlow()
+
+    val isOwnerAdmin: Boolean = EntitlementEvaluator.isOwnerAdminEmail(accountEmail)
+
+    val deviceIdentity: DeviceIdentity = deviceLockManager?.resolveDeviceIdentity()
+        ?: DeviceIdentity(
+            deviceHash = DeviceLockManager.sha256Hex("clinedge_fallback_$currentUserId"),
+            shortDeviceCode = DeviceLockManager.formatShortCode(
+                DeviceLockManager.sha256Hex("clinedge_fallback_$currentUserId")
+            ),
+            deviceName = currentDeviceName
+        )
+
+    private val _subscriptionConfig = MutableStateFlow(CloudSubscriptionConfig())
+    private val _rawEntitlement = MutableStateFlow<CloudUserEntitlement?>(null)
+    private val _clockRefreshTick = MutableStateFlow(0L)
+
+    val subscriptionState: StateFlow<SubscriptionUiState> = combine(
+        _rawEntitlement,
+        _subscriptionConfig,
+        settings.dailyFreeQuotaUsed,
+        settings.freeSampleMockUsed,
+        _clockRefreshTick
+    ) { ent, cfg, freeUsed, sampleUsed, _ ->
+        val serverNow = subscriptionRepo?.currentServerNowMs() ?: System.currentTimeMillis()
+        val evaluated = EntitlementEvaluator.evaluate(
+            entitlement = ent,
+            config = cfg,
+            serverNowMs = serverNow,
+            dailyFreeUsed = freeUsed,
+            freeSampleMockUsed = sampleUsed,
+            deviceShortCode = deviceIdentity.shortDeviceCode,
+            deviceHash = deviceIdentity.deviceHash,
+            isAdmin = isOwnerAdmin
+        )
+        settings.setCachedPlanName(evaluated.planDisplayName)
+        evaluated
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = SubscriptionUiState(
+            isAdmin = isOwnerAdmin,
+            effectiveTier = if (isOwnerAdmin) PlanTier.ALL_EXAM else PlanTier.FREE,
+            unlockedExamIds = if (isOwnerAdmin) setOf("all") else emptySet(),
+            deviceShortCode = deviceIdentity.shortDeviceCode,
+            deviceHash = deviceIdentity.deviceHash,
+            dailyFreeUsed = settings.dailyFreeQuotaUsed.value,
+            freeSampleMockUsed = settings.freeSampleMockUsed.value,
+            planDisplayName = if (isOwnerAdmin) "Owner Admin (All-Exam)" else settings.getCachedPlanName()
+        )
+    )
+
+    private val _isPlansOpen = MutableStateFlow(false)
+    val isPlansOpen: StateFlow<Boolean> = _isPlansOpen.asStateFlow()
+
+    private val _isAdminOpen = MutableStateFlow(false)
+    val isAdminOpen: StateFlow<Boolean> = _isAdminOpen.asStateFlow()
+
+    private val _paywallPrompt = MutableStateFlow<PaywallPromptState?>(null)
+    val paywallPrompt: StateFlow<PaywallPromptState?> = _paywallPrompt.asStateFlow()
+
+    private val _deviceLockConflict = MutableStateFlow<DeviceLockConflictState?>(null)
+    val deviceLockConflict: StateFlow<DeviceLockConflictState?> = _deviceLockConflict.asStateFlow()
+
+    private val _isTrialBusy = MutableStateFlow(false)
+    val isTrialBusy: StateFlow<Boolean> = _isTrialBusy.asStateFlow()
+
+    private val _isRedeemBusy = MutableStateFlow(false)
+    val isRedeemBusy: StateFlow<Boolean> = _isRedeemBusy.asStateFlow()
+
+    private val _adminState = MutableStateFlow(AdminConsoleUiState())
+    val adminState: StateFlow<AdminConsoleUiState> = _adminState.asStateFlow()
 
     private val allPlatformQuestions: StateFlow<List<QuestionItem>> = repository.allQuestions.stateIn(
         scope = viewModelScope,
@@ -506,6 +595,8 @@ class MainViewModel(
     private var timerJob: Job? = null
     private var syncListenerJobs: List<Job> = emptyList()
     private var profilePushJob: Job? = null
+    private var practiceCloudSyncJob: Job? = null
+    private var otaSyncInFlight = false
     private var applyingCloudProfile = false
     private var isSigningOut = false
     private var localSessionId: String = ""
@@ -521,6 +612,7 @@ class MainViewModel(
                 settings.clearLocalSession()
             }
             settings.setLastSignedInUid(currentUserId)
+            settings.refreshDailyFreeQuotaForToday()
             if (settings.profileName.value.isBlank() && signedInAccount.displayName.isNotBlank()) {
                 settings.setProfileName(signedInAccount.displayName)
             }
@@ -535,11 +627,58 @@ class MainViewModel(
                 val allowed = initializeSingleDeviceSession()
                 if (allowed && !isSigningOut) {
                     performBidirectionalSync(showFeedbackToast = false)
+                    initializeSubscriptionAndOta()
                     startRealtimeCloudObservers()
                 }
             }
             refreshBackupFolderSummary()
             checkForAppUpdates(userInitiated = false)
+        }
+    }
+
+    private suspend fun initializeSubscriptionAndOta() {
+        val repo = subscriptionRepo ?: return
+        if (currentUserId.isBlank() || isSigningOut) return
+        repo.syncServerClock(currentUserId)
+        repo.ensureFreeEntitlement(
+            userId = currentUserId,
+            email = signedInAccount.email,
+            displayName = settings.profileName.value.ifBlank { signedInAccount.displayName }
+        )
+        repo.fetchEntitlementFromServer(currentUserId).onSuccess { ent ->
+            if (ent != null) {
+                _rawEntitlement.value = ent
+            }
+        }
+        _clockRefreshTick.value = System.currentTimeMillis()
+    }
+
+    private fun triggerOtaPackSyncIfNeeded(remoteCatalogVersion: Long) {
+        val repo = subscriptionRepo ?: return
+        if (remoteCatalogVersion <= 0L || remoteCatalogVersion <= settings.getSyncedOtaCatalogVersion()) return
+        if (otaSyncInFlight || isSigningOut) return
+        otaSyncInFlight = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val packs = repo.fetchPublishedQuestionPacks().getOrNull() ?: return@launch
+                var syncedCount = 0
+                for (pack in packs) {
+                    val packId = pack.packId.ifBlank { pack.id }
+                    if (packId.isBlank()) continue
+                    val cloudQs = repo.fetchPublishedQuestionsForPack(packId).getOrNull().orEmpty()
+                    val domainQs = cloudQs.mapNotNull { it.toDomainQuestion() }
+                    if (domainQs.isNotEmpty()) {
+                        repository.saveOtaPackQuestions(examId = pack.examId, questions = domainQs)
+                        syncedCount += domainQs.size
+                    }
+                }
+                settings.setSyncedOtaCatalogVersion(remoteCatalogVersion)
+                if (syncedCount > 0) {
+                    showMessage("Updated question bank with $syncedCount new questions.")
+                }
+            } finally {
+                otaSyncInFlight = false
+            }
         }
     }
 
@@ -620,6 +759,14 @@ class MainViewModel(
                     SessionCheckResult.Valid -> Unit
                 }
             }
+            settings.refreshDailyFreeQuotaForToday()
+            subscriptionRepo?.let { repo ->
+                repo.syncServerClock(currentUserId)
+                repo.fetchEntitlementFromServer(currentUserId).onSuccess { ent ->
+                    if (ent != null) _rawEntitlement.value = ent
+                }
+                _clockRefreshTick.value = System.currentTimeMillis()
+            }
         }
     }
 
@@ -646,7 +793,9 @@ class MainViewModel(
             longestStreakDays = goal.longestStreakDays,
             lastGoalMetDate = goal.lastGoalMetDate,
             todayStudyDate = goal.todayStudyDate,
-            todayAnsweredCount = goal.todayAnsweredCount
+            todayAnsweredCount = goal.todayAnsweredCount,
+            email = signedInAccount.email,
+            lastDeviceHash = deviceIdentity.deviceHash
         )
     }
 
@@ -678,6 +827,8 @@ class MainViewModel(
         stopActiveTimer()
         profilePushJob?.cancel()
         profilePushJob = null
+        practiceCloudSyncJob?.cancel()
+        practiceCloudSyncJob = null
         syncListenerJobs.forEach { it.cancel() }
         syncListenerJobs = emptyList()
         settings.clearLocalSession()
@@ -786,7 +937,37 @@ class MainViewModel(
                 }
         }
 
-        syncListenerJobs = listOf(profileJob, progressJob, mockJob, customJob)
+        val subJobs = if (subscriptionRepo != null) {
+            val cfgJob = viewModelScope.launch {
+                subscriptionRepo.observeSubscriptionConfig().collect { cfg ->
+                    if (!isSigningOut) {
+                        _subscriptionConfig.value = cfg
+                        triggerOtaPackSyncIfNeeded(cfg.catalogVersion)
+                    }
+                }
+            }
+            val entJob = viewModelScope.launch {
+                subscriptionRepo.observeEntitlement(currentUserId)
+                    .catch { error ->
+                        val firestoreError = generateSequence(error) { it.cause }
+                            .filterIsInstance<FirebaseFirestoreException>()
+                            .firstOrNull()
+                        if (firestoreError == null && error is CancellationException) throw error
+                        Log.w(TAG, "Entitlement observer interrupted", firestoreError ?: error)
+                    }
+                    .collect { ent ->
+                        if (!isSigningOut) {
+                            _rawEntitlement.value = ent
+                            _clockRefreshTick.value = System.currentTimeMillis()
+                        }
+                    }
+            }
+            listOf(cfgJob, entJob)
+        } else {
+            emptyList()
+        }
+
+        syncListenerJobs = listOf(profileJob, progressJob, mockJob, customJob) + subJobs
     }
 
     private suspend fun performBidirectionalSync(showFeedbackToast: Boolean) {
@@ -976,7 +1157,9 @@ class MainViewModel(
             todayStudyDate = goal.todayStudyDate,
             todayAnsweredCount = goal.todayAnsweredCount,
             initialActiveSessionId = localSessionId,
-            initialActiveDeviceName = currentDeviceName
+            initialActiveDeviceName = currentDeviceName,
+            email = signedInAccount.email,
+            lastDeviceHash = deviceIdentity.deviceHash
         )
         result.onSuccess { markSynced() }.onFailure { recordSyncFailure(it) }
     }
@@ -1010,11 +1193,15 @@ class MainViewModel(
         _cbtSession.value = null
         _isSettingsOpen.value = false
         _isProfileOpen.value = false
+        _isPlansOpen.value = false
+        _isAdminOpen.value = false
         _selectedTab.value = tab
     }
 
     fun openSettings() {
         _isProfileOpen.value = false
+        _isPlansOpen.value = false
+        _isAdminOpen.value = false
         _isSettingsOpen.value = true
     }
 
@@ -1024,11 +1211,63 @@ class MainViewModel(
 
     fun openProfile() {
         _isSettingsOpen.value = false
+        _isPlansOpen.value = false
+        _isAdminOpen.value = false
         _isProfileOpen.value = true
     }
 
     fun closeProfile() {
         _isProfileOpen.value = false
+    }
+
+    fun openPlans() {
+        _paywallPrompt.value = null
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = false
+        _isAdminOpen.value = false
+        _isPlansOpen.value = true
+    }
+
+    fun closePlans() {
+        _isPlansOpen.value = false
+    }
+
+    fun openAdminConsole() {
+        if (!isOwnerAdmin) {
+            showMessage("Admin Console is restricted to the app owner.")
+            return
+        }
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = false
+        _isPlansOpen.value = false
+        _isAdminOpen.value = true
+        refreshAdminDashboard()
+    }
+
+    fun closeAdminConsole() {
+        _isAdminOpen.value = false
+    }
+
+    fun dismissPaywallPrompt() {
+        _paywallPrompt.value = null
+    }
+
+    fun dismissDeviceLockConflict() {
+        _deviceLockConflict.value = null
+    }
+
+    private fun showPaywallPrompt(
+        title: String,
+        message: String,
+        featureTag: String,
+        targetExamId: String? = settings.activeExamId.value
+    ) {
+        _paywallPrompt.value = PaywallPromptState(
+            title = title,
+            message = message,
+            lockedFeatureTag = featureTag,
+            targetExamId = targetExamId
+        )
     }
 
     fun openExamPicker() {
@@ -1107,6 +1346,15 @@ class MainViewModel(
         examIdFilter: String? = _subjectPracticeExamFilter.value,
         difficultyFilter: DifficultyFilter = _difficultyFilter.value
     ) {
+        val sub = subscriptionState.value
+        if (examIdFilter == null && !sub.canAccessCrossExamPractice()) {
+            showPaywallPrompt(
+                title = "All-Exam Subject Mode",
+                message = "Cross-exam combined subject drills across RRB, NORCET & PGIMER are included in All-Exam Nursing Prep or your 3-Day Free Trial.",
+                featureTag = "cross_exam"
+            )
+            return
+        }
         val state = mainState.value
         val items = SubjectPracticeLogic.collectQuestionsForSubject(
             allQuestions = state.crossExamQuestions,
@@ -1369,15 +1617,44 @@ class MainViewModel(
             showMessage("No questions found in this selection yet.")
             return
         }
+        val activeExamId = settings.activeExamId.value
+        val sub = subscriptionState.value
+        val isPyqSet = title.contains("PYQ", ignoreCase = true) ||
+            title.contains("Paper", ignoreCase = true) ||
+            (items.isNotEmpty() && items.all { it.question.isPyqTagged })
+        if (isPyqSet && !sub.canAccessPyq(activeExamId)) {
+            showPaywallPrompt(
+                title = "Unlock Previous Year Papers",
+                message = "Shift-wise PYQ papers for ${EntitlementEvaluator.shortExamLabel(activeExamId)} require an Exam Plan, All-Exam Prep, or your 3-Day Free Trial.",
+                featureTag = "pyq",
+                targetExamId = activeExamId
+            )
+            return
+        }
+        if (!sub.canAnswerPracticeQuestion(activeExamId)) {
+            showPaywallPrompt(
+                title = "Daily Free Limit Reached (${sub.dailyFreeLimit}/${sub.dailyFreeLimit})",
+                message = "You've completed today's ${sub.dailyFreeLimit} free practice questions. Start your 3-Day Free Trial or redeem an access code for unlimited questions.",
+                featureTag = "daily_limit",
+                targetExamId = activeExamId
+            )
+            return
+        }
+        val gatedItems = if (!sub.hasPremiumForExam(activeExamId)) {
+            val remaining = sub.remainingFreeQuestionsToday.coerceAtLeast(1)
+            items.take(remaining)
+        } else {
+            items
+        }
         stopActiveTimer()
         _cbtSession.value = null
         val actualCountdown = timedMode && hasCountdown && durationMinutes > 0
         val totalSec = if (actualCountdown) durationMinutes.coerceAtLeast(1) * 60 else 0
         val activeNeg = mainState.value.activeExam?.negativeMarks
-            ?: PlatformCatalogDefaults.negativeMarksForExam(settings.activeExamId.value)
+            ?: PlatformCatalogDefaults.negativeMarksForExam(activeExamId)
         _practiceSession.value = PracticeSessionState(
             title = title,
-            questions = items,
+            questions = gatedItems,
             currentIndex = 0,
             selectedAnswers = emptyMap(),
             timedMode = timedMode,
@@ -1417,6 +1694,19 @@ class MainViewModel(
         val qItem = sess.questions.getOrNull(sess.currentIndex) ?: return
         if (sess.selectedAnswers.containsKey(qItem.id)) return
 
+        val activeExamId = settings.activeExamId.value
+        val sub = subscriptionState.value
+        if (!sub.canAnswerPracticeQuestion(activeExamId)) {
+            showPaywallPrompt(
+                title = "Daily Free Limit Reached (${sub.dailyFreeLimit}/${sub.dailyFreeLimit})",
+                message = "Upgrade or start your 3-Day Free Trial to keep practicing without daily limits.",
+                featureTag = "daily_limit",
+                targetExamId = activeExamId
+            )
+            return
+        }
+
+        // 1. Instant UI state update for 120 FPS animation start
         val updatedMap = sess.selectedAnswers + (qItem.id to optionIndex)
         val isCorrect = optionIndex == qItem.question.correctIndex
         val allAnswered = updatedMap.size == sess.questions.size
@@ -1425,14 +1715,23 @@ class MainViewModel(
             showCompletionPrompt = sess.timedMode && allAnswered
         )
 
+        if (!sub.hasPremiumForExam(activeExamId)) {
+            settings.incrementDailyFreeQuotaUsed()
+        }
         recordDailyStudyProgress(answeredDelta = 1)
 
-        viewModelScope.launch {
-            val savedProgress = repository.recordAttempt(qItem.id, isCorrect)
+        // 2. Offload Room write to IO and debounce cloud write by 350ms so zero hitching overlaps rationale reveal
+        val qId = qItem.id
+        practiceCloudSyncJob?.cancel()
+        viewModelScope.launch(Dispatchers.IO) {
+            val savedProgress = repository.recordAttempt(qId, isCorrect)
             if (currentUserId.isNotBlank() && !isSigningOut) {
-                cloudSync.upsertProgress(currentUserId, savedProgress)
-                    .onSuccess { markSynced() }
-                    .onFailure { recordSyncFailure(it) }
+                practiceCloudSyncJob = viewModelScope.launch(Dispatchers.IO) {
+                    delay(350L)
+                    cloudSync.upsertProgress(currentUserId, savedProgress)
+                        .onSuccess { markSynced() }
+                        .onFailure { recordSyncFailure(it) }
+                }
             }
         }
     }
@@ -1750,6 +2049,28 @@ class MainViewModel(
         if (items.isEmpty()) {
             showMessage("No questions available for this CBT test.")
             return
+        }
+        val activeExamId = settings.activeExamId.value
+        val sub = subscriptionState.value
+        if (!sub.canStartFullCbtMock(activeExamId)) {
+            val isEligibleSampleMock = !isOfficialFullMock && items.size <= 25
+            if (isEligibleSampleMock && sub.canStartSampleMock()) {
+                settings.markFreeSampleMockUsed()
+                showMessage("Starting your 1 Free Sample CBT Mock. Good luck!")
+            } else {
+                val reasonMsg = if (isOfficialFullMock || items.size > 25) {
+                    "Full-length CBT Mock Exams are unlocked with an Exam Plan, All-Exam Prep, or your 3-Day Free Trial. Free accounts include 1 sample mini-mock."
+                } else {
+                    "You've already used your 1 free sample CBT mock. Activate a 3-Day Free Trial or redeem an access code for unlimited CBT mocks."
+                }
+                showPaywallPrompt(
+                    title = "Unlock Unlimited CBT Mocks",
+                    message = reasonMsg,
+                    featureTag = "cbt_mock",
+                    targetExamId = activeExamId
+                )
+                return
+            }
         }
         stopActiveTimer()
         _practiceSession.value = null
@@ -2305,10 +2626,15 @@ class MainViewModel(
             todayAnsweredCount = goal.todayAnsweredCount,
             lastGoalMetDate = goal.lastGoalMetDate
         )
+        val sub = subscriptionState.value
         val planInfo = BulkQuestionParser.BackupPlanInfo(
-            planName = "ClinEdge Free",
-            status = "Active",
-            tier = "free",
+            planName = sub.planDisplayName,
+            status = when {
+                sub.isSuspended -> "Suspended"
+                sub.isExpired -> "Expired"
+                else -> "Active"
+            },
+            tier = sub.effectiveTier.dbValue,
             appVersion = BuildConfig.VERSION_NAME
         )
         return BulkQuestionParser.buildBackupJson(
@@ -2391,6 +2717,16 @@ class MainViewModel(
         defaultDifficulty: DifficultyFilter = _difficultyFilter.value,
         defaultLimit: Int = 30
     ) {
+        val activeExamId = settings.activeExamId.value
+        if (!subscriptionState.value.canExportPdf(activeExamId)) {
+            showPaywallPrompt(
+                title = "Unlock Printable PDF Worksheets",
+                message = "Watermarked A4 study sheets & offline mock booklets require an Exam Plan, All-Exam Prep, or your 3-Day Free Trial.",
+                featureTag = "pdf_export",
+                targetExamId = activeExamId
+            )
+            return
+        }
         _pdfExportConfig.value = PdfExportConfigState(
             isVisible = true,
             sourceKey = defaultSource,
@@ -2454,7 +2790,7 @@ class MainViewModel(
             inlineAnswers = config.inlineAnswers,
             includeAnswerKey = config.includeAnswerKey,
             watermarkStudentName = studentName,
-            watermarkPlanName = "ClinEdge Free",
+            watermarkPlanName = subscriptionState.value.planDisplayName,
             watermarkEmail = signedInAccount.email
         )
 
@@ -2478,6 +2814,347 @@ class MainViewModel(
             }.onFailure { err ->
                 _pdfExportConfig.update { it.copy(isExporting = false) }
                 showMessage("PDF export failed: ${err.message}")
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // SUBSCRIPTION, 3-DAY DEVICE-LOCKED TRIAL & ACCESS CODE REDEMPTION
+    // ------------------------------------------------------------------------
+    fun claimThreeDayFreeTrial() {
+        val repo = subscriptionRepo
+        if (repo == null || currentUserId.isBlank()) {
+            showMessage("Sign in with Google to start your 3-Day Free Trial.")
+            return
+        }
+        if (_isTrialBusy.value) return
+        viewModelScope.launch {
+            _isTrialBusy.value = true
+            val trialDays = _subscriptionConfig.value.trialDays.toInt().coerceIn(1, 3)
+            val result = repo.claimThreeDayFreeTrial(
+                userId = currentUserId,
+                email = signedInAccount.email,
+                displayName = settings.profileName.value.ifBlank { signedInAccount.displayName },
+                device = deviceIdentity,
+                trialDays = trialDays
+            )
+            _isTrialBusy.value = false
+            when (result) {
+                is TrialClaimResult.Success -> {
+                    _clockRefreshTick.value = System.currentTimeMillis()
+                    showMessage("3-Day All-Access Free Trial activated! Ends ${EntitlementEvaluator.formatShortDate(result.expiresAtMs)}.")
+                }
+                is TrialClaimResult.DeviceAlreadyLocked -> {
+                    _deviceLockConflict.value = DeviceLockConflictState(
+                        shortDeviceCode = result.shortDeviceCode,
+                        maskedOwnerEmail = result.maskedEmail,
+                        deviceName = result.deviceName
+                    )
+                }
+                TrialClaimResult.TrialAlreadyUsedByAccount -> {
+                    showMessage("Your account has already used its 3-day free trial. Redeem a plan code or contact support.")
+                }
+                is TrialClaimResult.Error -> {
+                    showMessage(result.message)
+                }
+            }
+        }
+    }
+
+    fun redeemAccessCode(rawCode: String, onSuccess: () -> Unit = {}) {
+        val repo = subscriptionRepo
+        if (repo == null || currentUserId.isBlank()) {
+            showMessage("Sign in with Google before redeeming an access code.")
+            return
+        }
+        if (_isRedeemBusy.value) return
+        viewModelScope.launch {
+            _isRedeemBusy.value = true
+            val result = repo.redeemAccessCode(
+                userId = currentUserId,
+                email = signedInAccount.email,
+                displayName = settings.profileName.value.ifBlank { signedInAccount.displayName },
+                rawCode = rawCode
+            )
+            _isRedeemBusy.value = false
+            when (result) {
+                is CodeRedeemResult.Success -> {
+                    _clockRefreshTick.value = System.currentTimeMillis()
+                    showMessage("Activated ${result.planLabel} until ${EntitlementEvaluator.formatShortDate(result.expiresAtMs)}!")
+                    onSuccess()
+                }
+                is CodeRedeemResult.InvalidOrUsed -> showMessage(result.message)
+                is CodeRedeemResult.Error -> showMessage(result.message)
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // OWNER ADMIN CONSOLE (Verified Owner Email Only)
+    // ------------------------------------------------------------------------
+    fun selectAdminTab(tab: AdminConsoleTab) {
+        _adminState.update { it.copy(selectedTab = tab) }
+    }
+
+    fun refreshAdminDashboard() {
+        val repo = subscriptionRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isLoading = true) }
+            val users = repo.adminFetchUserDirectory().getOrDefault(_adminState.value.users)
+            val codes = repo.adminFetchAccessCodes().getOrDefault(_adminState.value.accessCodes)
+            val locks = repo.adminFetchDeviceLocks().getOrDefault(_adminState.value.deviceLocks)
+            val packs = repo.adminFetchAllQuestionPacks().getOrDefault(_adminState.value.questionPacks)
+            _adminState.update {
+                it.copy(
+                    isLoading = false,
+                    users = users,
+                    accessCodes = codes,
+                    deviceLocks = locks,
+                    questionPacks = packs
+                )
+            }
+        }
+    }
+
+    fun adminGrantOrUpdateUserPlan(
+        targetUid: String,
+        targetEmail: String,
+        targetName: String,
+        tier: PlanTier,
+        examIds: List<String>,
+        status: SubscriptionStatus,
+        tenureDays: Int?,
+        extendFromExisting: Boolean = true
+    ) {
+        val repo = subscriptionRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.adminUpdateUserEntitlement(
+                targetUid = targetUid,
+                targetEmail = targetEmail,
+                targetDisplayName = targetName,
+                planTier = tier,
+                unlockedExamIds = examIds,
+                status = status,
+                tenureDays = tenureDays,
+                extendFromCurrentExpiry = extendFromExisting
+            )
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                showMessage("Updated plan for ${targetName.ifBlank { targetEmail }}.")
+                refreshAdminDashboard()
+            }.onFailure { err ->
+                showMessage("Failed to update user: ${err.message}")
+            }
+        }
+    }
+
+    fun adminGenerateAccessCode(
+        planTier: PlanTier,
+        examId: String?,
+        tenure: PlanTenure,
+        buyerNote: String
+    ) {
+        val repo = subscriptionRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.adminGenerateAccessCode(planTier, examId, tenure, buyerNote)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess { code ->
+                _adminState.update { it.copy(lastGeneratedCode = code) }
+                showMessage("Generated code: ${code.code}")
+                refreshAdminDashboard()
+            }.onFailure { err ->
+                showMessage("Could not generate code: ${err.message}")
+            }
+        }
+    }
+
+    fun adminRevokeAccessCode(codeId: String) {
+        val repo = subscriptionRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.adminRevokeAccessCode(codeId)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                showMessage("Revoked access code $codeId.")
+                refreshAdminDashboard()
+            }.onFailure { err ->
+                showMessage("Revoke failed: ${err.message}")
+            }
+        }
+    }
+
+    fun adminResetDeviceLock(deviceHash: String, shortCode: String) {
+        val repo = subscriptionRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.adminDeleteDeviceLock(deviceHash)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                showMessage("Device lock $shortCode cleared. That phone can start a trial again.")
+                refreshAdminDashboard()
+            }.onFailure { err ->
+                showMessage("Reset failed: ${err.message}")
+            }
+        }
+    }
+
+    fun adminSavePricingConfig(updated: CloudSubscriptionConfig) {
+        val repo = subscriptionRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val withVersion = updated.copy(catalogVersion = _subscriptionConfig.value.catalogVersion)
+            val res = repo.adminSaveSubscriptionConfig(withVersion)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                _subscriptionConfig.value = withVersion
+                showMessage("Live pricing & support config saved!")
+            }.onFailure { err ->
+                showMessage("Save failed: ${err.message}")
+            }
+        }
+    }
+
+    fun adminUpdateContentDraft(transform: (AdminContentDraftState) -> AdminContentDraftState) {
+        _adminState.update { it.copy(contentDraft = transform(it.contentDraft)) }
+    }
+
+    fun adminExtractDocumentForPack(context: android.content.Context, uri: Uri, displayFileName: String) {
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update {
+                it.copy(contentDraft = it.contentDraft.copy(isParsingOrExtracting = true))
+            }
+            val result = PdfTextExtractor.extractFromUri(context, uri)
+            result.onSuccess { extracted ->
+                val cleanTitle = _adminState.value.contentDraft.title.ifBlank {
+                    displayFileName.substringBeforeLast('.').take(80)
+                }
+                _adminState.update { st ->
+                    st.copy(
+                        contentDraft = st.contentDraft.copy(
+                            title = cleanTitle,
+                            rawText = extracted.text,
+                            extractedFileName = displayFileName,
+                            isParsingOrExtracting = false
+                        )
+                    )
+                }
+                if (extracted.isLikelyScannedPdf) {
+                    showMessage("This PDF appears scanned (image-only). Paste OCR text into the box below to parse.")
+                } else {
+                    adminPreviewContentPack()
+                }
+            }.onFailure { err ->
+                _adminState.update {
+                    it.copy(contentDraft = it.contentDraft.copy(isParsingOrExtracting = false))
+                }
+                showMessage("Could not read file: ${err.message}")
+            }
+        }
+    }
+
+    fun adminPreviewContentPack() {
+        val draft = _adminState.value.contentDraft
+        val raw = draft.rawText.trim()
+        if (raw.isBlank()) {
+            showMessage("Pick a PDF/TXT/JSON file or paste MCQ text first.")
+            return
+        }
+        val parsed = if (raw.startsWith("[") || raw.startsWith("{")) {
+            runCatching { BulkQuestionParser.parseJsonBatch(raw, markAsCustom = false) }
+                .getOrDefault(emptyList())
+        } else {
+            BulkQuestionParser.parseRawPdfText(
+                rawText = raw,
+                category = draft.category,
+                subject = draft.subject,
+                shiftYear = draft.shiftYear,
+                defaultDifficulty = draft.difficulty,
+                defaultSourceNote = "ClinEdge Pack: ${draft.title.ifBlank { "Update" }}",
+                markAsVerified = true,
+                defaultSourceType = draft.sourceType,
+                defaultTopicId = PlatformCatalogDefaults.defaultTopicIdFor(draft.subject)
+            )
+        }
+        _adminState.update {
+            it.copy(contentDraft = it.contentDraft.copy(previewQuestions = parsed))
+        }
+        if (parsed.isEmpty()) {
+            showMessage("No MCQs detected. Ensure questions have options A–D and Ans: A/B/C/D.")
+        } else {
+            showMessage("Parsed ${parsed.size} questions ready to review & publish.")
+        }
+    }
+
+    fun adminRemovePreviewQuestion(index: Int) {
+        _adminState.update { st ->
+            val updated = st.contentDraft.previewQuestions.toMutableList()
+            if (index in updated.indices) updated.removeAt(index)
+            st.copy(contentDraft = st.contentDraft.copy(previewQuestions = updated))
+        }
+    }
+
+    fun adminPublishContentPack() {
+        val repo = subscriptionRepo ?: return
+        if (!isOwnerAdmin) return
+        val draft = _adminState.value.contentDraft
+        if (draft.previewQuestions.isEmpty()) {
+            showMessage("Parse and preview at least 1 question before publishing.")
+            return
+        }
+        val packTitle = draft.title.trim().ifBlank { "ClinEdge ${draft.subject} Pack" }
+        viewModelScope.launch {
+            _adminState.update {
+                it.copy(contentDraft = it.contentDraft.copy(isPublishing = true))
+            }
+            val res = repo.adminPublishQuestionPack(
+                title = packTitle,
+                examId = draft.examId,
+                stage = draft.stage,
+                subject = draft.subject,
+                isPremiumOnly = draft.isPremiumOnly,
+                questions = draft.previewQuestions,
+                currentConfig = _subscriptionConfig.value
+            )
+            res.onSuccess { pack ->
+                // Also persist immediately to the owner's local Room DB
+                repository.saveOtaPackQuestions(examId = pack.examId, questions = draft.previewQuestions)
+                _adminState.update {
+                    it.copy(
+                        contentDraft = AdminContentDraftState(examId = draft.examId, subject = draft.subject)
+                    )
+                }
+                showMessage("Published '${pack.title}' (${pack.questionCount} Qs) live to all students!")
+                refreshAdminDashboard()
+            }.onFailure { err ->
+                _adminState.update {
+                    it.copy(contentDraft = it.contentDraft.copy(isPublishing = false))
+                }
+                showMessage("Publish failed: ${err.message}")
+            }
+        }
+    }
+
+    fun adminDeleteQuestionPack(packId: String, title: String) {
+        val repo = subscriptionRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.adminDeleteQuestionPack(packId)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                showMessage("Deleted pack '$title'.")
+                refreshAdminDashboard()
+            }.onFailure { err ->
+                showMessage("Delete failed: ${err.message}")
             }
         }
     }

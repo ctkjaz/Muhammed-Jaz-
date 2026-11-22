@@ -15,6 +15,12 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isAdmin() {
+      return isSignedIn() &&
+             request.auth.token.email == 'jazsaleem2004@gmail.com' &&
+             request.auth.token.email_verified == true;
+    }
+
     function isValidId(id) {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
@@ -31,11 +37,17 @@ service cloud.firestore {
       return ts is timestamp && ts <= request.time;
     }
 
-    // Validation Helper 1: UserProfile
+    // ------------------------------------------------------------------------
+    // VALIDATION HELPERS (Anti-Update-Gap Blueprints)
+    // ------------------------------------------------------------------------
+
+    // 1. UserProfile
     function isValidUserProfile(data, userId) {
       return data.userId is string &&
              data.userId == userId &&
-             data.userId == request.auth.uid &&
+             (isAdmin() || data.userId == request.auth.uid) &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 120)) &&
+             (!('lastDeviceHash' in data) || (data.lastDeviceHash is string && data.lastDeviceHash.size() <= 64)) &&
              data.displayName is string && data.displayName.size() <= 40 &&
              data.role is string && data.role.size() <= 40 &&
              data.targetYear is string && data.targetYear.size() <= 10 &&
@@ -61,7 +73,7 @@ service cloud.firestore {
              isValidTimestamp(data.updatedAt);
     }
 
-    // Validation Helper 2: QuestionProgressRecord
+    // 2. QuestionProgressRecord
     function isValidQuestionProgress(data, userId, questionId) {
       return data.userId is string &&
              data.userId == userId &&
@@ -79,7 +91,7 @@ service cloud.firestore {
              isValidTimestamp(data.updatedAt);
     }
 
-    // Validation Helper 3: MockHistoryRecord
+    // 3. MockHistoryRecord
     function isValidMockHistory(data, userId) {
       return data.userId is string &&
              data.userId == userId &&
@@ -97,7 +109,7 @@ service cloud.firestore {
              isValidTimestamp(data.updatedAt);
     }
 
-    // Validation Helper 4: CustomQuestionRecord
+    // 4. CustomQuestionRecord
     function isValidCustomQuestion(data, userId) {
       return data.userId is string &&
              data.userId == userId &&
@@ -121,12 +133,245 @@ service cloud.firestore {
              isValidTimestamp(data.updatedAt);
     }
 
+    // 5. SubscriptionConfig
+    function isValidSubscriptionConfig(data) {
+      return data.keys().hasAll([
+               'singleExam1M', 'singleExam3M', 'singleExam6M', 'singleExam1Y',
+               'allExam1M', 'allExam3M', 'allExam6M', 'allExam1Y',
+               'freeDailyQuestionLimit', 'trialDays', 'supportWhatsAppNumber',
+               'supportEmail', 'catalogVersion', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'singleExam1M', 'singleExam3M', 'singleExam6M', 'singleExam1Y',
+               'allExam1M', 'allExam3M', 'allExam6M', 'allExam1Y',
+               'freeDailyQuestionLimit', 'trialDays', 'supportWhatsAppNumber',
+               'supportEmail', 'catalogVersion', 'updatedAt'
+             ]) &&
+             data.singleExam1M is int && data.singleExam1M >= 0 && data.singleExam1M <= 100000 &&
+             data.singleExam3M is int && data.singleExam3M >= 0 && data.singleExam3M <= 100000 &&
+             data.singleExam6M is int && data.singleExam6M >= 0 && data.singleExam6M <= 100000 &&
+             data.singleExam1Y is int && data.singleExam1Y >= 0 && data.singleExam1Y <= 100000 &&
+             data.allExam1M is int && data.allExam1M >= 0 && data.allExam1M <= 100000 &&
+             data.allExam3M is int && data.allExam3M >= 0 && data.allExam3M <= 100000 &&
+             data.allExam6M is int && data.allExam6M >= 0 && data.allExam6M <= 100000 &&
+             data.allExam1Y is int && data.allExam1Y >= 0 && data.allExam1Y <= 100000 &&
+             data.freeDailyQuestionLimit is int && data.freeDailyQuestionLimit >= 1 && data.freeDailyQuestionLimit <= 200 &&
+             data.trialDays is int && data.trialDays >= 1 && data.trialDays <= 30 &&
+             data.supportWhatsAppNumber is string && data.supportWhatsAppNumber.size() <= 24 &&
+             data.supportEmail is string && data.supportEmail.size() <= 120 &&
+             data.catalogVersion is int && data.catalogVersion >= 0 && data.catalogVersion <= 1000000 &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // 6. UserEntitlement
+    function isValidEntitlement(data, userId) {
+      return data.keys().hasAll([
+               'userId', 'email', 'displayName', 'planTier', 'unlockedExamIds',
+               'status', 'trialUsed', 'trialDeviceHash', 'lastCodeId',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'userId', 'email', 'displayName', 'planTier', 'unlockedExamIds',
+               'status', 'startsAt', 'expiresAt', 'trialUsed', 'trialDeviceHash',
+               'lastCodeId', 'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string && data.userId == userId &&
+             data.email is string && data.email.size() <= 120 &&
+             data.displayName is string && data.displayName.size() <= 60 &&
+             data.planTier is string && data.planTier in ['free', 'trial', 'single_exam', 'all_exam'] &&
+             data.unlockedExamIds is list && data.unlockedExamIds.size() <= 10 &&
+             (data.unlockedExamIds.size() == 0 || data.unlockedExamIds[0] is string) &&
+             data.status is string && data.status in ['active', 'suspended', 'expired'] &&
+             (!('startsAt' in data) || data.startsAt is timestamp) &&
+             (!('expiresAt' in data) || data.expiresAt is timestamp) &&
+             data.trialUsed is bool &&
+             data.trialDeviceHash is string && data.trialDeviceHash.size() <= 64 &&
+             data.lastCodeId is string && data.lastCodeId.size() <= 64 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function renewalBaseTime(existingData) {
+      return ('expiresAt' in existingData &&
+              existingData.expiresAt is timestamp &&
+              existingData.expiresAt > request.time &&
+              existingData.status == 'active')
+        ? existingData.expiresAt
+        : request.time;
+    }
+
+    function isValidTrialClaimPayload(data, userId) {
+      return data.planTier == 'trial' &&
+             data.status == 'active' &&
+             data.trialUsed == true &&
+             data.unlockedExamIds.size() == 1 &&
+             data.unlockedExamIds[0] == 'all' &&
+             data.trialDeviceHash.size() == 64 &&
+             'expiresAt' in data &&
+             data.expiresAt is timestamp &&
+             data.expiresAt <= request.time + duration.value(4, 'd') &&
+             !exists(/databases/$(database)/documents/deviceTrialLocks/$(data.trialDeviceHash)) &&
+             existsAfter(/databases/$(database)/documents/deviceTrialLocks/$(data.trialDeviceHash)) &&
+             getAfter(/databases/$(database)/documents/deviceTrialLocks/$(data.trialDeviceHash)).data.ownerUid == userId;
+    }
+
+    function isValidCodeRedeemExams(incomingData, codeData, hasExisting, existingData) {
+      return (codeData.planTier == 'all_exam' &&
+              incomingData.unlockedExamIds.size() == 1 &&
+              incomingData.unlockedExamIds[0] == 'all') ||
+             (codeData.planTier == 'single_exam' &&
+              incomingData.unlockedExamIds.size() >= 1 &&
+              incomingData.unlockedExamIds.size() <= 5 &&
+              incomingData.unlockedExamIds.hasAll(codeData.unlockedExamIds) &&
+              ((hasExisting &&
+                existingData.planTier == 'single_exam' &&
+                existingData.status == 'active' &&
+                'expiresAt' in existingData &&
+                existingData.expiresAt is timestamp &&
+                existingData.expiresAt > request.time)
+                ? incomingData.unlockedExamIds.size() <= existingData.unlockedExamIds.size() + codeData.unlockedExamIds.size()
+                : incomingData.unlockedExamIds == codeData.unlockedExamIds));
+    }
+
+    function isValidCodeRedemption(incomingData, userId, hasExisting, existingData) {
+      let codeId = incomingData.lastCodeId;
+      return codeId.size() >= 6 &&
+             isValidId(codeId) &&
+             incomingData.status == 'active' &&
+             (!hasExisting || codeId != existingData.lastCodeId) &&
+             exists(/databases/$(database)/documents/accessCodes/$(codeId)) &&
+             get(/databases/$(database)/documents/accessCodes/$(codeId)).data.status == 'active' &&
+             getAfter(/databases/$(database)/documents/accessCodes/$(codeId)).data.status == 'redeemed' &&
+             getAfter(/databases/$(database)/documents/accessCodes/$(codeId)).data.redeemedByUid == userId &&
+             incomingData.planTier == get(/databases/$(database)/documents/accessCodes/$(codeId)).data.planTier &&
+             isValidCodeRedeemExams(
+               incomingData,
+               get(/databases/$(database)/documents/accessCodes/$(codeId)).data,
+               hasExisting,
+               existingData
+             ) &&
+             'expiresAt' in incomingData &&
+             incomingData.expiresAt is timestamp &&
+             incomingData.expiresAt <= (hasExisting ? renewalBaseTime(existingData) : request.time) +
+               duration.value(get(/databases/$(database)/documents/accessCodes/$(codeId)).data.tenureDays + 1, 'd');
+    }
+
+    // 7. AccessCode
+    function isValidAccessCode(data, codeId) {
+      return data.keys().hasAll([
+               'code', 'planTier', 'unlockedExamIds', 'tenureDays',
+               'status', 'buyerNote', 'createdByEmail', 'createdAt'
+             ]) &&
+             data.keys().hasOnly([
+               'code', 'planTier', 'unlockedExamIds', 'tenureDays',
+               'status', 'buyerNote', 'createdByEmail', 'createdAt',
+               'redeemedByUid', 'redeemedByEmail', 'redeemedAt'
+             ]) &&
+             data.code is string && data.code == codeId && data.code.size() >= 6 && data.code.size() <= 64 &&
+             data.planTier is string && data.planTier in ['single_exam', 'all_exam'] &&
+             data.unlockedExamIds is list && data.unlockedExamIds.size() >= 1 && data.unlockedExamIds.size() <= 5 &&
+             data.unlockedExamIds[0] is string &&
+             data.tenureDays is int && data.tenureDays in [30, 90, 180, 365] &&
+             data.status is string && data.status in ['active', 'redeemed', 'revoked'] &&
+             data.buyerNote is string && data.buyerNote.size() <= 120 &&
+             data.createdByEmail is string && data.createdByEmail.size() <= 120 &&
+             isValidTimestamp(data.createdAt) &&
+             (!('redeemedByUid' in data) || (data.redeemedByUid is string && data.redeemedByUid.size() <= 128)) &&
+             (!('redeemedByEmail' in data) || (data.redeemedByEmail is string && data.redeemedByEmail.size() <= 120)) &&
+             (!('redeemedAt' in data) || isValidTimestamp(data.redeemedAt));
+    }
+
+    // 8. DeviceTrialLock
+    function isValidDeviceTrialLock(data, deviceHash) {
+      return data.keys().hasAll([
+               'deviceHash', 'shortDeviceCode', 'ownerUid', 'maskedEmail',
+               'deviceName', 'claimedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'deviceHash', 'shortDeviceCode', 'ownerUid', 'maskedEmail',
+               'deviceName', 'claimedAt'
+             ]) &&
+             data.deviceHash is string && data.deviceHash == deviceHash && data.deviceHash.size() == 64 &&
+             data.shortDeviceCode is string && data.shortDeviceCode.size() >= 6 && data.shortDeviceCode.size() <= 16 &&
+             data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+             data.maskedEmail is string && data.maskedEmail.size() <= 120 &&
+             data.deviceName is string && data.deviceName.size() <= 64 &&
+             isValidTimestamp(data.claimedAt);
+    }
+
+    // 9. QuestionPack & PackQuestion
+    function isValidQuestionPack(data, packId) {
+      return data.keys().hasAll([
+               'packId', 'title', 'examId', 'stage', 'subject',
+               'questionCount', 'isPremiumOnly', 'status', 'version',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'packId', 'title', 'examId', 'stage', 'subject',
+               'questionCount', 'isPremiumOnly', 'status', 'version',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.packId is string && data.packId == packId &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.examId is string && data.examId.size() >= 1 && data.examId.size() <= 64 &&
+             data.stage is string && data.stage in ['all', 'prelims', 'mains'] &&
+             data.subject is string && data.subject.size() <= 40 &&
+             data.questionCount is int && data.questionCount >= 0 && data.questionCount <= 5000 &&
+             data.isPremiumOnly is bool &&
+             data.status is string && data.status in ['draft', 'published'] &&
+             data.version is int && data.version >= 1 && data.version <= 1000000 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidPackQuestion(data, packId) {
+      return data.keys().hasAll([
+               'packId', 'packStatus', 'examId', 'category', 'shiftYear',
+               'subject', 'difficulty', 'questionText', 'options', 'correctIndex',
+               'explanation', 'sourceStatus', 'sourceNote', 'topicId',
+               'sourceType', 'examYear', 'examShift', 'sortOrder', 'createdAt'
+             ]) &&
+             data.keys().hasOnly([
+               'packId', 'packStatus', 'examId', 'category', 'shiftYear',
+               'subject', 'difficulty', 'questionText', 'options', 'correctIndex',
+               'explanation', 'sourceStatus', 'sourceNote', 'topicId',
+               'sourceType', 'examYear', 'examShift', 'sortOrder', 'createdAt'
+             ]) &&
+             data.packId is string && data.packId == packId &&
+             data.packStatus is string && data.packStatus in ['draft', 'published'] &&
+             data.examId is string && data.examId.size() >= 1 && data.examId.size() <= 64 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 32 &&
+             data.shiftYear is string && data.shiftYear.size() <= 40 &&
+             data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 40 &&
+             data.difficulty is string && data.difficulty in ['Easy', 'Medium', 'Hard'] &&
+             data.questionText is string && data.questionText.size() >= 1 && data.questionText.size() <= 2000 &&
+             data.options is list && data.options.size() >= 2 && data.options.size() <= 6 && data.options[0] is string &&
+             data.correctIndex is int && data.correctIndex >= 0 && data.correctIndex < data.options.size() &&
+             data.explanation is string && data.explanation.size() <= 4000 &&
+             data.sourceStatus is string && data.sourceStatus in ['verified', 'unverified'] &&
+             data.sourceNote is string && data.sourceNote.size() <= 200 &&
+             data.topicId is string && data.topicId.size() <= 80 &&
+             data.sourceType is string && data.sourceType.size() >= 1 && data.sourceType.size() <= 40 &&
+             data.examYear is string && data.examYear.size() <= 20 &&
+             data.examShift is string && data.examShift.size() <= 32 &&
+             data.sortOrder is int && data.sortOrder >= 0 && data.sortOrder <= 100000 &&
+             isValidTimestamp(data.createdAt);
+    }
+
+    // 10. ClockSyncPing
+    function isValidClockSync(data, userId) {
+      return data.keys().hasAll(['userId', 'serverTime']) &&
+             data.keys().hasOnly(['userId', 'serverTime']) &&
+             data.userId is string && data.userId == userId &&
+             isValidTimestamp(data.serverTime);
+    }
+
     // ------------------------------------------------------------------------
-    // /users/{userId} — Owner-only profile & preferences (no list scraping)
+    // /users/{userId} — Owner-isolated profile; Owner Admin may inspect directory
     // ------------------------------------------------------------------------
     match /users/{userId} {
-      allow get: if isOwner(userId) && isValidId(userId);
-      allow list: if false;
+      allow get: if (isOwner(userId) || isAdmin()) && isValidId(userId);
+      allow list: if isAdmin();
 
       allow create: if isOwner(userId) &&
                        isValidId(userId) &&
@@ -136,13 +381,14 @@ service cloud.firestore {
                          'secondsPerQuestion', 'keepScreenOn', 'createdAt', 'updatedAt'
                        ]) &&
                        incoming().keys().hasOnly([
-                         'userId', 'displayName', 'role', 'targetYear', 'focusSubject',
-                         'phoneNumber', 'activeExamId', 'themePreference', 'negativeMarking',
-                         'useTimeLimit', 'secondsPerQuestion', 'keepScreenOn',
-                         'onboardingCompleted', 'dailyGoalQuestions', 'currentStreakDays',
-                         'longestStreakDays', 'lastGoalMetDate', 'todayStudyDate',
-                         'todayAnsweredCount', 'activeSessionId', 'activeDeviceName',
-                         'sessionUpdatedAt', 'createdAt', 'updatedAt'
+                         'userId', 'email', 'lastDeviceHash', 'displayName', 'role',
+                         'targetYear', 'focusSubject', 'phoneNumber', 'activeExamId',
+                         'themePreference', 'negativeMarking', 'useTimeLimit',
+                         'secondsPerQuestion', 'keepScreenOn', 'onboardingCompleted',
+                         'dailyGoalQuestions', 'currentStreakDays', 'longestStreakDays',
+                         'lastGoalMetDate', 'todayStudyDate', 'todayAnsweredCount',
+                         'activeSessionId', 'activeDeviceName', 'sessionUpdatedAt',
+                         'createdAt', 'updatedAt'
                        ]) &&
                        isValidUserProfile(incoming(), userId);
 
@@ -151,14 +397,14 @@ service cloud.firestore {
                        isValidUserProfile(incoming(), userId) &&
                        incoming().userId == existing().userId &&
                        incoming().createdAt == existing().createdAt && (
-                         // Action 1: Update learner profile, phone number, study preferences, onboarding & daily goal streak
+                         // Action 1: Update learner profile, contact info, study preferences & daily goal streak
                          incoming().diff(existing()).affectedKeys().hasOnly([
-                           'displayName', 'role', 'targetYear', 'focusSubject', 'phoneNumber',
-                           'activeExamId', 'themePreference', 'negativeMarking',
-                           'useTimeLimit', 'secondsPerQuestion', 'keepScreenOn',
-                           'onboardingCompleted', 'dailyGoalQuestions', 'currentStreakDays',
-                           'longestStreakDays', 'lastGoalMetDate', 'todayStudyDate',
-                           'todayAnsweredCount', 'updatedAt'
+                           'email', 'lastDeviceHash', 'displayName', 'role', 'targetYear',
+                           'focusSubject', 'phoneNumber', 'activeExamId', 'themePreference',
+                           'negativeMarking', 'useTimeLimit', 'secondsPerQuestion',
+                           'keepScreenOn', 'onboardingCompleted', 'dailyGoalQuestions',
+                           'currentStreakDays', 'longestStreakDays', 'lastGoalMetDate',
+                           'todayStudyDate', 'todayAnsweredCount', 'updatedAt'
                          ]) ||
                          // Action 2: Claim or refresh single-device active session lock
                          incoming().diff(existing()).affectedKeys().hasOnly([
@@ -166,11 +412,8 @@ service cloud.firestore {
                          ])
                        );
 
-      allow delete: if isOwner(userId) && isValidId(userId);
+      allow delete: if (isOwner(userId) || isAdmin()) && isValidId(userId);
 
-      // ----------------------------------------------------------------------
-      // /users/{userId}/progress/{questionId}
-      // ----------------------------------------------------------------------
       match /progress/{questionId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(questionId);
         allow list: if isOwner(userId);
@@ -196,20 +439,15 @@ service cloud.firestore {
                          isValidQuestionProgress(incoming(), userId, questionId) &&
                          incoming().userId == existing().userId &&
                          incoming().questionId == existing().questionId &&
-                         incoming().createdAt == existing().createdAt && (
-                           // Action: Sync question attempt, bookmark, or stats reset
-                           incoming().diff(existing()).affectedKeys().hasOnly([
-                             'bookmarked', 'attemptsCount', 'correctCount', 'wrongCount',
-                             'lastOutcome', 'clientUpdatedAtMs', 'updatedAt'
-                           ])
-                         );
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'bookmarked', 'attemptsCount', 'correctCount', 'wrongCount',
+                           'lastOutcome', 'clientUpdatedAtMs', 'updatedAt'
+                         ]);
 
         allow delete: if isOwner(userId) && isValidId(userId) && isValidId(questionId);
       }
 
-      // ----------------------------------------------------------------------
-      // /users/{userId}/mockHistory/{mockId}
-      // ----------------------------------------------------------------------
       match /mockHistory/{mockId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(mockId);
         allow list: if isOwner(userId);
@@ -236,21 +474,16 @@ service cloud.firestore {
                          isValidId(mockId) &&
                          isValidMockHistory(incoming(), userId) &&
                          incoming().userId == existing().userId &&
-                         incoming().createdAt == existing().createdAt && (
-                           // Action: Refresh mock history record metadata
-                           incoming().diff(existing()).affectedKeys().hasOnly([
-                             'title', 'examId', 'totalQuestions', 'correctCount',
-                             'wrongCount', 'skippedCount', 'netScore',
-                             'accuracyPercent', 'completedAtMs', 'updatedAt'
-                           ])
-                         );
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'title', 'examId', 'totalQuestions', 'correctCount',
+                           'wrongCount', 'skippedCount', 'netScore',
+                           'accuracyPercent', 'completedAtMs', 'updatedAt'
+                         ]);
 
         allow delete: if isOwner(userId) && isValidId(userId) && isValidId(mockId);
       }
 
-      // ----------------------------------------------------------------------
-      // /users/{userId}/customQuestions/{questionId}
-      // ----------------------------------------------------------------------
       match /customQuestions/{questionId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(questionId);
         allow list: if isOwner(userId);
@@ -277,18 +510,193 @@ service cloud.firestore {
                          isValidId(questionId) &&
                          isValidCustomQuestion(incoming(), userId) &&
                          incoming().userId == existing().userId &&
-                         incoming().createdAt == existing().createdAt && (
-                           // Action: Edit custom question metadata or exam links
-                           incoming().diff(existing()).affectedKeys().hasOnly([
-                             'category', 'shiftYear', 'subject', 'difficulty',
-                             'questionText', 'options', 'correctIndex', 'explanation',
-                             'sourceStatus', 'sourceNote', 'topicId', 'sourceType',
-                             'examYear', 'examShift', 'examIds', 'updatedAt'
-                           ])
-                         );
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'category', 'shiftYear', 'subject', 'difficulty',
+                           'questionText', 'options', 'correctIndex', 'explanation',
+                           'sourceStatus', 'sourceNote', 'topicId', 'sourceType',
+                           'examYear', 'examShift', 'examIds', 'updatedAt'
+                         ]);
 
         allow delete: if isOwner(userId) && isValidId(userId) && isValidId(questionId);
       }
+    }
+
+    // ------------------------------------------------------------------------
+    // /appConfig/{configId} — Subscription pricing, support contacts & catalogVersion
+    // ------------------------------------------------------------------------
+    match /appConfig/{configId} {
+      allow get: if isSignedIn() && configId == 'subscriptionConfig';
+      allow list: if false;
+      allow create, update: if isAdmin() &&
+                               configId == 'subscriptionConfig' &&
+                               isValidSubscriptionConfig(incoming());
+      allow delete: if false;
+    }
+
+    // ------------------------------------------------------------------------
+    // /entitlements/{userId} — Tamper-protected subscription & trial state
+    // ------------------------------------------------------------------------
+    match /entitlements/{userId} {
+      allow get: if (isOwner(userId) || isAdmin()) && isValidId(userId);
+      allow list: if isAdmin();
+
+      allow create: if isValidId(userId) &&
+                       isValidEntitlement(incoming(), userId) && (
+                         isAdmin() ||
+                         (isOwner(userId) && (
+                           // Path A: Initial free tier bootstrap
+                           (incoming().planTier == 'free' &&
+                            incoming().status == 'active' &&
+                            incoming().trialUsed == false &&
+                            incoming().unlockedExamIds.size() == 0 &&
+                            incoming().lastCodeId == '' &&
+                            incoming().trialDeviceHash == '') ||
+                           // Path B: First-time atomic 3-day device-locked free trial
+                           isValidTrialClaimPayload(incoming(), userId) ||
+                           // Path C: First-time atomic single-use access code redemption
+                           (incoming().trialUsed == false &&
+                            incoming().trialDeviceHash == '' &&
+                            isValidCodeRedemption(incoming(), userId, false, {}))
+                         ))
+                       );
+
+      allow update: if isValidId(userId) &&
+                       isValidEntitlement(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt && (
+                         isAdmin() ||
+                         (isOwner(userId) && (
+                           // Action 1: Atomic 3-day free trial claim (once per user + once per device)
+                           (existing().trialUsed == false &&
+                            incoming().lastCodeId == existing().lastCodeId &&
+                            isValidTrialClaimPayload(incoming(), userId) &&
+                            incoming().diff(existing()).affectedKeys().hasOnly([
+                              'email', 'displayName', 'planTier', 'unlockedExamIds',
+                              'status', 'startsAt', 'expiresAt', 'trialUsed',
+                              'trialDeviceHash', 'updatedAt'
+                            ])) ||
+                           // Action 2: Atomic single-use access code redemption / renewal
+                           (incoming().trialUsed == existing().trialUsed &&
+                            incoming().trialDeviceHash == existing().trialDeviceHash &&
+                            isValidCodeRedemption(incoming(), userId, true, existing()) &&
+                            incoming().diff(existing()).affectedKeys().hasOnly([
+                              'email', 'displayName', 'planTier', 'unlockedExamIds',
+                              'status', 'startsAt', 'expiresAt', 'lastCodeId', 'updatedAt'
+                            ]))
+                         ))
+                       );
+
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    // ------------------------------------------------------------------------
+    // /accessCodes/{codeId} — Admin-generated post-payment vouchers
+    // ------------------------------------------------------------------------
+    match /accessCodes/{codeId} {
+      allow get: if isSignedIn() && isValidId(codeId);
+      allow list: if isAdmin();
+
+      allow create: if isAdmin() &&
+                       isValidId(codeId) &&
+                       isValidAccessCode(incoming(), codeId) &&
+                       incoming().status == 'active';
+
+      allow update: if isValidId(codeId) &&
+                       isValidAccessCode(incoming(), codeId) &&
+                       incoming().code == existing().code &&
+                       incoming().planTier == existing().planTier &&
+                       incoming().unlockedExamIds == existing().unlockedExamIds &&
+                       incoming().tenureDays == existing().tenureDays &&
+                       incoming().createdByEmail == existing().createdByEmail &&
+                       incoming().createdAt == existing().createdAt && (
+                         (isAdmin() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'status', 'buyerNote'
+                          ])) ||
+                         (isSignedIn() &&
+                          existing().status == 'active' &&
+                          incoming().status == 'redeemed' &&
+                          incoming().redeemedByUid == request.auth.uid &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'status', 'redeemedByUid', 'redeemedByEmail', 'redeemedAt'
+                          ]) &&
+                          existsAfter(/databases/$(database)/documents/entitlements/$(request.auth.uid)) &&
+                          getAfter(/databases/$(database)/documents/entitlements/$(request.auth.uid)).data.lastCodeId == codeId)
+                       );
+
+      allow delete: if isAdmin() && isValidId(codeId);
+    }
+
+    // ------------------------------------------------------------------------
+    // /deviceTrialLocks/{deviceHash} — Anti-abuse 1-trial-per-phone registry
+    // ------------------------------------------------------------------------
+    match /deviceTrialLocks/{deviceHash} {
+      allow get: if isSignedIn() && isValidId(deviceHash);
+      allow list: if isAdmin();
+
+      allow create: if isSignedIn() &&
+                       isValidId(deviceHash) &&
+                       deviceHash.size() == 64 &&
+                       isValidDeviceTrialLock(incoming(), deviceHash) &&
+                       incoming().ownerUid == request.auth.uid &&
+                       existsAfter(/databases/$(database)/documents/entitlements/$(request.auth.uid)) &&
+                       getAfter(/databases/$(database)/documents/entitlements/$(request.auth.uid)).data.trialDeviceHash == deviceHash;
+
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(deviceHash);
+    }
+
+    // ------------------------------------------------------------------------
+    // /questionPacks/{packId} — Admin-published OTA question banks
+    // ------------------------------------------------------------------------
+    match /questionPacks/{packId} {
+      allow get: if isSignedIn() && isValidId(packId) && (isAdmin() || existing().status == 'published');
+      allow list: if isAdmin() || (isSignedIn() && resource.data.status == 'published');
+
+      allow create: if isAdmin() &&
+                       isValidId(packId) &&
+                       isValidQuestionPack(incoming(), packId);
+
+      allow update: if isAdmin() &&
+                       isValidId(packId) &&
+                       isValidQuestionPack(incoming(), packId) &&
+                       incoming().packId == existing().packId &&
+                       incoming().createdAt == existing().createdAt;
+
+      allow delete: if isAdmin() && isValidId(packId);
+
+      match /questions/{questionId} {
+        allow get: if isSignedIn() && isValidId(packId) && isValidId(questionId) &&
+                      (isAdmin() || existing().packStatus == 'published');
+        allow list: if isAdmin() || (isSignedIn() && resource.data.packStatus == 'published');
+
+        allow create: if isAdmin() &&
+                         isValidId(packId) &&
+                         isValidId(questionId) &&
+                         isValidPackQuestion(incoming(), packId);
+
+        allow update: if isAdmin() &&
+                         isValidId(packId) &&
+                         isValidId(questionId) &&
+                         isValidPackQuestion(incoming(), packId) &&
+                         incoming().packId == existing().packId &&
+                         incoming().createdAt == existing().createdAt;
+
+        allow delete: if isAdmin() && isValidId(packId) && isValidId(questionId);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // /clockSync/{userId} — Lightweight server timestamp anchor
+    // ------------------------------------------------------------------------
+    match /clockSync/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+      allow create, update: if isOwner(userId) &&
+                               isValidId(userId) &&
+                               isValidClockSync(incoming(), userId);
+      allow delete: if false;
     }
   }
 }

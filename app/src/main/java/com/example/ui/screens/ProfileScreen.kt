@@ -82,6 +82,8 @@ import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.QuestionItem
 import com.example.data.model.StudyGoalLogic
 import com.example.data.model.SubjectCatalog
+import com.example.data.subscription.PlanTier
+import com.example.data.subscription.SubscriptionUiState
 import com.example.ui.components.AcidLimeProgressBar
 import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.components.ProfileAvatarCircle
@@ -108,7 +110,9 @@ fun ProfileDrawerContent(
     cloudSyncState: CloudSyncUiState,
     studyGoal: DailyStudyGoalState,
     state: DashboardDerivedState,
+    subscription: SubscriptionUiState = SubscriptionUiState(),
     onOpenFullProfile: () -> Unit,
+    onOpenPlans: () -> Unit = {},
     onOpenExamPicker: () -> Unit,
     onOpenSubjectSection: (SubjectHubSection) -> Unit,
     onOpenSettings: () -> Unit,
@@ -257,12 +261,21 @@ fun ProfileDrawerContent(
                 }
             }
 
-            // Plan Details Card
+            // Plan Details Card (Live Subscription State)
+            val drawerBadgeLabel = when {
+                subscription.isAdmin -> "Owner"
+                subscription.isSuspended -> "Paused"
+                subscription.isExpired -> "Expired"
+                subscription.effectiveTier == PlanTier.TRIAL -> "Trial"
+                subscription.effectiveTier != PlanTier.FREE -> "Pro"
+                else -> "Free"
+            }
+            val drawerBadgeActive = subscription.isAdmin || subscription.effectiveTier != PlanTier.FREE
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .clickable(onClick = onOpenFullProfile)
+                    .clickable(onClick = onOpenPlans)
                     .testTag("drawer_plan_card"),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
@@ -280,7 +293,8 @@ fun ProfileDrawerContent(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.weight(1f)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.WorkspacePremium,
@@ -289,28 +303,44 @@ fun ProfileDrawerContent(
                                 modifier = Modifier.size(18.dp)
                             )
                             Text(
-                                text = "ClinEdge Free",
+                                text = subscription.planDisplayName,
                                 style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = editorial.acidLime
+                            color = when {
+                                subscription.isExpired || subscription.isSuspended -> editorial.wrongBg
+                                drawerBadgeActive -> editorial.acidLime
+                                else -> editorial.elevatedSurface
+                            }
                         ) {
                             Text(
-                                text = "Active",
+                                text = drawerBadgeLabel,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = editorial.onAcidLime,
+                                color = when {
+                                    subscription.isExpired || subscription.isSuspended -> editorial.wrongText
+                                    drawerBadgeActive -> editorial.onAcidLime
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                },
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                     }
                     Text(
-                        text = "${formatApproxQuestionCount(state.overall.totalQuestions, verbose = true)}, CBT mocks, analytics & PDF sheets.",
+                        text = subscription.expirySummaryLabel,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Manage plans, redeem access code or support →",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (editorial.isDark) AcidLime else MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -508,6 +538,7 @@ fun ProfileScreen(
     cloudSyncState: CloudSyncUiState,
     studyGoal: DailyStudyGoalState,
     state: DashboardDerivedState,
+    subscription: SubscriptionUiState = SubscriptionUiState(),
     onProfileNameChange: (String) -> Unit,
     onProfileRoleChange: (String) -> Unit,
     onTargetYearChange: (String) -> Unit,
@@ -517,6 +548,7 @@ fun ProfileScreen(
     onRemoveProfilePhoto: () -> Unit = {},
     onDailyGoalChange: (Int) -> Unit,
     onStartDailyGoalDrill: () -> Unit,
+    onOpenPlans: () -> Unit = {},
     onOpenExamPicker: () -> Unit,
     onPracticeSubject: (List<QuestionItem>, String) -> Unit,
     onOpenSettings: () -> Unit,
@@ -1036,10 +1068,19 @@ fun ProfileScreen(
                 }
             }
 
-            // Plan Details
+            // Plan Details (Live Subscription & Access Code CTA)
             item {
+                val planBadge = when {
+                    subscription.isAdmin -> "Owner"
+                    subscription.isSuspended -> "Paused"
+                    subscription.isExpired -> "Expired"
+                    subscription.effectiveTier == PlanTier.TRIAL -> "3-Day Trial"
+                    subscription.effectiveTier != PlanTier.FREE -> "Pro Active"
+                    else -> "Free Tier"
+                }
+                val isProTier = subscription.isAdmin || subscription.effectiveTier != PlanTier.FREE
                 ProfileSectionCard(
-                    title = "Plan Details",
+                    title = "Plan & Support",
                     icon = Icons.Filled.WorkspacePremium,
                     cardTag = "profile_card_plan"
                 ) {
@@ -1048,27 +1089,40 @@ fun ProfileScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "ClinEdge Free",
+                                text = subscription.planDisplayName,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "All core study tools included",
+                                text = subscription.expirySummaryLabel,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (subscription.isExpired || subscription.isSuspended) {
+                                    editorial.wrongText
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
                             )
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = editorial.acidLime
+                            color = when {
+                                subscription.isExpired || subscription.isSuspended -> editorial.wrongBg
+                                isProTier -> editorial.acidLime
+                                else -> editorial.elevatedSurface
+                            }
                         ) {
                             Text(
-                                text = "Active",
+                                text = planBadge,
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = editorial.onAcidLime,
+                                color = when {
+                                    subscription.isExpired || subscription.isSuspended -> editorial.wrongText
+                                    isProTier -> editorial.onAcidLime
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                },
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
@@ -1076,12 +1130,20 @@ fun ProfileScreen(
 
                     HorizontalDivider(color = editorial.borderSubtle)
 
-                    val included = listOf(
-                        "${formatApproxQuestionCount(state.overall.totalQuestions, verbose = true)} with rationales",
-                        "Full-length CBT mocks & custom timed drills",
-                        "Subject accuracy analytics & weak-area revision",
-                        "Printable A4 PDF study worksheets & backup/restore"
-                    )
+                    val included = if (isProTier) {
+                        listOf(
+                            "Unlimited daily practice across unlocked exam bank(s)",
+                            "Full Previous Year Papers (PYQs) & unlimited CBT mocks",
+                            "Printable watermarked A4 PDF worksheets & backup/restore",
+                            "OTA new question packs synced automatically"
+                        )
+                    } else {
+                        listOf(
+                            "Up to ${subscription.dailyFreeLimit} practice questions per day",
+                            "1 free sample CBT mock test",
+                            "Upgrade for unlimited practice, PYQs, full mocks & PDF export"
+                        )
+                    }
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         included.forEach { benefit ->
                             Row(
@@ -1091,12 +1153,30 @@ fun ProfileScreen(
                                 Icon(
                                     imageVector = Icons.Filled.CheckCircle,
                                     contentDescription = null,
-                                    tint = editorial.correctText,
+                                    tint = if (isProTier) editorial.correctText else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Text(text = benefit, style = MaterialTheme.typography.bodySmall)
                             }
                         }
+                    }
+
+                    Button(
+                        onClick = onOpenPlans,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isProTier) MaterialTheme.colorScheme.primary else editorial.acidLime,
+                            contentColor = if (isProTier) MaterialTheme.colorScheme.onPrimary else editorial.onAcidLime
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("profile_manage_plan_btn")
+                    ) {
+                        Text(
+                            text = if (isProTier) "Manage Plan & Support" else "Upgrade, Start Trial or Redeem Code",
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }

@@ -456,6 +456,38 @@ class NursingPrepRepository(
         }
     }
 
+    /**
+     * Persists Admin-published OTA question packs into Room SQLite as official bank entries
+     * (isCustom = false) so they survive custom clear, work offline, and appear natively
+     * across Dashboard, Subjects, Practice, and CBT Mocks.
+     */
+    suspend fun saveOtaPackQuestions(
+        examId: String,
+        questions: List<Question>
+    ) = withContext(Dispatchers.IO) {
+        if (questions.isEmpty()) return@withContext
+        ensureCatalogSeeded()
+        val resolvedExamId = examId.trim().ifBlank { PlatformCatalogDefaults.EXAM_AIIMS_NORCET }
+        val baseSort = 7000
+        val entities = questions.mapIndexed { idx, q ->
+            q.copy(isCustom = false).toEntity(sortOrder = baseSort + idx)
+        }
+        dao.insertQuestions(entities)
+
+        val links = questions.mapIndexed { idx, q ->
+            ExamQuestionLinkEntity(
+                examId = resolvedExamId,
+                questionId = q.id,
+                sectionId = PlatformCatalogDefaults.sectionIdForExam(resolvedExamId, q.subject),
+                sortOrder = baseSort + idx,
+                isPyqForExam = q.isPyqTagged,
+                examYear = q.examYear,
+                examShift = q.examShift
+            )
+        }
+        dao.upsertExamQuestionLinks(links)
+    }
+
     suspend fun clearCustomQuestions() = withContext(Dispatchers.IO) {
         dao.deleteCustomQuestionLinks()
         dao.deleteCustomQuestions()

@@ -2,8 +2,14 @@ package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,10 +21,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,6 +30,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -48,6 +53,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,12 +61,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.model.QuestionItem
 import com.example.ui.components.AcidLimeProgressBar
 import com.example.ui.components.DifficultyBadge
 import com.example.ui.components.MetricTile
@@ -82,13 +88,14 @@ import com.example.ui.theme.SemanticWrongFill
 import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.CbtReviewFilter
 import com.example.ui.viewmodel.PracticeSessionState
+import kotlinx.coroutines.delay
 import java.util.Locale
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PracticeScreen(
     session: PracticeSessionState,
-    allQuestions: List<QuestionItem>,
+    isCurrentBookmarked: Boolean,
     negativeMarking: Boolean,
     onToggleNegativeMarking: () -> Unit,
     onSelectOption: (Int) -> Unit,
@@ -123,23 +130,53 @@ fun PracticeScreen(
     }
 
     val currentItem = session.questions.getOrNull(session.currentIndex) ?: return
-    val liveProgressItem = allQuestions.firstOrNull { it.id == currentItem.id } ?: currentItem
     val q = currentItem.question
     val chosen = session.selectedAnswers[q.id]
     val answered = chosen != null
-    val isBookmarked = liveProgressItem.isBookmarked
     val editorial = MaterialTheme.editorialColors
 
-    var sRight = 0
-    var sWrong = 0
-    session.questions.forEach { item ->
-        val sel = session.selectedAnswers[item.id]
-        if (sel != null) {
-            if (sel == item.question.correctIndex) sRight++ else sWrong++
+    val questionScrollState = rememberScrollState()
+    val stripListState = rememberLazyListState()
+
+    // Reset scroll cleanly when moving to a new question and keep active pill centered
+    LaunchedEffect(session.currentIndex) {
+        questionScrollState.scrollTo(0)
+        if (session.questions.isNotEmpty()) {
+            stripListState.animateScrollToItem(
+                index = (session.currentIndex - 2).coerceAtLeast(0)
+            )
         }
     }
-    val negLabel = String.format(Locale.US, "%.2f", session.negativeMarks)
-    val sNet = if (negativeMarking) sRight - (sWrong * session.negativeMarks) else sRight.toDouble()
+
+    // Gently bring rationale into view after the GPU-composited reveal settles
+    LaunchedEffect(q.id, answered) {
+        if (answered) {
+            delay(60L)
+            val target = (questionScrollState.maxValue).coerceAtMost(questionScrollState.value + 360)
+            if (target > questionScrollState.value) {
+                questionScrollState.animateScrollTo(
+                    value = target,
+                    animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
+                )
+            }
+        }
+    }
+
+    val (sRight, sWrong, sNet) = remember(session.questions, session.selectedAnswers, negativeMarking, session.negativeMarks) {
+        var r = 0
+        var w = 0
+        session.questions.forEach { item ->
+            val sel = session.selectedAnswers[item.id]
+            if (sel != null) {
+                if (sel == item.question.correctIndex) r++ else w++
+            }
+        }
+        val net = if (negativeMarking) r - (w * session.negativeMarks) else r.toDouble()
+        Triple(r, w, net)
+    }
+    val negLabel = remember(session.negativeMarks) {
+        String.format(Locale.US, "%.2f", session.negativeMarks)
+    }
     val progressFrac = if (session.questions.isNotEmpty()) {
         (session.currentIndex + 1).toFloat() / session.questions.size
     } else {
@@ -259,11 +296,11 @@ fun PracticeScreen(
                 AcidLimeProgressBar(progress = progressFrac, height = 4.dp)
             }
 
-            // Distraction-Free Question Surface
+            // Distraction-Free Question Surface (60/120Hz zero-relayout scroll container)
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(questionScrollState),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Card(
@@ -318,9 +355,9 @@ fun PracticeScreen(
                                 modifier = Modifier.testTag("practice_bookmark_btn")
                             ) {
                                 Icon(
-                                    imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                                    contentDescription = if (isBookmarked) "Remove bookmark" else "Bookmark question",
-                                    tint = if (isBookmarked) {
+                                    imageVector = if (isCurrentBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                                    contentDescription = if (isCurrentBookmarked) "Remove bookmark" else "Bookmark question",
+                                    tint = if (isCurrentBookmarked) {
                                         if (editorial.isDark) AcidLime else PureBlack
                                     } else {
                                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -339,31 +376,46 @@ fun PracticeScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
 
-                        // Clean Option Cards
+                        // Clean Option Cards with smooth GPU color transitions
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             q.options.forEachIndexed { oi, optionText ->
                                 val isCorrectOpt = oi == q.correctIndex
                                 val isChosenOpt = oi == chosen
                                 val isDimmed = answered && !isCorrectOpt && !isChosenOpt
 
-                                val borderColor = when {
+                                val targetBorderColor = when {
                                     !answered -> editorial.borderSubtle
                                     isCorrectOpt -> editorial.correctText
                                     isChosenOpt -> editorial.wrongText
                                     else -> editorial.borderSubtle.copy(alpha = 0.45f)
                                 }
-                                val bgColor = when {
+                                val targetBgColor = when {
                                     !answered -> editorial.cardSurface
                                     isCorrectOpt -> editorial.correctBg
                                     isChosenOpt -> editorial.wrongBg
                                     else -> editorial.cardSurface.copy(alpha = 0.55f)
                                 }
-                                val badgeBg = when {
+                                val targetBadgeBg = when {
                                     !answered -> editorial.elevatedSurface
                                     isCorrectOpt -> SemanticCorrectFill
                                     isChosenOpt -> SemanticWrongFill
                                     else -> editorial.elevatedSurface.copy(alpha = 0.6f)
                                 }
+                                val borderColor by animateColorAsState(
+                                    targetValue = targetBorderColor,
+                                    animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+                                    label = "opt_border_$oi"
+                                )
+                                val bgColor by animateColorAsState(
+                                    targetValue = targetBgColor,
+                                    animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+                                    label = "opt_bg_$oi"
+                                )
+                                val badgeBg by animateColorAsState(
+                                    targetValue = targetBadgeBg,
+                                    animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+                                    label = "opt_badge_$oi"
+                                )
                                 val badgeFg = if (answered && (isCorrectOpt || isChosenOpt)) {
                                     PureWhite
                                 } else {
@@ -422,71 +474,88 @@ fun PracticeScreen(
                                 }
                             }
                         }
+                    }
+                }
 
-                        // Clearly Separated Explanation Section
-                        AnimatedVisibility(
-                            visible = answered,
-                            enter = fadeIn() + expandVertically()
+                // Separate GPU-composited Explanation Card (outside parent Card -> zero parent relayout stutter!)
+                AnimatedVisibility(
+                    visible = answered,
+                    enter = fadeIn(
+                        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)
+                    ) + slideInVertically(
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        ),
+                        initialOffsetY = { fullHeight -> (fullHeight / 5).coerceAtMost(72) }
+                    ),
+                    exit = fadeOut(animationSpec = tween(durationMillis = 90))
+                ) {
+                    val isRight = chosen == q.correctIndex
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = editorial.explanationSurface,
+                        border = BorderStroke(1.dp, editorial.borderSubtle),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer { clip = true }
+                            .testTag("practice_rationale_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            val isRight = chosen == q.correctIndex
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = editorial.explanationSurface,
-                                border = BorderStroke(1.dp, editorial.borderSubtle)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "EXPLANATION",
-                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = if (isRight) {
-                                                "Correct (+1.00)"
-                                            } else {
-                                                "Incorrect (${if (negativeMarking) "-$negLabel" else "0"}) · Ans ${'A' + q.correctIndex}"
-                                            },
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = if (isRight) editorial.correctText else editorial.wrongText,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                    HorizontalDivider(color = editorial.borderSubtle)
-                                    Text(
-                                        text = q.explanation.ifBlank { "No rationale provided." },
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    if (q.isVerifiedSource) {
-                                        Text(
-                                            text = "Source: ${q.sourceNote}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = editorial.correctText
-                                        )
-                                    }
-                                }
+                                Text(
+                                    text = "EXPLANATION",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (isRight) {
+                                        "Correct (+1.00)"
+                                    } else {
+                                        "Incorrect (${if (negativeMarking) "-$negLabel" else "0"}) · Ans ${'A' + q.correctIndex}"
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (isRight) editorial.correctText else editorial.wrongText,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            HorizontalDivider(color = editorial.borderSubtle)
+                            Text(
+                                text = q.explanation.ifBlank { "No rationale provided." },
+                                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (q.isVerifiedSource) {
+                                Text(
+                                    text = "Source: ${q.sourceNote}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = editorial.correctText
+                                )
                             }
                         }
                     }
                 }
             }
 
-            // Clean Bottom Navigation Strip
+            // Clean Bottom Navigation Strip with stable keys
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 LazyRow(
+                    state = stripListState,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    itemsIndexed(session.questions) { idx, item ->
+                    itemsIndexed(
+                        items = session.questions,
+                        key = { _, item -> item.id }
+                    ) { idx, item ->
                         val ans = session.selectedAnswers[item.id]
                         val isCurrent = idx == session.currentIndex
                         val bg = when {
@@ -673,30 +742,35 @@ private fun TimedPracticeSummaryView(
     modifier: Modifier = Modifier
 ) {
     val editorial = MaterialTheme.editorialColors
-    var right = 0
-    var wrong = 0
-    var skipped = 0
-    session.questions.forEach { item ->
-        val sel = session.selectedAnswers[item.id]
-        when {
-            sel == null -> skipped++
-            sel == item.question.correctIndex -> right++
-            else -> wrong++
+    val (right, wrong, skipped) = remember(session.questions, session.selectedAnswers) {
+        var r = 0
+        var w = 0
+        var s = 0
+        session.questions.forEach { item ->
+            val sel = session.selectedAnswers[item.id]
+            when {
+                sel == null -> s++
+                sel == item.question.correctIndex -> r++
+                else -> w++
+            }
         }
+        Triple(r, w, s)
     }
     val net = if (negativeMarking) right - (wrong * session.negativeMarks) else right.toDouble()
     val attempted = right + wrong
     val acc = if (attempted > 0) ((right.toFloat() / attempted) * 100f).toInt() else 0
 
-    val filtered = session.questions.mapIndexedNotNull { idx, item ->
-        val ans = session.selectedAnswers[item.id]
-        val keep = when (session.reviewFilter) {
-            CbtReviewFilter.ALL -> true
-            CbtReviewFilter.WRONG -> ans != null && ans != item.question.correctIndex
-            CbtReviewFilter.RIGHT -> ans == item.question.correctIndex
-            CbtReviewFilter.SKIPPED -> ans == null
+    val filtered = remember(session.questions, session.selectedAnswers, session.reviewFilter) {
+        session.questions.mapIndexedNotNull { idx, item ->
+            val ans = session.selectedAnswers[item.id]
+            val keep = when (session.reviewFilter) {
+                CbtReviewFilter.ALL -> true
+                CbtReviewFilter.WRONG -> ans != null && ans != item.question.correctIndex
+                CbtReviewFilter.RIGHT -> ans == item.question.correctIndex
+                CbtReviewFilter.SKIPPED -> ans == null
+            }
+            if (keep) Triple(idx, item, ans) else null
         }
-        if (keep) Triple(idx, item, ans) else null
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -708,7 +782,7 @@ private fun TimedPracticeSummaryView(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            item {
+            item(key = "summary_header") {
                 Card(
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = EditorialBannerSurface),
@@ -761,7 +835,7 @@ private fun TimedPracticeSummaryView(
                 }
             }
 
-            item {
+            item(key = "summary_filters") {
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -776,7 +850,10 @@ private fun TimedPracticeSummaryView(
                 }
             }
 
-            itemsIndexed(filtered) { _, (idx, item, ans) ->
+            itemsIndexed(
+                items = filtered,
+                key = { _, (_, item, _) -> item.id }
+            ) { _, (idx, item, ans) ->
                 val q = item.question
                 Card(
                     shape = RoundedCornerShape(16.dp),
