@@ -2,6 +2,7 @@ package com.example.data.update
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -29,6 +30,8 @@ data class AppUpdateUiState(
 object AppUpdateVersionLogic {
     const val GITHUB_RELEASES_API_URL =
         "https://api.github.com/repos/ctkjaz/Muhammed-Jaz-/releases/latest"
+    const val GITHUB_ALL_RELEASES_API_URL =
+        "https://api.github.com/repos/ctkjaz/Muhammed-Jaz-/releases?per_page=10"
     const val GITHUB_RELEASES_WEB_URL =
         "https://github.com/ctkjaz/Muhammed-Jaz-/releases"
 
@@ -64,6 +67,33 @@ object AppUpdateVersionLogic {
         currentVersion: String
     ): AppUpdateUiState {
         val root = JSONObject(jsonText)
+        return parseReleaseObject(root, currentVersion)
+    }
+
+    fun parseGitHubReleasesListJson(
+        jsonText: String,
+        currentVersion: String
+    ): AppUpdateUiState? {
+        val array = JSONArray(jsonText)
+        var bestObj: JSONObject? = null
+        var bestTag = ""
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            if (item.optBoolean("draft", false)) continue
+            val tag = item.optString("tag_name", "").trim()
+            if (tag.isBlank()) continue
+            if (bestObj == null || isNewerVersion(tag, bestTag)) {
+                bestObj = item
+                bestTag = tag
+            }
+        }
+        return bestObj?.let { parseReleaseObject(it, currentVersion) }
+    }
+
+    private fun parseReleaseObject(
+        root: JSONObject,
+        currentVersion: String
+    ): AppUpdateUiState {
         val tagName = root.optString("tag_name", "").trim()
         val releaseName = root.optString("name", "").trim().ifBlank { tagName }
         val body = root.optString("body", "").trim()
@@ -95,7 +125,7 @@ object AppUpdateVersionLogic {
                 releaseNotes = body.ifBlank { "A newer version of ClinEdge is ready to download." },
                 downloadUrl = effectiveDownloadUrl,
                 releasePageUrl = htmlUrl,
-                statusMessage = "Update available: v$cleanRemoteLabel",
+                statusMessage = "Update available: v$cleanRemoteLabel — tap to download",
                 showDialog = true
             )
         } else {
@@ -115,54 +145,80 @@ object AppUpdateVersionLogic {
 }
 
 object AppUpdateChecker {
-    suspend fun checkLatestRelease(currentVersion: String): AppUpdateUiState = withContext(Dispatchers.IO) {
+    private data class HttpFetchResult(val code: Int, val body: String)
+
+    private fun fetchJson(urlString: String, currentVersion: String): HttpFetchResult {
         var connection: HttpURLConnection? = null
-        try {
-            val url = URL(AppUpdateVersionLogic.GITHUB_RELEASES_API_URL)
+        return try {
+            val url = URL(urlString)
             connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 6_000
-                readTimeout = 6_000
+                connectTimeout = 8_000
+                readTimeout = 8_000
                 setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
                 setRequestProperty("User-Agent", "ClinEdge-Android/$currentVersion")
             }
-
             val code = connection.responseCode
-            when (code) {
-                HttpURLConnection.HTTP_OK -> {
-                    val body = connection.inputStream.bufferedReader().use { it.readText() }
-                    AppUpdateVersionLogic.parseGitHubReleaseJson(body, currentVersion)
-                }
-                HttpURLConnection.HTTP_NOT_FOUND -> {
-                    AppUpdateUiState(
-                        status = AppUpdateStatus.UP_TO_DATE,
-                        currentVersion = currentVersion,
-                        latestVersion = currentVersion,
-                        releasePageUrl = AppUpdateVersionLogic.GITHUB_RELEASES_WEB_URL,
-                        statusMessage = "You're on the latest version (v$currentVersion)",
-                        showDialog = false
-                    )
-                }
-                else -> {
-                    AppUpdateUiState(
-                        status = AppUpdateStatus.ERROR,
-                        currentVersion = currentVersion,
-                        releasePageUrl = AppUpdateVersionLogic.GITHUB_RELEASES_WEB_URL,
-                        statusMessage = "Update server returned HTTP $code. Tap to retry.",
-                        showDialog = false
-                    )
-                }
+            val body = if (code in 200..299) {
+                connection.inputStream.bufferedReader().use { it.readText() }
+            } else {
+                ""
             }
+            HttpFetchResult(code, body)
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    suspend fun checkLatestRelease(currentVersion: String): AppUpdateUiState = withContext(Dispatchers.IO) {
+        try {
+            // 1. Primary endpoint: /releases/latest
+            val latestRes = fetchJson(AppUpdateVersionLogic.GITHUB_RELEASES_API_URL, currentVersion)
+            if (latestRes.code == HttpURLConnection.HTTP_OK && latestRes.body.isNotBlank()) {
+                return@withContext AppUpdateVersionLogic.parseGitHubReleaseJson(latestRes.body, currentVersion)
+            }
+
+            // 2. Fallback endpoint: /releases list (handles prereleases or newly tagged builds)
+            if (latestRes.code == HttpURLConnection.HTTP_NOT_FOUND) {
+                val listRes = fetchJson(AppUpdateVersionLogic.GITHUB_ALL_RELEASES_API_URL, currentVersion)
+                if (listRes.code == HttpURLConnection.HTTP_OK && listRes.body.isNotBlank()) {
+                    val parsed = AppUpdateVersionLogic.parseGitHubReleasesListJson(listRes.body, currentVersion)
+                    if (parsed != null) {
+                        return@withContext parsed
+                    }
+                }
+                return@withContext AppUpdateUiState(
+                    status = AppUpdateStatus.ERROR,
+                    currentVersion = currentVersion,
+                    releasePageUrl = AppUpdateVersionLogic.GITHUB_RELEASES_WEB_URL,
+                    downloadUrl = AppUpdateVersionLogic.GITHUB_RELEASES_WEB_URL,
+                    statusMessage = "No public GitHub release found yet. Ensure the repo is public and the Build APK workflow has published a release.",
+                    showDialog = false
+                )
+            }
+
+            val reason = when (latestRes.code) {
+                HttpURLConnection.HTTP_FORBIDDEN -> "GitHub API rate limit reached. Open Releases page directly."
+                else -> "Update server returned HTTP ${latestRes.code}. Tap to retry."
+            }
+            AppUpdateUiState(
+                status = AppUpdateStatus.ERROR,
+                currentVersion = currentVersion,
+                releasePageUrl = AppUpdateVersionLogic.GITHUB_RELEASES_WEB_URL,
+                downloadUrl = AppUpdateVersionLogic.GITHUB_RELEASES_WEB_URL,
+                statusMessage = reason,
+                showDialog = false
+            )
         } catch (_: Exception) {
             AppUpdateUiState(
                 status = AppUpdateStatus.ERROR,
                 currentVersion = currentVersion,
                 releasePageUrl = AppUpdateVersionLogic.GITHUB_RELEASES_WEB_URL,
-                statusMessage = "Could not check for updates right now. Check connection.",
+                downloadUrl = AppUpdateVersionLogic.GITHUB_RELEASES_WEB_URL,
+                statusMessage = "Could not reach GitHub updates. Check your internet connection.",
                 showDialog = false
             )
-        } finally {
-            connection?.disconnect()
         }
     }
 }

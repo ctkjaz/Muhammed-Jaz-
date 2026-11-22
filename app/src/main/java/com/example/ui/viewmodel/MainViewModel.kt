@@ -81,15 +81,20 @@ enum class SubjectHubSection(val label: String) {
     CA_GK("CA & GK"),
     NON_TECH("Sci/Math 30%");
 
-    fun labelFor(examId: String?): String = if (PlatformCatalogDefaults.isNorcetExam(examId)) {
-        when (this) {
+    fun labelFor(examId: String?): String = when {
+        PlatformCatalogDefaults.isPgimerExam(examId) -> when (this) {
+            NURSING -> "Nursing 100%"
+            PYQ -> "PGIMER PYQs"
+            CA_GK -> "Flashcards"
+            NON_TECH -> "Clinical Focus"
+        }
+        PlatformCatalogDefaults.isNorcetExam(examId) -> when (this) {
             NURSING -> "Nursing 80%"
             PYQ -> "NORCET PYQs"
             CA_GK -> "GK & Health"
             NON_TECH -> "Aptitude & Sci"
         }
-    } else {
-        label
+        else -> label
     }
 }
 
@@ -116,7 +121,8 @@ data class PracticeSessionState(
     val showCompletionPrompt: Boolean = false,
     val showTimeoutDialog: Boolean = false,
     val isSubmittedSummary: Boolean = false,
-    val reviewFilter: CbtReviewFilter = CbtReviewFilter.ALL
+    val reviewFilter: CbtReviewFilter = CbtReviewFilter.ALL,
+    val negativeMarks: Double = 0.33
 )
 
 data class CbtSessionState(
@@ -132,6 +138,7 @@ data class CbtSessionState(
     val showSubmitConfirm: Boolean = false,
     val showTimeoutDialog: Boolean = false,
     val reviewFilter: CbtReviewFilter = CbtReviewFilter.ALL,
+    val negativeMarks: Double = 0.33,
     val sectionSize: Int = 0,
     val sectionDurationSeconds: Int = 0,
     val sectionLabels: List<String> = emptyList(),
@@ -356,10 +363,10 @@ class MainViewModel(
         val acc = if (totalAttempts > 0) ((totalCorrect.toFloat() / totalAttempts) * 100f).toInt() else 0
         val latestRight = items.count { it.lastOutcome == "right" }
         val latestWrong = items.count { it.lastOutcome == "wrong" }
-        val netScore = latestRight - (latestWrong * 0.33)
         val activeExam = catalog.exams.firstOrNull { it.id == catalog.activeExamId }
             ?: catalog.exams.firstOrNull()
             ?: PlatformCatalogDefaults.DEFAULT_EXAMS.first()
+        val netScore = latestRight - (latestWrong * activeExam.negativeMarks)
         val countsByExam = catalog.links.groupingBy { it.examId }.eachCount()
         DashboardDerivedState(
             activeExam = activeExam,
@@ -1240,6 +1247,8 @@ class MainViewModel(
         _cbtSession.value = null
         val actualCountdown = timedMode && hasCountdown && durationMinutes > 0
         val totalSec = if (actualCountdown) durationMinutes.coerceAtLeast(1) * 60 else 0
+        val activeNeg = mainState.value.activeExam?.negativeMarks
+            ?: PlatformCatalogDefaults.negativeMarksForExam(settings.activeExamId.value)
         _practiceSession.value = PracticeSessionState(
             title = title,
             questions = items,
@@ -1248,7 +1257,8 @@ class MainViewModel(
             timedMode = timedMode,
             hasCountdown = actualCountdown,
             totalSeconds = totalSec,
-            remainingSeconds = totalSec
+            remainingSeconds = totalSec,
+            negativeMarks = activeNeg
         )
         if (actualCountdown) {
             startPracticeTimer()
@@ -1441,7 +1451,11 @@ class MainViewModel(
         val nursingPct = PlatformCatalogDefaults.nursingWeightagePercent(activeExamId)
         val sourceLabel = when (cfg.sourceKey) {
             "MIXED" -> "Mixed Set"
-            "PYQ" -> if (PlatformCatalogDefaults.isNorcetExam(activeExamId)) "NORCET PYQs" else "PYQs"
+            "PYQ" -> when {
+                PlatformCatalogDefaults.isPgimerExam(activeExamId) -> "PGIMER PYQs"
+                PlatformCatalogDefaults.isNorcetExam(activeExamId) -> "NORCET PYQs"
+                else -> "PYQs"
+            }
             "NURSING" -> "Nursing ($nursingPct%)"
             "CA" -> if (PlatformCatalogDefaults.isNorcetExam(activeExamId)) "GK & Health" else "CA & Static GK"
             "GEN" -> if (PlatformCatalogDefaults.isNorcetExam(activeExamId)) "Aptitude & Science" else "Sci/Math/Reas"
@@ -1580,6 +1594,8 @@ class MainViewModel(
         val initialStatuses = items.indices.associateWith { i ->
             if (i == 0) CbtPaletteStatus.NOT_ANSWERED else CbtPaletteStatus.NOT_VISITED
         }
+        val activeNeg = activeExam?.negativeMarks
+            ?: PlatformCatalogDefaults.negativeMarksForExam(settings.activeExamId.value)
         _cbtSession.value = CbtSessionState(
             title = title,
             questions = items,
@@ -1589,6 +1605,7 @@ class MainViewModel(
             hasCountdown = hasCountdown,
             totalSeconds = totalSec,
             remainingSeconds = totalSec,
+            negativeMarks = activeNeg,
             sectionSize = if (useSectionLock) sectionSize else 0,
             sectionDurationSeconds = sectionDurationSec,
             sectionLabels = if (useSectionLock) sectionLabels else emptyList(),
@@ -1818,7 +1835,7 @@ class MainViewModel(
             }
         }
 
-        val netScore = right - (wrong * 0.33)
+        val netScore = right - (wrong * sess.negativeMarks)
         val attempted = right + wrong
         val acc = if (attempted > 0) ((right.toFloat() / attempted) * 100f).toInt() else 0
 
@@ -1888,10 +1905,11 @@ class MainViewModel(
     // BULK IMPORTER & BACKUP
     // ------------------------------------------------------------------------
     fun openImporter() {
-        val defaultShift = if (PlatformCatalogDefaults.isNorcetExam(settings.activeExamId.value)) {
-            "NORCET-9"
-        } else {
-            "2025-S1"
+        val activeExamId = settings.activeExamId.value
+        val defaultShift = when {
+            PlatformCatalogDefaults.isPgimerExam(activeExamId) -> "PGIMER-2025"
+            PlatformCatalogDefaults.isNorcetExam(activeExamId) -> "NORCET-10"
+            else -> "2025-S1"
         }
         _importerState.update {
             it.copy(

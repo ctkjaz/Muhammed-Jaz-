@@ -66,9 +66,15 @@ fun SubjectsHubScreen(
     onOpenImporter: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val sections = SubjectHubSection.entries
     val activeExamId = state.activeExam?.id
     val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExamId)
+    val isPgimer = PlatformCatalogDefaults.isPgimerExam(activeExamId)
+    val sections = if (isPgimer) {
+        listOf(SubjectHubSection.NURSING, SubjectHubSection.PYQ)
+    } else {
+        SubjectHubSection.entries
+    }
+    val effectiveSection = if (activeSection in sections) activeSection else SubjectHubSection.NURSING
     val filteredPool = remember(state.questions, difficultyFilter) {
         difficultyFilter.difficulty?.let { d ->
             state.questions.filter { it.question.difficulty == d }
@@ -78,12 +84,12 @@ fun SubjectsHubScreen(
 
     Column(modifier = modifier.fillMaxSize()) {
         PrimaryScrollableTabRow(
-            selectedTabIndex = sections.indexOf(activeSection),
+            selectedTabIndex = sections.indexOf(effectiveSection).coerceAtLeast(0),
             edgePadding = 12.dp
         ) {
             sections.forEach { sec ->
                 Tab(
-                    selected = sec == activeSection,
+                    selected = sec == effectiveSection,
                     onClick = { onSelectSection(sec) },
                     text = { Text(sec.labelFor(activeExamId), fontWeight = FontWeight.SemiBold) },
                     modifier = Modifier.testTag("subject_tab_${sec.name}")
@@ -118,17 +124,17 @@ fun SubjectsHubScreen(
                 else -> 1
             }
 
-            when (activeSection) {
+            when (effectiveSection) {
                 SubjectHubSection.NURSING -> SubjectListGrid(
-                    title = if (isNorcet) {
-                        "Nursing Core & Mains Clinical (80% / 100%)"
-                    } else {
-                        "Subject-Wise Nursing (70% Weightage)"
+                    title = when {
+                        isPgimer -> "PGIMER Core Nursing (100% Weightage)"
+                        isNorcet -> "Nursing Core & Mains Clinical (80% / 100%)"
+                        else -> "Subject-Wise Nursing (70% Weightage)"
                     },
-                    subtitle = if (isNorcet) {
-                        "Core clinical nursing subjects & scenario-based priority questions for AIIMS NORCET"
-                    } else {
-                        "Core clinical & nursing subjects aligned with INC & RRB syllabus"
+                    subtitle = when {
+                        isPgimer -> "All 9 clinical & foundational nursing subjects for PGIMER Chandigarh Nursing Officer CBT (+1 / -0.25)"
+                        isNorcet -> "Core clinical nursing subjects & scenario-based priority questions for AIIMS NORCET"
+                        else -> "Core clinical & nursing subjects aligned with INC & RRB syllabus"
                     },
                     subjects = SubjectCatalog.NURSING_SUBJS,
                     allQuestions = filteredPool,
@@ -142,6 +148,7 @@ fun SubjectsHubScreen(
                 SubjectHubSection.PYQ -> PyqShiftList(
                     allQuestions = filteredPool,
                     isNorcet = isNorcet,
+                    isPgimer = isPgimer,
                     diffSuffix = diffSuffix,
                     columns = columns,
                     onStartPractice = onStartPractice,
@@ -262,6 +269,7 @@ private fun SubjectListGrid(
 private fun PyqShiftList(
     allQuestions: List<QuestionItem>,
     isNorcet: Boolean,
+    isPgimer: Boolean,
     diffSuffix: String,
     columns: Int,
     onStartPractice: (List<QuestionItem>, String) -> Unit,
@@ -290,14 +298,18 @@ private fun PyqShiftList(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = if (isNorcet) "AIIMS NORCET Memory-Based Papers" else "Previous Year Papers",
+                    text = when {
+                        isPgimer -> "PGIMER Chandigarh Memory-Based Papers"
+                        isNorcet -> "AIIMS NORCET Memory-Based Papers"
+                        else -> "Previous Year Papers"
+                    },
                     style = MaterialTheme.typography.titleLarge
                 )
                 Text(
-                    text = if (isNorcet) {
-                        "NORCET 5–9 Prelims & Mains recall sets. AIIMS does not publish official CBT keys, so recalled papers are labeled Memory-Based."
-                    } else {
-                        "Shift-wise exam sets (2015–2026). Memory-based papers are clearly marked alongside official papers."
+                    text = when {
+                        isPgimer -> "PGIMER Chandigarh 2020–2025 Nursing Officer recall sets (+1 / -0.25 pattern). PGIMER does not release official CBT question papers, so recalled sets are labeled Memory-Based."
+                        isNorcet -> "NORCET 5–10 Prelims & Mains recall sets. AIIMS does not publish official CBT keys, so recalled papers are labeled Memory-Based."
+                        else -> "Shift-wise exam sets (2015–2026). Memory-based papers are clearly marked alongside official papers."
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

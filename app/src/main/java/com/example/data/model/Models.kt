@@ -132,6 +132,7 @@ object PlatformCatalogDefaults {
     const val PROFESSION_NURSING = "nursing"
     const val EXAM_RRB_NURSING = "rrb_nursing"
     const val EXAM_AIIMS_NORCET = "aiims_norcet"
+    const val EXAM_PGIMER_NURSING = "pgimer_nursing"
 
     const val SECTION_RRB_NURSING_CORE = "rrb_nursing_core"
     const val SECTION_RRB_CA_GK = "rrb_nursing_ca_gk"
@@ -139,6 +140,8 @@ object PlatformCatalogDefaults {
 
     const val SECTION_NORCET_NURSING = "norcet_nursing_core"
     const val SECTION_NORCET_GK_APTITUDE = "norcet_gk_aptitude"
+
+    const val SECTION_PGIMER_NURSING_CORE = "pgimer_nursing_core"
 
     val DEFAULT_PROFESSIONS = listOf(
         Profession(
@@ -175,6 +178,19 @@ object PlatformCatalogDefaults {
             positiveMarks = 1.0,
             negativeMarks = 0.33,
             sortOrder = 1,
+            isActive = true
+        ),
+        Exam(
+            id = EXAM_PGIMER_NURSING,
+            professionId = PROFESSION_NURSING,
+            name = "PGIMER Chandigarh Nursing Officer",
+            shortName = "PGIMER",
+            description = "100-question CBT (100% Core Nursing) • 100 min • +1 / -0.25 marking • UR 40% / Reserved 35% cutoff",
+            defaultMockQuestions = 100,
+            defaultMockMinutes = 100,
+            positiveMarks = 1.0,
+            negativeMarks = 0.25,
+            sortOrder = 2,
             isActive = true
         )
     )
@@ -214,15 +230,34 @@ object PlatformCatalogDefaults {
             name = "General Knowledge & Aptitude (20%)",
             weightagePercent = 20,
             sortOrder = 1
+        ),
+        ExamSection(
+            id = SECTION_PGIMER_NURSING_CORE,
+            examId = EXAM_PGIMER_NURSING,
+            name = "Core Nursing Sciences (100%)",
+            weightagePercent = 100,
+            sortOrder = 0
         )
     )
 
     fun isNorcetExam(examId: String?): Boolean = examId == EXAM_AIIMS_NORCET
 
-    fun nursingWeightagePercent(examId: String?): Int =
-        if (isNorcetExam(examId)) 80 else 70
+    fun isPgimerExam(examId: String?): Boolean = examId == EXAM_PGIMER_NURSING
+
+    fun nursingWeightagePercent(examId: String?): Int = when (examId) {
+        EXAM_PGIMER_NURSING -> 100
+        EXAM_AIIMS_NORCET -> 80
+        else -> 70
+    }
+
+    fun negativeMarksForExam(examId: String?): Double = when (examId) {
+        EXAM_PGIMER_NURSING -> 0.25
+        else -> 0.33
+    }
 
     fun isNorcetSharedSubject(subjectCode: String): Boolean = subjectCode != "Railways"
+
+    fun isPgimerSharedSubject(subjectCode: String): Boolean = SubjectCatalog.isNursingCode(subjectCode)
 
     fun defaultTopicIdFor(subjectCode: String): String {
         val clean = subjectCode.trim().lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_')
@@ -238,8 +273,11 @@ object PlatformCatalogDefaults {
     fun sectionIdForNorcetSubject(subjectCode: String): String =
         if (SubjectCatalog.isNursingCode(subjectCode)) SECTION_NORCET_NURSING else SECTION_NORCET_GK_APTITUDE
 
+    fun sectionIdForPgimerSubject(subjectCode: String): String = SECTION_PGIMER_NURSING_CORE
+
     fun sectionIdForExam(examId: String, subjectCode: String): String = when (examId) {
         EXAM_AIIMS_NORCET -> sectionIdForNorcetSubject(subjectCode)
+        EXAM_PGIMER_NURSING -> sectionIdForPgimerSubject(subjectCode)
         else -> sectionIdForRrbSubject(subjectCode)
     }
 }
@@ -454,6 +492,11 @@ object SubjectCatalog {
         "NORCET-8" to "AIIMS NORCET-8 (Prelims & Mains)",
         "NORCET-7" to "AIIMS NORCET-7 (Prelims & Mains)",
         "NORCET-6" to "AIIMS NORCET-6 (Prelims & Mains)",
-        "NORCET-5" to "AIIMS NORCET-5 (Prelims & Mains)"
+        "NORCET-5" to "AIIMS NORCET-5 (Prelims & Mains)",
+        "PGIMER-2025" to "PGIMER Chandigarh 2025 Nursing Officer",
+        "PGIMER-2024" to "PGIMER Chandigarh 2024 Nursing Officer",
+        "PGIMER-2023" to "PGIMER Chandigarh 2023 Nursing Officer",
+        "PGIMER-2022" to "PGIMER Chandigarh 2022 Nursing Officer",
+        "PGIMER-2020" to "PGIMER Chandigarh 2020 Nursing Officer"
     )
 }

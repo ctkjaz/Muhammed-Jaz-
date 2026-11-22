@@ -112,13 +112,18 @@ fun DashboardScreen(
     val genCount = all.count { SubjectCatalog.isGen(it.question) }
     val activeExam = state.activeExam
     val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExam?.id)
+    val isPgimer = PlatformCatalogDefaults.isPgimerExam(activeExam?.id)
     val examFullName = activeExam?.name ?: "RRB Nursing Superintendent & Staff Nurse"
-    val examPatternSubtitle = if (isNorcet) {
-        "80:20 Prelims & 160Q Mains • +1 / -0.33 Marking • Clinical CBT"
-    } else {
-        "70:30 Exam Pattern • +1 / -0.33 Marking • Study Anytime"
+    val examPatternSubtitle = when {
+        isPgimer -> "100% Core Nursing • 100Q / 100m • +1 / -0.25 Marking"
+        isNorcet -> "80:20 Prelims & 160Q Mains • +1 / -0.33 Marking • Clinical CBT"
+        else -> "70:30 Exam Pattern • +1 / -0.33 Marking • Study Anytime"
     }
-    val mockCtaLabel = if (isNorcet) "100Q Prelims Mock" else "100Q CBT Mock"
+    val mockCtaLabel = when {
+        isPgimer -> "100Q PGIMER CBT"
+        isNorcet -> "100Q Prelims Mock"
+        else -> "100Q CBT Mock"
+    }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val columns = when {

@@ -159,7 +159,8 @@ class NursingPrepRepository(
         val needsQuestions = dao.getBuiltInCount() == 0 || currentSeedVersion < CURRENT_SEED_VERSION
         val needsRrbLinks = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_RRB_NURSING) == 0
         val needsNorcetLinks = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_AIIMS_NORCET) == 0
-        if (needsQuestions || needsRrbLinks || needsNorcetLinks) {
+        val needsPgimerLinks = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_PGIMER_NURSING) == 0
+        if (needsQuestions || needsRrbLinks || needsNorcetLinks || needsPgimerLinks) {
             val rrbJson = context.assets.open("builtin_questions.json").bufferedReader().use { it.readText() }
             val rrbQuestions = BulkQuestionParser.parseJsonBatch(rrbJson, markAsCustom = false)
             val rrbEntities = rrbQuestions.mapIndexed { index, q -> q.toEntity(sortOrder = index) }
@@ -172,10 +173,21 @@ class NursingPrepRepository(
                 q.toEntity(sortOrder = 2000 + index)
             }
 
+            val pgimerQuestions = runCatching {
+                val pgimerJson = context.assets.open("pgimer_questions.json").bufferedReader().use { it.readText() }
+                BulkQuestionParser.parseJsonBatch(pgimerJson, markAsCustom = false)
+            }.getOrDefault(emptyList())
+            val pgimerEntities = pgimerQuestions.mapIndexed { index, q ->
+                q.toEntity(sortOrder = 4000 + index)
+            }
+
             if (needsQuestions) {
                 dao.insertQuestions(rrbEntities)
                 if (norcetEntities.isNotEmpty()) {
                     dao.insertQuestions(norcetEntities)
+                }
+                if (pgimerEntities.isNotEmpty()) {
+                    dao.insertQuestions(pgimerEntities)
                 }
             }
 
@@ -220,6 +232,35 @@ class NursingPrepRepository(
                         )
                     }
                 dao.upsertExamQuestionLinks(dedicatedNorcetLinks + sharedNorcetLinks)
+            }
+
+            if (needsQuestions || needsPgimerLinks) {
+                val dedicatedPgimerLinks = pgimerQuestions.mapIndexed { index, q ->
+                    ExamQuestionLinkEntity(
+                        examId = PlatformCatalogDefaults.EXAM_PGIMER_NURSING,
+                        questionId = q.id,
+                        sectionId = PlatformCatalogDefaults.sectionIdForPgimerSubject(q.subject),
+                        sortOrder = index,
+                        isPyqForExam = q.isPyqTagged,
+                        examYear = q.examYear,
+                        examShift = q.examShift
+                    )
+                }
+                val sharedPgimerNursing = (norcetQuestions + rrbQuestions)
+                    .filter { PlatformCatalogDefaults.isPgimerSharedSubject(it.subject) }
+                    .distinctBy { it.id }
+                    .mapIndexed { index, q ->
+                        ExamQuestionLinkEntity(
+                            examId = PlatformCatalogDefaults.EXAM_PGIMER_NURSING,
+                            questionId = q.id,
+                            sectionId = PlatformCatalogDefaults.sectionIdForPgimerSubject(q.subject),
+                            sortOrder = 5000 + index,
+                            isPyqForExam = false,
+                            examYear = "",
+                            examShift = ""
+                        )
+                    }
+                dao.upsertExamQuestionLinks(dedicatedPgimerLinks + sharedPgimerNursing)
             }
             onSeededVersionUpdated(CURRENT_SEED_VERSION)
         }
@@ -280,7 +321,7 @@ class NursingPrepRepository(
     }
 
     companion object {
-        const val CURRENT_SEED_VERSION = 7
+        const val CURRENT_SEED_VERSION = 8
     }
 
     suspend fun loadFlashcards(): List<Flashcard> = withContext(Dispatchers.IO) {
@@ -550,10 +591,19 @@ class NursingPrepRepository(
         activeExamId: String = PlatformCatalogDefaults.EXAM_RRB_NURSING
     ): List<CategoryStat> {
         val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExamId)
+        val isPgimer = PlatformCatalogDefaults.isPgimerExam(activeExamId)
         data class CatDef(val key: String, val label: String, val desc: String, val color: Color, val filter: (QuestionItem) -> Boolean)
-        val defs = if (isNorcet) {
-            listOf(
-                CatDef("pyq", "NORCET Papers (5–9)", "Memory-based Prelims & Mains recall sets", Color(0xFFA67942)) {
+        val defs = when {
+            isPgimer -> listOf(
+                CatDef("pyq", "PGIMER PYQs (2020–2025)", "Memory-based Chandigarh recruitment recall sets", Color(0xFFA67942)) {
+                    it.question.isPyqTagged
+                },
+                CatDef("nur", "Core Nursing (100%)", "All 9 clinical & foundational nursing subjects", Color(0xFF8E4456)) {
+                    SubjectCatalog.isNursing(it.question)
+                }
+            )
+            isNorcet -> listOf(
+                CatDef("pyq", "NORCET Papers (5–10)", "Memory-based Prelims & Mains recall sets", Color(0xFFA67942)) {
                     it.question.isPyqTagged
                 },
                 CatDef("nur", "Nursing Core (80%)", "All 9 clinical nursing subjects & Mains scenarios", Color(0xFF8E4456)) {
@@ -566,8 +616,7 @@ class NursingPrepRepository(
                     SubjectCatalog.isGen(it.question)
                 }
             )
-        } else {
-            listOf(
+            else -> listOf(
                 CatDef("pyq", "Previous Year Papers (2015–2026)", "Shift-wise exam sets", Color(0xFFA67942)) {
                     it.question.isPyqTagged
                 },

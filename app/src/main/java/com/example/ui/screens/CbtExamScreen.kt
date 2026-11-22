@@ -158,8 +158,9 @@ fun CbtExamScreen(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                        val negLabel = String.format(Locale.US, "%.2f", session.negativeMarks)
                         Text(
-                            text = "+1.00 Correct • -0.33 Incorrect",
+                            text = "+1.00 Correct • -$negLabel Incorrect",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -777,7 +778,8 @@ private fun CbtResultScreen(
         }
     }
 
-    val netScore = right - (wrong * 0.33)
+    val negLabel = String.format(Locale.US, "%.2f", session.negativeMarks)
+    val netScore = right - (wrong * session.negativeMarks)
     val attempted = right + wrong
     val acc = if (attempted > 0) ((right.toFloat() / attempted) * 100f).toInt() else 0
 
@@ -839,7 +841,7 @@ private fun CbtResultScreen(
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             MetricTile(label = "Correct (+1)", value = "$right", valueColor = EditorialBannerKpiSuccess, modifier = Modifier.weight(1f))
-                            MetricTile(label = "Wrong (-0.33)", value = "$wrong", valueColor = EditorialBannerKpiDanger, modifier = Modifier.weight(1f))
+                            MetricTile(label = "Wrong (-$negLabel)", value = "$wrong", valueColor = EditorialBannerKpiDanger, modifier = Modifier.weight(1f))
                             MetricTile(label = "Skipped", value = "$skipped", valueColor = EditorialBannerTitle, modifier = Modifier.weight(1f))
                         }
                     }

@@ -131,7 +131,8 @@ fun PracticeScreen(
             if (sel == item.question.correctIndex) sRight++ else sWrong++
         }
     }
-    val sNet = if (negativeMarking) sRight - (sWrong * 0.33) else sRight.toDouble()
+    val negLabel = String.format(Locale.US, "%.2f", session.negativeMarks)
+    val sNet = if (negativeMarking) sRight - (sWrong * session.negativeMarks) else sRight.toDouble()
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
@@ -224,7 +225,7 @@ fun PracticeScreen(
                                     .testTag("neg_marking_toggle")
                             ) {
                                 Text(
-                                    text = if (negativeMarking) "-0.33 ON" else "-0.33 OFF",
+                                    text = if (negativeMarking) "-$negLabel ON" else "-$negLabel OFF",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = if (negativeMarking) {
@@ -411,7 +412,7 @@ fun PracticeScreen(
                                         text = if (isRight) {
                                             "✓ Correct (+1.00)"
                                         } else {
-                                            "✕ Incorrect (${if (negativeMarking) "-0.33" else "0.00"}) • Correct: ${'A' + q.correctIndex}"
+                                            "✕ Incorrect (${if (negativeMarking) "-$negLabel" else "0.00"}) • Correct: ${'A' + q.correctIndex}"
                                         },
                                         style = MaterialTheme.typography.labelLarge,
                                         color = if (isRight) editorial.correctText else editorial.wrongText,
@@ -639,7 +640,7 @@ private fun TimedPracticeSummaryView(
             else -> wrong++
         }
     }
-    val net = if (negativeMarking) right - (wrong * 0.33) else right.toDouble()
+    val net = if (negativeMarking) right - (wrong * session.negativeMarks) else right.toDouble()
     val attempted = right + wrong
     val acc = if (attempted > 0) ((right.toFloat() / attempted) * 100f).toInt() else 0
 

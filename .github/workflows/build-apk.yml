@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
@@ -98,16 +98,50 @@ jobs:
           print("Verified app/google-services.json structure.")
           PY
 
+      - name: Extract app version
+        id: app_version
+        run: |
+          VERSION_NAME=$(grep -m1 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION_CODE=$(grep -m1 'versionCode' app/build.gradle.kts | sed -E 's/.*=\s*([0-9]+).*/\1/')
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "Detected ClinEdge v$VERSION_NAME (code $VERSION_CODE)"
+
       - name: Build Debug APK
         run: gradle :app:assembleDebug --stacktrace
 
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --stacktrace
 
+      - name: Prepare versioned APK asset
+        run: |
+          APK_SRC=$(ls app/build/outputs/apk/debug/*.apk | head -n 1)
+          cp "$APK_SRC" "ClinEdge-v${{ steps.app_version.outputs.version_name }}.apk"
+          ls -lh "ClinEdge-v${{ steps.app_version.outputs.version_name }}.apk"
+
       - name: Upload Debug APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rrb-nursing-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: clinedge-v${{ steps.app_version.outputs.version_name }}-apk
+          path: ClinEdge-v${{ steps.app_version.outputs.version_name }}.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish GitHub Release for In-App Updates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.app_version.outputs.version_name }}
+          VERSION_NAME: ${{ steps.app_version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.app_version.outputs.version_code }}
+          APK_FILE: ClinEdge-v${{ steps.app_version.outputs.version_name }}.apk
+        run: |
+          NOTES="ClinEdge v${VERSION_NAME} (Build ${VERSION_CODE}) — Tap ${APK_FILE} below or use Settings -> Check for app updates inside the app."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK_FILE" --clobber
+            gh release edit "$TAG" --title "ClinEdge v${VERSION_NAME}" --notes "$NOTES" --latest
+          else
+            gh release create "$TAG" "$APK_FILE" \
+              --title "ClinEdge v${VERSION_NAME}" \
+              --notes "$NOTES" \
+              --latest
+          fi

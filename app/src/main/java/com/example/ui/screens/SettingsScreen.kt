@@ -102,6 +102,8 @@ fun SettingsScreen(
     backupFolderSummary: BackupFolderSummary = BackupFolderSummary(),
     isBackupBusy: Boolean = false,
     appUpdateState: AppUpdateUiState = AppUpdateUiState(),
+    activeExamNegativeMarks: Double = 0.33,
+    activeExamDefaultMinutes: Int = 90,
     onProfileNameChange: (String) -> Unit,
     onThemePreferenceChange: (ThemePreference) -> Unit,
     onUseTimeLimitChange: (Boolean) -> Unit,
@@ -119,12 +121,16 @@ fun SettingsScreen(
     onOpenPdfExport: () -> Unit,
     onCheckForUpdates: () -> Unit = {},
     onOpenUpdateDialog: () -> Unit = {},
+    onOpenReleasesPage: () -> Unit = {},
     onResetStatistics: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val versionName = remember(context) { readAppVersionName(context) }
+    val negMarkText = remember(activeExamNegativeMarks) {
+        String.format(java.util.Locale.US, "%.2f", activeExamNegativeMarks)
+    }
     var showResetStatsDialog by remember { mutableStateOf(false) }
     var showRestoreOptionsDialog by remember { mutableStateOf(false) }
 
@@ -347,7 +353,7 @@ fun SettingsScreen(
                         )
 
                         Text(
-                            text = "The Full Official 100Q mock always stays fixed at 90 minutes.",
+                            text = "The Full Official 100Q mock stays fixed at $activeExamDefaultMinutes minutes for the active exam.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -380,7 +386,7 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "Deduct 0.33 marks for each wrong answer in practice drills.",
+                                text = "Deduct $negMarkText marks for each wrong answer in practice drills.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -393,7 +399,7 @@ fun SettingsScreen(
                     }
 
                     Text(
-                        text = "CBT mocks always score +1 for correct and -0.33 for wrong answers.",
+                        text = "CBT mocks score +1 for correct and -$negMarkText for wrong answers under your active exam pattern.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -745,6 +751,30 @@ fun SettingsScreen(
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                    }
+
+                    if (appUpdateState.status == AppUpdateStatus.UPDATE_AVAILABLE) {
+                        Button(
+                            onClick = onOpenUpdateDialog,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .testTag("settings_download_update_btn")
+                        ) {
+                            Text("Download ClinEdge v${appUpdateState.latestVersion}", fontWeight = FontWeight.Bold)
+                        }
+                    } else if (appUpdateState.status == AppUpdateStatus.ERROR || appUpdateState.status == AppUpdateStatus.UP_TO_DATE) {
+                        OutlinedButton(
+                            onClick = onOpenReleasesPage,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .testTag("settings_open_releases_btn")
+                        ) {
+                            Text("Open GitHub Releases Page", fontWeight = FontWeight.SemiBold)
                         }
                     }
 

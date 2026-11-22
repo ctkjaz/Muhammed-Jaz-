@@ -58,15 +58,18 @@ fun CbtHubScreen(
     val all = state.questions
     val activeExam = state.activeExam
     val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExam?.id)
+    val isPgimer = PlatformCatalogDefaults.isPgimerExam(activeExam?.id)
     val examShort = activeExam?.shortName ?: "RRB Nursing"
     val fullQ = activeExam?.defaultMockQuestions ?: 100
     val fullMins = activeExam?.defaultMockMinutes ?: 90
     val negMark = activeExam?.negativeMarks ?: 0.33
+    val negMarkLabel = String.format(Locale.US, "%.2f", negMark)
     val nurPool = all.filter { SubjectCatalog.isNursing(it.question) }
     val nonPool = all.filter { !SubjectCatalog.isNursing(it.question) }
+    val pyqPool = all.filter { it.question.isPyqTagged }
     val hardClinicalPool = all.filter {
         SubjectCatalog.isNursing(it.question) &&
-            (it.id.startsWith("N_") || it.question.difficulty == QuestionDifficulty.HARD)
+            (it.id.startsWith("N_") || it.id.startsWith("P_") || it.question.difficulty == QuestionDifficulty.HARD)
     }.ifEmpty { nurPool }
     val primaryColor = MaterialTheme.colorScheme.primary
     val editorial = MaterialTheme.editorialColors
@@ -89,10 +92,10 @@ fun CbtHubScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("$examShort CBT & Timed Practice Hub", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        if (isNorcet) {
-                            "Stage I Prelims (100Q / 90m • 80:20) & Stage II Mains (160Q / 180m • 100% Clinical) • +1 / -$negMark"
-                        } else {
-                            "Exam-style question palette, countdown timer, +1 / -$negMark marking & custom timed drills"
+                        when {
+                            isNorcet -> "Stage I Prelims (100Q / 90m • 80:20) & Stage II Mains (160Q / 180m • 100% Clinical) • +1 / -$negMarkLabel"
+                            isPgimer -> "100% Core Nursing CBT • $fullQ Qs / $fullMins min • +1 / -$negMarkLabel negative marking"
+                            else -> "Exam-style question palette, countdown timer, +1 / -$negMarkLabel marking & custom timed drills"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -138,6 +141,44 @@ fun CbtHubScreen(
                 }
             }
 
+            if (isPgimer) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                        modifier = Modifier.testTag("pgimer_pattern_info_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "PGIMER Chandigarh Nursing Officer Blueprint (Official Pattern)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "• Single-Stage CBT: 100 MCQs • 100 Minutes (1 hr 40 min) • 100% Core Nursing Curriculum (MSN, FON, OBG, Peds, CHN, Psych, Pharm, Anat/Micro).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "• Scoring Scheme: +1 mark per correct answer • -0.25 (1/4th) negative marking per wrong answer • No interview.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "• Minimum Qualifying Marks: 40% for General / EWS • 35% for SC / ST / OBC.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+
             // Custom Timed Practice Highlight Card
             item {
                 Card(
@@ -174,13 +215,59 @@ fun CbtHubScreen(
                 }
             }
 
-            val cbtOptions = if (isNorcet) {
-                listOf(
+            val cbtOptions = when {
+                isPgimer -> listOf(
+                    CbtOptionData(
+                        badge = "Official PGIMER",
+                        durationLabel = "$fullMins Minutes",
+                        title = "PGIMER Full Official CBT ($fullQ Qs)",
+                        desc = "100% Core Nursing subjects matching PGIMER Chandigarh Nursing Officer pattern • +1 / -0.25 marking.",
+                        badgeColor = primaryColor,
+                        btnLabel = "Start PGIMER Mock ($fullQ Qs)",
+                        isPrimary = true,
+                        tag = "cbt_100q_btn",
+                        onClick = { onStartStandardMock(fullQ, fullMins, "PGIMER Official ${fullQ}Q CBT Mock", true) }
+                    ),
+                    CbtOptionData(
+                        badge = "PYQ Recall",
+                        durationLabel = "100 Minutes",
+                        title = "PGIMER 2020–2025 PYQ CBT (${pyqPool.size.coerceAtMost(100)} Qs)",
+                        desc = "High-yield memory-based recall set spanning PGIMER Chandigarh 2020–2025 Nursing Officer drives • -0.25 marking.",
+                        badgeColor = editorial.warningText,
+                        btnLabel = "Start PGIMER PYQ Mock",
+                        isPrimary = true,
+                        tag = "cbt_pgimer_pyq_btn",
+                        onClick = { onStartCustomCbt(pyqPool.shuffled().take(100), "PGIMER 2020–2025 PYQ Recall CBT", 100) }
+                    ),
+                    CbtOptionData(
+                        badge = "Clinical Sprint",
+                        durationLabel = "50 Minutes",
+                        title = "50Q PGIMER Clinical Speed CBT",
+                        desc = "Focused 50-question clinical nursing sprint (ICU, emergency meds, OBG, Peds & infection control).",
+                        badgeColor = editorial.wrongText,
+                        btnLabel = "Start 50Q Clinical Sprint",
+                        isPrimary = false,
+                        tag = "cbt_50q_nur_btn",
+                        onClick = { onStartCustomCbt(hardClinicalPool.shuffled().take(50), "PGIMER 50Q Clinical Sprint", 50) }
+                    ),
+                    CbtOptionData(
+                        badge = "Daily Express",
+                        durationLabel = if (useTimeLimit) "$mini30Mins Minutes" else "Untimed",
+                        title = "Mini 30Q Core Nursing Drill",
+                        desc = "Quick 30-question PGIMER-style nursing test with +1 / -0.25 negative marking.",
+                        badgeColor = editorial.correctText,
+                        btnLabel = "Start Mini Mock (30 Qs)",
+                        isPrimary = false,
+                        tag = "cbt_30q_btn",
+                        onClick = { onStartStandardMock(30, null, "PGIMER Mini 30Q Nursing CBT", false) }
+                    )
+                )
+                isNorcet -> listOf(
                     CbtOptionData(
                         badge = "Stage I • 5×18m Lock",
                         durationLabel = "$fullMins Minutes",
                         title = "NORCET Prelims Full Mock ($fullQ Qs)",
-                        desc = "Official 5 time-locked sections × 20Q (18m each): 4 Nursing sections + 1 GK/Aptitude section. +1 / -$negMark.",
+                        desc = "Official 5 time-locked sections × 20Q (18m each): 4 Nursing sections + 1 GK/Aptitude section. +1 / -$negMarkLabel.",
                         badgeColor = primaryColor,
                         btnLabel = "Start Prelims Mock ($fullQ Qs)",
                         isPrimary = true,
@@ -191,7 +278,7 @@ fun CbtHubScreen(
                         badge = "Stage II • 4×45m Lock",
                         durationLabel = "180 Minutes",
                         title = "NORCET Mains Clinical CBT (160 Qs)",
-                        desc = "Official 4 time-locked sections × 40Q (45m each): 100% Clinical Scenarios, ICU/ER, OBG, Peds & Dosage Math. +1 / -$negMark.",
+                        desc = "Official 4 time-locked sections × 40Q (45m each): 100% Clinical Scenarios, ICU/ER, OBG, Peds & Dosage Math. +1 / -$negMarkLabel.",
                         badgeColor = editorial.wrongText,
                         btnLabel = "Start Mains Mock (160 Qs)",
                         isPrimary = true,
@@ -243,8 +330,7 @@ fun CbtHubScreen(
                         onClick = { onStartCustomCbt(nonPool.shuffled().take(20), "20Q NORCET GK & Aptitude CBT", 18) }
                     )
                 )
-            } else {
-                listOf(
+                else -> listOf(
                     CbtOptionData(
                         badge = "Official Pattern",
                         durationLabel = "$fullMins Minutes",

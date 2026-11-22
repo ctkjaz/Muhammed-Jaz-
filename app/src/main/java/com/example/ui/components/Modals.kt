@@ -106,19 +106,36 @@ fun TimedPracticeConfigDialog(
     if (!state.isVisible) return
 
     val isNorcet = activeExamId == "aiims_norcet"
-    val sourceOptions = remember(isNorcet) {
-        val visibleSubjs = if (isNorcet) {
-            SubjectCatalog.ALL_SUBJS.filter { it.code != "Railways" }
-        } else {
-            SubjectCatalog.ALL_SUBJS
+    val isPgimer = activeExamId == "pgimer_nursing"
+    val negLabel = if (isPgimer) "0.25" else "0.33"
+    val sourceOptions = remember(isNorcet, isPgimer) {
+        val visibleSubjs = when {
+            isPgimer -> SubjectCatalog.NURSING_SUBJS
+            isNorcet -> SubjectCatalog.ALL_SUBJS.filter { it.code != "Railways" }
+            else -> SubjectCatalog.ALL_SUBJS
         }
-        listOf(
-            "MIXED" to "Mixed (All)",
-            "PYQ" to if (isNorcet) "NORCET PYQs" else "PYQs Only",
-            "NURSING" to if (isNorcet) "Nursing (80%)" else "Nursing (70%)",
-            "CA" to if (isNorcet) "GK & Health" else "CA & GK",
-            "GEN" to if (isNorcet) "Aptitude & Sci (20%)" else "Sci/Math/Reas (30%)"
-        ) + visibleSubjs.map { it.code to "${it.code} (${it.name})" }
+        val baseGroups = when {
+            isPgimer -> listOf(
+                "MIXED" to "Mixed (All)",
+                "PYQ" to "PGIMER PYQs",
+                "NURSING" to "Nursing (100%)"
+            )
+            isNorcet -> listOf(
+                "MIXED" to "Mixed (All)",
+                "PYQ" to "NORCET PYQs",
+                "NURSING" to "Nursing (80%)",
+                "CA" to "GK & Health",
+                "GEN" to "Aptitude & Sci (20%)"
+            )
+            else -> listOf(
+                "MIXED" to "Mixed (All)",
+                "PYQ" to "PYQs Only",
+                "NURSING" to "Nursing (70%)",
+                "CA" to "CA & GK",
+                "GEN" to "Sci/Math/Reas (30%)"
+            )
+        }
+        baseGroups + visibleSubjs.map { it.code to "${it.code} (${it.name})" }
     }
     val availableCount = filterCountProvider(state.sourceKey, state.difficultyFilter)
     val effectiveCount = if (state.questionCount == 0) availableCount else minOf(state.questionCount, availableCount)
@@ -258,9 +275,9 @@ fun TimedPracticeConfigDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Negative Marking (-0.33)", style = MaterialTheme.typography.labelLarge)
+                        Text("Negative Marking (-$negLabel)", style = MaterialTheme.typography.labelLarge)
                         Text(
-                            text = "Standard +1 / -0.33 exam scoring",
+                            text = "Standard +1 / -$negLabel exam scoring",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1274,6 +1291,7 @@ fun AppUpdateAvailableDialog(
     onDismiss: () -> Unit
 ) {
     if (!updateState.showDialog || updateState.downloadUrl.isBlank()) return
+    val isDirectApk = updateState.downloadUrl.endsWith(".apk", ignoreCase = true)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1317,6 +1335,13 @@ fun AppUpdateAvailableDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (isDirectApk) {
+                    Text(
+                        text = "Tap Download APK below, then open the downloaded file to install over your current version (all your study data stays intact).",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         },
         confirmButton = {
@@ -1324,7 +1349,10 @@ fun AppUpdateAvailableDialog(
                 onClick = onDownloadUpdate,
                 modifier = Modifier.testTag("update_dialog_download_btn")
             ) {
-                Text("Download Update", fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (isDirectApk) "Download APK" else "Open Release",
+                    fontWeight = FontWeight.Bold
+                )
             }
         },
         dismissButton = {
@@ -1337,5 +1365,6 @@ fun AppUpdateAvailableDialog(
         }
     )
 }
+
 
 

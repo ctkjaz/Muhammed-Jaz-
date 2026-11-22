@@ -320,12 +320,17 @@ fun OnboardingScreen(
                                 exams.forEach { exam ->
                                     val isSelected = selectedExamId == exam.id
                                     val isNorcet = PlatformCatalogDefaults.isNorcetExam(exam.id)
-                                    val patternLine = if (isNorcet) {
-                                        "80:20 Prelims & 160Q Mains • +1 / -0.33 Marking"
-                                    } else {
-                                        "70:30 Nursing & General • 100Q / 90 min CBT"
+                                    val isPgimer = PlatformCatalogDefaults.isPgimerExam(exam.id)
+                                    val patternLine = when {
+                                        isPgimer -> "100% Core Nursing • 100Q / 100m • +1 / -0.25 Marking"
+                                        isNorcet -> "80:20 Prelims & 160Q Mains • +1 / -0.33 Marking"
+                                        else -> "70:30 Nursing & General • 100Q / 90 min CBT"
                                     }
-                                    val highlightTag = if (isNorcet) "NORCET 5–9 PYQs" else "2015–2026 Shifts"
+                                    val highlightTag = when {
+                                        isPgimer -> "PGIMER 2020–25 PYQs"
+                                        isNorcet -> "NORCET 5–10 PYQs"
+                                        else -> "2015–2026 Shifts"
+                                    }
 
                                     Card(
                                         shape = RoundedCornerShape(20.dp),

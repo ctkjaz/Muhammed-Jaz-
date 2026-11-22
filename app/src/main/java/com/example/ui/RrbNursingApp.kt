@@ -92,6 +92,7 @@ import com.example.data.local.ProfileAvatarStorage
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.data.repository.NursingPrepRepository
+import com.example.data.update.AppUpdateVersionLogic
 import com.example.ui.auth.authStateFlow
 import com.example.ui.auth.signOut
 import com.example.ui.components.AppUpdateAvailableDialog
@@ -627,6 +628,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     backupFolderSummary = backupFolderSummary,
                                     isBackupBusy = isBackupBusy,
                                     appUpdateState = appUpdateState,
+                                    activeExamNegativeMarks = state.activeExam?.negativeMarks ?: 0.33,
+                                    activeExamDefaultMinutes = state.activeExam?.defaultMockMinutes ?: 90,
                                     onProfileNameChange = vm::setProfileName,
                                     onThemePreferenceChange = vm::setThemePreference,
                                     onUseTimeLimitChange = vm::setUseTimeLimit,
@@ -646,6 +649,16 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     onOpenPdfExport = { vm.openPdfExport() },
                                     onCheckForUpdates = { vm.checkForAppUpdates(userInitiated = true) },
                                     onOpenUpdateDialog = vm::openUpdateDialog,
+                                    onOpenReleasesPage = {
+                                        val url = appUpdateState.releasePageUrl.ifBlank {
+                                            AppUpdateVersionLogic.GITHUB_RELEASES_WEB_URL
+                                        }
+                                        runCatching {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                        }.onFailure {
+                                            vm.showMessage("Could not open browser for Releases page.")
+                                        }
+                                    },
                                     onResetStatistics = vm::clearAllStatistics,
                                     onBack = vm::closeSettings
                                 )
