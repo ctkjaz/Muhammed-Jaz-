@@ -911,13 +911,14 @@ class RrbNursingLogicTest {
             val rrbQuestions = repo.observeQuestionsForExam(PlatformCatalogDefaults.EXAM_RRB_NURSING).first()
             val norcetQuestions = repo.observeQuestionsForExam(PlatformCatalogDefaults.EXAM_AIIMS_NORCET).first()
 
-            // RRB stays completely intact (1,223 questions)
-            assertEquals(1223, rrbQuestions.size)
+            // All 1,223 baseline RRB questions remain intact + 8,000 subject practice + 500 predicted mocks = 9,723
+            assertEquals(1223 + 8000 + 500, rrbQuestions.size)
+            assertTrue(rrbQuestions.count { it.question.isPredictedMock } == 500)
 
             // NORCET contains all 320 dedicated N_* questions + shared Nursing & GK/Aptitude (excluding Railways)
             val dedicatedNorcet = norcetQuestions.filter { it.id.startsWith("N_") }
             assertEquals(320, dedicatedNorcet.size)
-            assertTrue(norcetQuestions.size > 1400)
+            assertTrue(norcetQuestions.size > 9000)
             assertTrue(norcetQuestions.none { it.question.subject == "Railways" })
 
             // Every dedicated NORCET question has 4 options, valid answer index, and non-blank rationale

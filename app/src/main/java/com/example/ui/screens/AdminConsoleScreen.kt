@@ -838,7 +838,7 @@ private fun AdminContentPushTab(
                         }
                     }
 
-                    Text("Default Subject & Type", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    Text("Default Subject, Type & Difficulty", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                     Row(
                         modifier = Modifier.horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -851,14 +851,26 @@ private fun AdminContentPushTab(
                             )
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("pyq" to "PYQ Paper", "nur" to "Nursing Practice").forEach { (cat, lbl) ->
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            "pyq" to "PYQ Paper",
+                            "nur" to "Nursing Practice",
+                            "mock" to "Predicted Mock"
+                        ).forEach { (cat, lbl) ->
                             MonochromeFilterPill(
                                 label = lbl,
                                 selected = draft.category == cat,
                                 onClick = { onUpdateDraft { it.copy(category = cat) } }
                             )
                         }
+                    }
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         QuestionDifficulty.entries.forEach { diff ->
                             MonochromeFilterPill(
                                 label = diff.label,
@@ -897,16 +909,25 @@ private fun AdminContentPushTab(
                             onClick = onPreview,
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(1.dp, editorial.borderSubtle),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
                             modifier = Modifier
                                 .weight(1f)
                                 .heightIn(min = 48.dp)
+                                .testTag("admin_parse_preview_btn")
                         ) {
-                            Text("Parse & Preview", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                text = "Parse & Preview",
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                         Button(
                             onClick = onPublish,
                             enabled = draft.previewQuestions.isNotEmpty() && !draft.isPublishing,
                             shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = editorial.acidLime,
                                 contentColor = editorial.onAcidLime
@@ -921,7 +942,13 @@ private fun AdminContentPushTab(
                             } else {
                                 Icon(Icons.Filled.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.size(6.dp))
-                                Text("Publish (${draft.previewQuestions.size})", fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "Publish (${draft.previewQuestions.size})",
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }

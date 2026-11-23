@@ -303,6 +303,24 @@ fun PyqSourceBadge(
     question: Question,
     modifier: Modifier = Modifier
 ) {
+    val editorial = MaterialTheme.editorialColors
+    if (question.isPredictedMock) {
+        Surface(
+            modifier = modifier.testTag("predicted_mock_badge"),
+            shape = RoundedCornerShape(8.dp),
+            color = editorial.acidLime,
+            border = BorderStroke(1.dp, editorial.acidLime)
+        ) {
+            Text(
+                text = "Predicted Mock",
+                style = MaterialTheme.typography.labelSmall,
+                color = editorial.onAcidLime,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+            )
+        }
+        return
+    }
     if (!question.isPyqTagged) return
     val isVerified = question.isVerifiedSource
     val shift = question.effectiveShiftYear
@@ -312,7 +330,6 @@ fun PyqSourceBadge(
         shift.isNotBlank() -> "PYQ • $shift"
         else -> "Memory-Based PYQ"
     }
-    val editorial = MaterialTheme.editorialColors
     val fgColor = if (isVerified) editorial.correctText else MaterialTheme.colorScheme.onSurface
     val bgColor = if (isVerified) editorial.correctBg else editorial.elevatedSurface
     val borderColor = if (isVerified) editorial.correctText.copy(alpha = 0.35f) else editorial.borderSubtle

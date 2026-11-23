@@ -36,6 +36,7 @@ import com.example.data.model.ExamSection
 import com.example.data.model.ExamStage
 import com.example.data.model.Flashcard
 import com.example.data.model.MockHistory
+import com.example.data.model.MockSelectionLogic
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.PracticePathway
 import com.example.data.model.Profession
@@ -1361,7 +1362,8 @@ class MainViewModel(
             allLinks = state.crossExamLinks,
             subjectCode = subjectCode,
             examIdFilter = examIdFilter,
-            difficultyFilter = difficultyFilter
+            difficultyFilter = difficultyFilter,
+            excludePyqAndMock = true
         )
         if (items.isEmpty()) {
             showMessage("No questions match this subject filter.")
@@ -1883,12 +1885,13 @@ class MainViewModel(
         difficultyFilter: DifficultyFilter = DifficultyFilter.ALL
     ): List<QuestionItem> {
         val bySource = when (sourceKey) {
-            "MIXED" -> all
-            "PYQ" -> all.filter { it.question.category == "pyq" || it.question.shiftYear.isNotBlank() }
-            "NURSING" -> all.filter { SubjectCatalog.isNursing(it.question) }
-            "CA" -> all.filter { SubjectCatalog.isCa(it.question) }
-            "GEN" -> all.filter { SubjectCatalog.isGen(it.question) }
-            else -> all.filter { it.question.subject == sourceKey }
+            "MIXED" -> all.filter { !it.question.isPyqTagged }
+            "PYQ" -> all.filter { it.question.isPyqTagged }
+            "PREDICTED_MOCK" -> all.filter { it.question.isPredictedMock }
+            "NURSING" -> all.filter { !it.question.isPyqTagged && !it.question.isPredictedMock && SubjectCatalog.isNursing(it.question) }
+            "CA" -> all.filter { !it.question.isPyqTagged && !it.question.isPredictedMock && SubjectCatalog.isCa(it.question) }
+            "GEN" -> all.filter { !it.question.isPyqTagged && !it.question.isPredictedMock && SubjectCatalog.isGen(it.question) }
+            else -> all.filter { !it.question.isPyqTagged && !it.question.isPredictedMock && it.question.subject == sourceKey }
         }
         val targetDiff = difficultyFilter.difficulty ?: return bySource
         return bySource.filter { it.question.difficulty == targetDiff }
@@ -1951,8 +1954,8 @@ class MainViewModel(
     ) {
         val activeExamId = settings.activeExamId.value
         val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExamId)
-        // Strictly restrict NORCET Prelims mocks to the Prelims-only pool (zero Mains mixing)
-        val all = if (isNorcet) {
+        // Strictly restrict NORCET Prelims mocks to Prelims-only non-PYQ pool (prioritizing Predicted Mocks)
+        val stageScoped = if (isNorcet) {
             PlatformCatalogDefaults.filterQuestionsForExamStage(
                 examId = activeExamId,
                 stage = ExamStage.PRELIMS,
@@ -1961,18 +1964,17 @@ class MainViewModel(
         } else {
             mainState.value.questions
         }
-        if (all.isEmpty()) return
-        val isNorcetFullPrelims = isOfficialFullMock && isNorcet && totalQuestions == 100
-        val nursingPct = PlatformCatalogDefaults.nursingWeightagePercent(activeExamId)
-        val nursingCount = (totalQuestions * nursingPct) / 100
-        val nonNursingCount = totalQuestions - nursingCount
-        val nurPool = all.filter { SubjectCatalog.isNursing(it.question) }.shuffled()
-        val nonPool = all.filter { !SubjectCatalog.isNursing(it.question) }.shuffled()
-        val selected = (nurPool.take(nursingCount) + nonPool.take(nonNursingCount)).toMutableList()
-        if (selected.size < totalQuestions) {
-            val usedIds = selected.map { it.id }.toSet()
-            selected += all.filter { it.id !in usedIds }.shuffled().take(totalQuestions - selected.size)
+        val selected = MockSelectionLogic.selectStandardMock(
+            pool = stageScoped,
+            examId = activeExamId,
+            totalQuestions = totalQuestions,
+            shuffle = true
+        )
+        if (selected.isEmpty()) {
+            showMessage("No mock questions available for this exam yet.")
+            return
         }
+        val isNorcetFullPrelims = isOfficialFullMock && isNorcet && totalQuestions == 100
         startCbtCustom(
             items = selected,
             title = title,
@@ -1999,23 +2001,16 @@ class MainViewModel(
         durationMinutes: Int = 180,
         title: String = "NORCET Stage II Mains (160Q Clinical CBT)"
     ) {
-        // Strictly restrict NORCET Mains mocks to the Stage II Mains clinical nursing pool only
-        val mainsPool = PlatformCatalogDefaults.filterQuestionsForExamStage(
-            examId = PlatformCatalogDefaults.EXAM_AIIMS_NORCET,
-            stage = ExamStage.MAINS,
-            questions = mainState.value.questions
+        // Strictly restrict NORCET Mains mocks to non-PYQ Stage II Mains clinical pool (Predicted Mocks first)
+        val selected = MockSelectionLogic.selectNorcetMainsMock(
+            allQuestions = mainState.value.questions,
+            totalQuestions = totalQuestions,
+            shuffle = true
         )
-        if (mainsPool.isEmpty()) {
+        if (selected.isEmpty()) {
             showMessage("No Mains clinical questions available.")
             return
         }
-        val dedicatedMainsCases = mainsPool.filter {
-            it.question.questionText.contains("[Mains", ignoreCase = true)
-        }.shuffled()
-        val otherMainsClinical = mainsPool.filter {
-            !it.question.questionText.contains("[Mains", ignoreCase = true)
-        }.shuffled()
-        val selected = (dedicatedMainsCases + otherMainsClinical).take(totalQuestions)
         val useSectionLock = totalQuestions >= 160 && selected.size >= 160
         startCbtCustom(
             items = selected,
@@ -2432,20 +2427,53 @@ class MainViewModel(
         _importerState.update(transform)
     }
 
+    fun importPdfFileForImporter(context: android.content.Context, uri: Uri, displayFileName: String) {
+        viewModelScope.launch {
+            val result = PdfTextExtractor.extractFromUri(context, uri)
+            result.onSuccess { extracted ->
+                _importerState.update { st ->
+                    st.copy(
+                        rawText = extracted.text,
+                        sourceNote = st.sourceNote.ifBlank { "Imported PDF: $displayFileName" }
+                    )
+                }
+                if (extracted.isLikelyScannedPdf) {
+                    showMessage("This PDF appears image-scanned without selectable text. Paste OCR text below to parse.")
+                } else {
+                    previewPdfTextImport()
+                    val count = _importerState.value.previewQuestions.size
+                    if (count > 0) {
+                        showMessage("Extracted $displayFileName — detected $count MCQ(s).")
+                    } else {
+                        showMessage("Extracted $displayFileName (${extracted.text.length} chars). Review text and tap Parse & Preview.")
+                    }
+                }
+            }.onFailure { err ->
+                showMessage("Could not read file: ${err.message}")
+            }
+        }
+    }
+
     fun previewPdfTextImport() {
         val st = _importerState.value
+        val raw = st.rawText.trim()
         val effectiveTopicId = BulkQuestionParser.slugTopicId(st.subject, st.topicName)
-        val parsed = BulkQuestionParser.parseRawPdfText(
-            rawText = st.rawText,
-            category = st.category,
-            subject = st.subject,
-            shiftYear = st.shiftYear,
-            defaultDifficulty = st.difficulty,
-            defaultSourceNote = st.sourceNote,
-            markAsVerified = st.markAsVerified,
-            defaultSourceType = st.sourceType,
-            defaultTopicId = effectiveTopicId
-        )
+        val parsed = if (raw.startsWith("[") || raw.startsWith("{")) {
+            runCatching { BulkQuestionParser.parseJsonBatch(raw, markAsCustom = true) }
+                .getOrDefault(emptyList())
+        } else {
+            BulkQuestionParser.parseRawPdfText(
+                rawText = raw,
+                category = st.category,
+                subject = st.subject,
+                shiftYear = st.shiftYear,
+                defaultDifficulty = st.difficulty,
+                defaultSourceNote = st.sourceNote,
+                markAsVerified = st.markAsVerified,
+                defaultSourceType = st.sourceType,
+                defaultTopicId = effectiveTopicId
+            )
+        }
         _importerState.update { it.copy(previewQuestions = parsed, hasPreviewed = true) }
     }
 
@@ -3068,6 +3096,11 @@ class MainViewModel(
             showMessage("Pick a PDF/TXT/JSON file or paste MCQ text first.")
             return
         }
+        val alignedSourceType = when (draft.category) {
+            "pyq" -> QuestionSourceType.OFFICIAL_PYQ
+            "mock" -> QuestionSourceType.PREDICTED_MOCK
+            else -> QuestionSourceType.PRACTICE
+        }
         val parsed = if (raw.startsWith("[") || raw.startsWith("{")) {
             runCatching { BulkQuestionParser.parseJsonBatch(raw, markAsCustom = false) }
                 .getOrDefault(emptyList())
@@ -3076,11 +3109,11 @@ class MainViewModel(
                 rawText = raw,
                 category = draft.category,
                 subject = draft.subject,
-                shiftYear = draft.shiftYear,
+                shiftYear = if (draft.category == "pyq") draft.shiftYear else "",
                 defaultDifficulty = draft.difficulty,
                 defaultSourceNote = "ClinEdge Pack: ${draft.title.ifBlank { "Update" }}",
-                markAsVerified = true,
-                defaultSourceType = draft.sourceType,
+                markAsVerified = draft.category == "pyq",
+                defaultSourceType = alignedSourceType,
                 defaultTopicId = PlatformCatalogDefaults.defaultTopicIdFor(draft.subject)
             )
         }
@@ -3088,7 +3121,7 @@ class MainViewModel(
             it.copy(contentDraft = it.contentDraft.copy(previewQuestions = parsed))
         }
         if (parsed.isEmpty()) {
-            showMessage("No MCQs detected. Ensure questions have options A–D and Ans: A/B/C/D.")
+            showMessage("No MCQs detected. Ensure questions have options A–D (or 1–4) and an answer.")
         } else {
             showMessage("Parsed ${parsed.size} questions ready to review & publish.")
         }

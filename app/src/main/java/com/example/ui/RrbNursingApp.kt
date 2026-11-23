@@ -370,8 +370,24 @@ fun RrbNursingApp(vm: MainViewModel) {
             contract = ActivityResultContracts.OpenDocument()
         ) { uri ->
             if (uri != null) {
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
                 val fileName = resolveDisplayFileName(context, uri)
                 vm.adminExtractDocumentForPack(context, uri, fileName)
+            }
+        }
+
+        // Zero-permission SAF Document Picker for Local ImporterModalSheet (PDF / TXT / JSON)
+        val importerPdfFileLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            if (uri != null) {
+                val fileName = resolveDisplayFileName(context, uri)
+                vm.importPdfFileForImporter(context, uri, fileName)
             }
         }
 
@@ -725,9 +741,11 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onResetDeviceLock = vm::adminResetDeviceLock,
                                         onSaveConfig = vm::adminSavePricingConfig,
                                         onPickContentFile = {
-                                            adminPackFileLauncher.launch(
-                                                arrayOf("application/pdf", "text/plain", "application/json", "*/*")
-                                            )
+                                            runCatching {
+                                                adminPackFileLauncher.launch(arrayOf("*/*"))
+                                            }.onFailure { err ->
+                                                vm.showMessage("Could not open file picker: ${err.message}")
+                                            }
                                         },
                                         onUpdateContentDraft = vm::adminUpdateContentDraft,
                                         onPreviewContentPack = vm::adminPreviewContentPack,
@@ -927,6 +945,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onStartStandardMock = vm::startCbtStandardMock,
                                             onStartNorcetMainsMock = vm::startNorcetMainsMock,
                                             onStartCustomCbt = { list, title, mins -> vm.startCbtCustom(list, title, mins) },
+                                            onPracticePredictedBank = { list, title -> vm.startPractice(list, title) },
                                             onOpenTimedPracticeConfig = { vm.openTimedPracticeConfig() }
                                         )
 
@@ -974,6 +993,13 @@ fun RrbNursingApp(vm: MainViewModel) {
                     backupFolderSummary = backupFolderSummary,
                     isBackupBusy = isBackupBusy,
                     onUpdate = vm::updateImporter,
+                    onPickPdfFile = {
+                        runCatching {
+                            importerPdfFileLauncher.launch(arrayOf("*/*"))
+                        }.onFailure { err ->
+                            vm.showMessage("Could not open file picker: ${err.message}")
+                        }
+                    },
                     onPreviewPdf = vm::previewPdfTextImport,
                     onCommitPdf = vm::commitPreviewImport,
                     onImportJson = vm::importJsonBatch,

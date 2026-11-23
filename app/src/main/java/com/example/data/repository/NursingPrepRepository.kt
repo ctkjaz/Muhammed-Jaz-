@@ -93,6 +93,16 @@ class NursingPrepRepository(
                     sourceType = projectedSourceType
                 )
             )
+        } else if (q.isPredictedMock) {
+            item.copy(
+                question = q.copy(
+                    category = "mock",
+                    shiftYear = "",
+                    examYear = "",
+                    examShift = "",
+                    sourceType = QuestionSourceType.PREDICTED_MOCK
+                )
+            )
         } else {
             val nonPyqCategory = when {
                 SubjectCatalog.isNursingCode(q.subject) -> "nur"
@@ -181,18 +191,39 @@ class NursingPrepRepository(
                 q.toEntity(sortOrder = 4000 + index)
             }
 
+            val subjectPracticeQuestions = runCatching {
+                val spJson = context.assets.open("subject_practice_bank.json").bufferedReader().use { it.readText() }
+                BulkQuestionParser.parseJsonBatch(spJson, markAsCustom = false)
+            }.getOrDefault(emptyList())
+            val subjectPracticeEntities = subjectPracticeQuestions.mapIndexed { index, q ->
+                q.toEntity(sortOrder = 10000 + index)
+            }
+
+            val predictedMockQuestions = runCatching {
+                val pmJson = context.assets.open("predicted_mock_bank.json").bufferedReader().use { it.readText() }
+                BulkQuestionParser.parseJsonBatch(pmJson, markAsCustom = false)
+            }.getOrDefault(emptyList())
+            val predictedMockEntities = predictedMockQuestions.mapIndexed { index, q ->
+                q.toEntity(sortOrder = 20000 + index)
+            }
+
             if (needsQuestions) {
-                dao.insertQuestions(rrbEntities)
-                if (norcetEntities.isNotEmpty()) {
-                    dao.insertQuestions(norcetEntities)
+                val allBuiltInEntities = buildList {
+                    addAll(rrbEntities)
+                    addAll(norcetEntities)
+                    addAll(pgimerEntities)
+                    addAll(subjectPracticeEntities)
+                    addAll(predictedMockEntities)
                 }
-                if (pgimerEntities.isNotEmpty()) {
-                    dao.insertQuestions(pgimerEntities)
+                allBuiltInEntities.chunked(500).forEach { chunk ->
+                    dao.insertQuestions(chunk)
                 }
             }
 
+            val expandedBank = subjectPracticeQuestions + predictedMockQuestions
+
             if (needsQuestions || needsRrbLinks) {
-                val rrbLinks = rrbQuestions.mapIndexed { index, q ->
+                val rrbBaseLinks = rrbQuestions.mapIndexed { index, q ->
                     ExamQuestionLinkEntity(
                         examId = PlatformCatalogDefaults.EXAM_RRB_NURSING,
                         questionId = q.id,
@@ -203,7 +234,20 @@ class NursingPrepRepository(
                         examShift = q.examShift
                     )
                 }
-                dao.upsertExamQuestionLinks(rrbLinks)
+                val rrbExpandedLinks = expandedBank.mapIndexed { index, q ->
+                    ExamQuestionLinkEntity(
+                        examId = PlatformCatalogDefaults.EXAM_RRB_NURSING,
+                        questionId = q.id,
+                        sectionId = PlatformCatalogDefaults.sectionIdForRrbSubject(q.subject),
+                        sortOrder = 10000 + index,
+                        isPyqForExam = false,
+                        examYear = "",
+                        examShift = ""
+                    )
+                }
+                (rrbBaseLinks + rrbExpandedLinks).chunked(500).forEach { chunk ->
+                    dao.upsertExamQuestionLinks(chunk)
+                }
             }
 
             if (needsQuestions || needsNorcetLinks) {
@@ -231,7 +275,22 @@ class NursingPrepRepository(
                             examShift = ""
                         )
                     }
-                dao.upsertExamQuestionLinks(dedicatedNorcetLinks + sharedNorcetLinks)
+                val expandedNorcetLinks = expandedBank
+                    .filter { PlatformCatalogDefaults.isNorcetSharedSubject(it.subject) }
+                    .mapIndexed { index, q ->
+                        ExamQuestionLinkEntity(
+                            examId = PlatformCatalogDefaults.EXAM_AIIMS_NORCET,
+                            questionId = q.id,
+                            sectionId = PlatformCatalogDefaults.sectionIdForNorcetSubject(q.subject),
+                            sortOrder = 10000 + index,
+                            isPyqForExam = false,
+                            examYear = "",
+                            examShift = ""
+                        )
+                    }
+                (dedicatedNorcetLinks + sharedNorcetLinks + expandedNorcetLinks).chunked(500).forEach { chunk ->
+                    dao.upsertExamQuestionLinks(chunk)
+                }
             }
 
             if (needsQuestions || needsPgimerLinks) {
@@ -260,7 +319,22 @@ class NursingPrepRepository(
                             examShift = ""
                         )
                     }
-                dao.upsertExamQuestionLinks(dedicatedPgimerLinks + sharedPgimerNursing)
+                val expandedPgimerLinks = expandedBank
+                    .filter { PlatformCatalogDefaults.isPgimerSharedSubject(it.subject) }
+                    .mapIndexed { index, q ->
+                        ExamQuestionLinkEntity(
+                            examId = PlatformCatalogDefaults.EXAM_PGIMER_NURSING,
+                            questionId = q.id,
+                            sectionId = PlatformCatalogDefaults.sectionIdForPgimerSubject(q.subject),
+                            sortOrder = 10000 + index,
+                            isPyqForExam = false,
+                            examYear = "",
+                            examShift = ""
+                        )
+                    }
+                (dedicatedPgimerLinks + sharedPgimerNursing + expandedPgimerLinks).chunked(500).forEach { chunk ->
+                    dao.upsertExamQuestionLinks(chunk)
+                }
             }
             onSeededVersionUpdated(CURRENT_SEED_VERSION)
         }
@@ -321,7 +395,7 @@ class NursingPrepRepository(
     }
 
     companion object {
-        const val CURRENT_SEED_VERSION = 8
+        const val CURRENT_SEED_VERSION = 9
     }
 
     suspend fun loadFlashcards(): List<Flashcard> = withContext(Dispatchers.IO) {

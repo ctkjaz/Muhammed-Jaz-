@@ -182,7 +182,8 @@ private fun CrossExamSubjectPracticeView(
                 allLinks = state.crossExamLinks,
                 subjectCode = meta.code,
                 examIdFilter = examFilter,
-                difficultyFilter = difficultyFilter
+                difficultyFilter = difficultyFilter,
+                excludePyqAndMock = true
             )
             if (items.isEmpty()) return@mapNotNull null
             if (qTrim.isNotEmpty() &&
@@ -373,6 +374,13 @@ private fun ExamScopedSubjectsView(
             stagePool.filter { it.question.difficulty == d }
         } ?: stagePool
     }
+    // Strictly keep Subject Practice separate from PYQs (PYQ tab) and Predicted Mocks (CBT tab)
+    val practicePool = remember(filteredPool) {
+        filteredPool.filter { !it.question.isPyqTagged && !it.question.isPredictedMock }
+    }
+    val pyqOnlyPool = remember(filteredPool) {
+        filteredPool.filter { it.question.isPyqTagged }
+    }
     val diffSuffix = difficultyFilter.difficulty?.let { " • ${it.label}" } ?: ""
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -423,13 +431,13 @@ private fun ExamScopedSubjectsView(
                         else -> "Nursing Subjects"
                     },
                     subtitle = when {
-                        isPgimer -> "100% Core Nursing • +1 / -0.25"
+                        isPgimer -> "100% Core Nursing practice bank • +1 / -0.25"
                         isNorcetMains -> "100% Clinical scenarios & priority care"
-                        isNorcet -> "80% Stage I Prelims nursing syllabus"
-                        else -> "70% core nursing weightage"
+                        isNorcet -> "80% Stage I Prelims nursing practice bank"
+                        else -> "500+ practice questions per subject • 70% weightage"
                     },
                     subjects = SubjectCatalog.NURSING_SUBJS,
-                    allQuestions = filteredPool,
+                    allQuestions = practicePool,
                     diffSuffix = diffSuffix,
                     columns = columns,
                     allFilter = { SubjectCatalog.isNursing(it.question) },
@@ -438,7 +446,7 @@ private fun ExamScopedSubjectsView(
                 )
 
                 SubjectHubSection.PYQ -> PyqShiftList(
-                    allQuestions = filteredPool,
+                    allQuestions = pyqOnlyPool,
                     isNorcet = isNorcet,
                     isPgimer = isPgimer,
                     diffSuffix = diffSuffix,
@@ -449,7 +457,7 @@ private fun ExamScopedSubjectsView(
                 )
 
                 SubjectHubSection.CA_GK -> CaAndFlashcardsList(
-                    allQuestions = filteredPool,
+                    allQuestions = practicePool,
                     isNorcet = isNorcet,
                     diffSuffix = diffSuffix,
                     flashcards = state.flashcards,
@@ -460,9 +468,9 @@ private fun ExamScopedSubjectsView(
 
                 SubjectHubSection.NON_TECH -> SubjectListGrid(
                     title = if (isNorcet) "Prelims Aptitude & Science" else "Science, Math & Reasoning",
-                    subtitle = if (isNorcet) "20% Stage I Prelims non-nursing" else "30% non-technical weightage",
+                    subtitle = if (isNorcet) "20% Stage I Prelims non-nursing practice bank" else "500+ practice questions per subject • 30% weightage",
                     subjects = SubjectCatalog.GEN_SUBJS,
-                    allQuestions = filteredPool,
+                    allQuestions = practicePool,
                     diffSuffix = diffSuffix,
                     columns = columns,
                     allFilter = { SubjectCatalog.isGen(it.question) },

@@ -26,6 +26,7 @@ enum class DifficultyFilter(val label: String, val difficulty: QuestionDifficult
 enum class QuestionSourceType(val dbValue: String, val label: String) {
     OFFICIAL_PYQ("official_pyq", "Official PYQ"),
     MEMORY_BASED("memory_based", "Memory-Based PYQ"),
+    PREDICTED_MOCK("predicted_mock", "Predicted Mock"),
     PRACTICE("practice", "Practice"),
     CURRENT_AFFAIRS("current_affairs", "Current Affairs");
 
@@ -33,6 +34,7 @@ enum class QuestionSourceType(val dbValue: String, val label: String) {
         fun fromDbValue(raw: String?): QuestionSourceType? = when (raw?.trim()?.lowercase()) {
             "official_pyq" -> OFFICIAL_PYQ
             "memory_based", "reconstructed" -> MEMORY_BASED
+            "predicted_mock", "mock" -> PREDICTED_MOCK
             "practice" -> PRACTICE
             "current_affairs", "ca" -> CURRENT_AFFAIRS
             else -> null
@@ -51,6 +53,7 @@ enum class QuestionSourceType(val dbValue: String, val label: String) {
                 return if (explicit == OFFICIAL_PYQ && !isVerified) MEMORY_BASED else explicit
             }
             return when {
+                category == "mock" -> PREDICTED_MOCK
                 category == "pyq" || shiftYear.isNotBlank() ->
                     if (isVerified) OFFICIAL_PYQ else MEMORY_BASED
                 category == "ca" -> CURRENT_AFFAIRS
@@ -259,7 +262,7 @@ object PlatformCatalogDefaults {
         val isNorcetRecallPyq = question.id.startsWith("N_") &&
             (question.category == "pyq" || question.effectiveShiftYear.startsWith("NORCET", ignoreCase = true))
         if (isNorcetRecallPyq) return ExamStage.PRELIMS
-        if (question.category == "nur" && question.difficulty == QuestionDifficulty.HARD) {
+        if ((question.category == "nur" || question.isPredictedMock) && question.difficulty == QuestionDifficulty.HARD) {
             return ExamStage.MAINS
         }
         return ExamStage.PRELIMS
@@ -353,7 +356,8 @@ object SubjectPracticeLogic {
         allLinks: List<ExamQuestionLink>,
         subjectCode: String,
         examIdFilter: String? = null,
-        difficultyFilter: DifficultyFilter = DifficultyFilter.ALL
+        difficultyFilter: DifficultyFilter = DifficultyFilter.ALL,
+        excludePyqAndMock: Boolean = false
     ): List<QuestionItem> {
         val allowedIds = if (!examIdFilter.isNullOrBlank()) {
             allLinks.asSequence()
@@ -367,7 +371,8 @@ object SubjectPracticeLogic {
         val matched = allQuestions.filter { item ->
             item.question.subject == subjectCode &&
                 (allowedIds == null || item.id in allowedIds) &&
-                (targetDiff == null || item.question.difficulty == targetDiff)
+                (targetDiff == null || item.question.difficulty == targetDiff) &&
+                (!excludePyqAndMock || (!item.question.isPyqTagged && !item.question.isPredictedMock))
         }
         return deduplicateQuestions(matched)
     }
@@ -407,6 +412,77 @@ object SubjectPracticeLogic {
     }
 }
 
+object MockSelectionLogic {
+    /**
+     * Selects a standard CBT mock (RRB 70:30, NORCET Prelims 80:20, PGIMER 100% nursing)
+     * strictly EXCLUDING PYQs and prioritizing the 500 High-Probability Predicted Mock pool first.
+     */
+    fun selectStandardMock(
+        pool: List<QuestionItem>,
+        examId: String?,
+        totalQuestions: Int,
+        shuffle: Boolean = true
+    ): List<QuestionItem> {
+        val mockEligible = pool.filter { !it.question.isPyqTagged }
+        if (mockEligible.isEmpty()) return emptyList()
+
+        val nursingPct = PlatformCatalogDefaults.nursingWeightagePercent(examId)
+        val nursingCount = (totalQuestions * nursingPct) / 100
+        val nonNursingCount = totalQuestions - nursingCount
+
+        fun ordered(items: List<QuestionItem>): List<QuestionItem> {
+            val predicted = items.filter { it.question.isPredictedMock }
+            val practice = items.filter { !it.question.isPredictedMock }
+            return if (shuffle) {
+                predicted.shuffled() + practice.shuffled()
+            } else {
+                predicted + practice
+            }
+        }
+
+        val nurPool = ordered(mockEligible.filter { SubjectCatalog.isNursing(it.question) })
+        val nonPool = ordered(mockEligible.filter { !SubjectCatalog.isNursing(it.question) })
+        val selected = (nurPool.take(nursingCount) + nonPool.take(nonNursingCount)).toMutableList()
+
+        if (selected.size < totalQuestions) {
+            val usedIds = selected.map { it.id }.toHashSet()
+            selected += ordered(mockEligible.filter { it.id !in usedIds }).take(totalQuestions - selected.size)
+        }
+        return selected
+    }
+
+    /**
+     * Selects a Stage II AIIMS NORCET Mains clinical CBT mock strictly EXCLUDING PYQs,
+     * prioritizing High-Probability Predicted Mock Mains clinical vignettes first.
+     */
+    fun selectNorcetMainsMock(
+        allQuestions: List<QuestionItem>,
+        totalQuestions: Int,
+        shuffle: Boolean = true
+    ): List<QuestionItem> {
+        val mainsPool = PlatformCatalogDefaults.filterQuestionsForExamStage(
+            examId = PlatformCatalogDefaults.EXAM_AIIMS_NORCET,
+            stage = ExamStage.MAINS,
+            questions = allQuestions
+        ).filter { !it.question.isPyqTagged }
+        if (mainsPool.isEmpty()) return emptyList()
+
+        val predictedMains = mainsPool.filter { it.question.isPredictedMock }
+        val dedicatedOtherMains = mainsPool.filter {
+            !it.question.isPredictedMock && it.question.questionText.contains("[Mains", ignoreCase = true)
+        }
+        val remainingClinical = mainsPool.filter {
+            !it.question.isPredictedMock && !it.question.questionText.contains("[Mains", ignoreCase = true)
+        }
+        val ordered = if (shuffle) {
+            predictedMains.shuffled() + dedicatedOtherMains.shuffled() + remainingClinical.shuffled()
+        } else {
+            predictedMains + dedicatedOtherMains + remainingClinical
+        }
+        return ordered.take(totalQuestions)
+    }
+}
+
 data class Question(
     val id: String,
     val category: String,      // Legacy: "pyq" | "nur" | "ca" | "gen"
@@ -432,6 +508,9 @@ data class Question(
             shiftYear.isNotBlank() ||
             examYear.isNotBlank()
 
+    val isPredictedMock: Boolean
+        get() = sourceType == QuestionSourceType.PREDICTED_MOCK || category == "mock"
+
     val isVerifiedSource: Boolean
         get() = sourceStatus == SOURCE_VERIFIED && sourceNote.isNotBlank()
 
@@ -456,6 +535,7 @@ data class Question(
                 else if (isVerifiedSource) "Official PYQ"
                 else "Memory-Based PYQ"
             QuestionSourceType.MEMORY_BASED -> "Memory-Based PYQ"
+            QuestionSourceType.PREDICTED_MOCK -> "Predicted Mock"
             QuestionSourceType.CURRENT_AFFAIRS -> "Current Affairs"
             QuestionSourceType.PRACTICE -> "Practice"
         }

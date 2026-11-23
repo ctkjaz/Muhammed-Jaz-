@@ -366,6 +366,7 @@ fun ImporterModalSheet(
     backupFolderSummary: BackupFolderSummary = BackupFolderSummary(),
     isBackupBusy: Boolean = false,
     onUpdate: ((ImporterUiState) -> ImporterUiState) -> Unit,
+    onPickPdfFile: () -> Unit = {},
     onPreviewPdf: () -> Unit,
     onCommitPdf: () -> Unit,
     onImportJson: () -> Unit,
@@ -436,6 +437,7 @@ fun ImporterModalSheet(
                 PdfTextImportPane(
                     state = state,
                     onUpdate = onUpdate,
+                    onPickPdfFile = onPickPdfFile,
                     onPreviewPdf = onPreviewPdf,
                     onCommitPdf = onCommitPdf
                 )
@@ -489,14 +491,35 @@ fun ImporterModalSheet(
 private fun PdfTextImportPane(
     state: ImporterUiState,
     onUpdate: ((ImporterUiState) -> ImporterUiState) -> Unit,
+    onPickPdfFile: () -> Unit,
     onPreviewPdf: () -> Unit,
     onCommitPdf: () -> Unit
 ) {
     val editorial = MaterialTheme.editorialColors
-    val categories = listOf("pyq" to "PYQ", "nur" to "Nursing Core", "ca" to "GK & Health", "gen" to "Aptitude / Sci")
+    val categories = listOf(
+        "pyq" to "PYQ",
+        "mock" to "Predicted Mock",
+        "nur" to "Nursing Core",
+        "ca" to "GK & Health",
+        "gen" to "Aptitude / Sci"
+    )
     val subjects = SubjectCatalog.ALL_SUBJS.map { it.code }
     var catExpanded by remember { mutableStateOf(false) }
     var subjExpanded by remember { mutableStateOf(false) }
+
+    OutlinedButton(
+        onClick = onPickPdfFile,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, editorial.borderSubtle),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .testTag("importer_pick_pdf_btn")
+    ) {
+        Icon(Icons.Filled.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("Select PDF / TXT / JSON File", fontWeight = FontWeight.SemiBold)
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Source Type", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
@@ -513,6 +536,7 @@ private fun PdfTextImportPane(
                             val alignedCategory = when (st) {
                                 QuestionSourceType.OFFICIAL_PYQ,
                                 QuestionSourceType.MEMORY_BASED -> "pyq"
+                                QuestionSourceType.PREDICTED_MOCK -> "mock"
                                 QuestionSourceType.CURRENT_AFFAIRS -> "ca"
                                 QuestionSourceType.PRACTICE -> if (current.category == "gen") "gen" else "nur"
                             }
@@ -558,6 +582,7 @@ private fun PdfTextImportPane(
                                     } else {
                                         QuestionSourceType.MEMORY_BASED
                                     }
+                                    "mock" -> QuestionSourceType.PREDICTED_MOCK
                                     "ca" -> QuestionSourceType.CURRENT_AFFAIRS
                                     else -> QuestionSourceType.PRACTICE
                                 }
