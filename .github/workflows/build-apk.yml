@@ -113,6 +113,41 @@ jobs:
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --stacktrace
 
+      - name: Print failed unit test details
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          files = sorted(glob.glob("app/build/test-results/testDebugUnitTest/TEST-*.xml"))
+          found = False
+          for path in files:
+              tree = ET.parse(path)
+              root = tree.getroot()
+              for tc in root.findall("testcase"):
+                  for fail in list(tc.findall("failure")) + list(tc.findall("error")):
+                      found = True
+                      cls = tc.attrib.get("classname", "")
+                      name = tc.attrib.get("name", "")
+                      msg = (fail.attrib.get("message") or "").replace("\n", " ")
+                      print(f"::error::FAILED {cls} :: {name} -> {msg}")
+                      if fail.text:
+                          print(fail.text[:2500])
+                          print("=" * 72)
+          if not found:
+              print("No JUnit failure XML entries found.")
+          PY
+
+      - name: Upload unit test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Prepare versioned APK asset
         run: |
           APK_SRC=$(ls app/build/outputs/apk/debug/*.apk | head -n 1)

@@ -810,3 +810,129 @@ test("QuestionPacks & ClockSync: admin publishes OTA packs; students read publis
   );
 });
 
+test("Doubts: students create/read own doubts and cannot forge faculty replies; admin replies to all", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const adminDb = testEnv
+    .authenticatedContext("owner_admin_uid", {
+      email: "jazsaleem2004@gmail.com",
+      email_verified: true,
+    })
+    .firestore();
+  const now = new Date(Date.now() - 2000);
+
+  const validDoubt = {
+    doubtId: "doubt_1",
+    userId: ALICE_UID,
+    studentName: "Alice Nurse",
+    studentEmail: "alice@example.com",
+    examId: "esic_nursing",
+    subject: "MSN",
+    questionId: "PM_0001",
+    questionPreview: "Which electrolyte triggers peaked T waves?",
+    doubtText: "Why does calcium gluconate not lower serum potassium directly?",
+    status: "open",
+    adminReply: "",
+    repliedBy: "",
+    studentReadReply: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  // Unauthenticated denied
+  await assertFails(unauthDb.collection("doubts").doc("doubt_1").set(validDoubt));
+  await assertFails(unauthDb.collection("doubts").get());
+
+  // Student creates own doubt
+  await assertSucceeds(aliceDb.collection("doubts").doc("doubt_1").set(validDoubt));
+
+  // Student cannot forge an already-answered doubt on create
+  await assertFails(
+    aliceDb.collection("doubts").doc("doubt_forged").set({
+      ...validDoubt,
+      doubtId: "doubt_forged",
+      status: "answered",
+      adminReply: "Forged reply",
+    })
+  );
+
+  // Student reads own doubt via filtered list; cannot read Bob's or unfiltered list
+  await assertSucceeds(aliceDb.collection("doubts").where("userId", "==", ALICE_UID).get());
+  await assertFails(aliceDb.collection("doubts").get());
+  await assertFails(bobDb.collection("doubts").doc("doubt_1").get());
+  await assertFails(bobDb.collection("doubts").doc("doubt_1").delete());
+
+  // Admin can list all doubts and post official faculty reply
+  await assertSucceeds(adminDb.collection("doubts").get());
+  await assertSucceeds(
+    adminDb.collection("doubts").doc("doubt_1").update({
+      status: "answered",
+      adminReply: "Calcium gluconate stabilizes the myocardial membrane immediately; insulin+dextrose shifts K+ intracellularly.",
+      repliedBy: "ClinEdge Faculty",
+      repliedAt: new Date(Date.now() - 1000),
+      studentReadReply: false,
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Student can mark reply read, but CANNOT tamper with adminReply
+  await assertSucceeds(
+    aliceDb.collection("doubts").doc("doubt_1").update({
+      studentReadReply: true,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("doubts").doc("doubt_1").update({
+      adminReply: "Tampered reply",
+      updatedAt: new Date(Date.now() - 400),
+    })
+  );
+});
+
+test("Announcements: admin pushes live news/exam alerts; students can read but cannot write", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const adminDb = testEnv
+    .authenticatedContext("owner_admin_uid", {
+      email: "jazsaleem2004@gmail.com",
+      email_verified: true,
+    })
+    .firestore();
+  const now = new Date(Date.now() - 2000);
+
+  const alertPayload = {
+    announcementId: "alert_norcet_10",
+    title: "AIIMS NORCET-10 Registration Live",
+    body: "Online registration for AIIMS NORCET-10 Prelims is now open on aiimsexams.ac.in.",
+    category: "exam_alert",
+    targetExamId: "aiims_norcet",
+    priority: "urgent",
+    actionUrl: "https://www.aiimsexams.ac.in",
+    createdByEmail: "jazsaleem2004@gmail.com",
+    createdAt: now,
+  };
+
+  // Unauthenticated denied
+  await assertFails(unauthDb.collection("announcements").get());
+
+  // Non-admin student cannot push announcements
+  await assertFails(aliceDb.collection("announcements").doc("alert_norcet_10").set(alertPayload));
+
+  // Admin pushes announcement
+  await assertSucceeds(adminDb.collection("announcements").doc("alert_norcet_10").set(alertPayload));
+
+  // Signed-in student can read & list announcements, but cannot update or delete
+  await assertSucceeds(aliceDb.collection("announcements").doc("alert_norcet_10").get());
+  await assertSucceeds(aliceDb.collection("announcements").get());
+  await assertFails(
+    aliceDb.collection("announcements").doc("alert_norcet_10").update({ title: "Hacked" })
+  );
+  await assertFails(aliceDb.collection("announcements").doc("alert_norcet_10").delete());
+
+  // Admin can delete announcement
+  await assertSucceeds(adminDb.collection("announcements").doc("alert_norcet_10").delete());
+});
+
+

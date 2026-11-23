@@ -46,9 +46,22 @@ interface QuestionDao {
     // ------------------------------------------------------------------------
     // QUESTIONS & MULTI-EXAM LINKS
     // ------------------------------------------------------------------------
+    @Query("SELECT * FROM questions ORDER BY isCustom ASC, sortOrder ASC, id ASC")
+    fun observeAllQuestionEntities(): Flow<List<QuestionEntity>>
+
     @Transaction
     @Query("SELECT * FROM questions ORDER BY isCustom ASC, sortOrder ASC, id ASC")
     fun observeAllQuestionsWithProgress(): Flow<List<QuestionWithProgressRelation>>
+
+    @Query(
+        """
+        SELECT q.* FROM questions q
+        INNER JOIN exam_question_links l ON l.questionId = q.id
+        WHERE l.examId = :examId
+        ORDER BY q.isCustom ASC, l.sortOrder ASC, q.id ASC
+        """
+    )
+    fun observeQuestionEntitiesForExam(examId: String): Flow<List<QuestionEntity>>
 
     @Transaction
     @Query(
@@ -96,6 +109,9 @@ interface QuestionDao {
     // ------------------------------------------------------------------------
     @Query("SELECT * FROM question_progress WHERE questionId = :questionId LIMIT 1")
     suspend fun getProgressForQuestion(questionId: String): QuestionProgressEntity?
+
+    @Query("SELECT * FROM question_progress")
+    fun observeAllProgress(): Flow<List<QuestionProgressEntity>>
 
     @Query("SELECT * FROM question_progress")
     suspend fun getAllProgressSnapshot(): List<QuestionProgressEntity>

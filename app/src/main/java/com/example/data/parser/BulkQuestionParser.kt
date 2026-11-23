@@ -248,6 +248,7 @@ object BulkQuestionParser {
         var lastQuestionNum: Int? = null
         var curQuestionText = ""
         var curOptions = mutableListOf<String>()
+        var curUsesLetterOptions = false
         var curAnswerIdx = 0
         var hasExplicitAnswer = false
         var curExplanation = ""
@@ -264,6 +265,7 @@ object BulkQuestionParser {
             if (num != null) lastQuestionNum = num
             curQuestionText = stem.trim()
             curOptions = mutableListOf()
+            curUsesLetterOptions = false
             curAnswerIdx = 0
             hasExplicitAnswer = false
             curExplanation = ""
@@ -398,6 +400,7 @@ object BulkQuestionParser {
                 }
                 if (hasCurrent || pendingStemLines.isNotEmpty()) {
                     if (curOptions.size < 4) {
+                        curUsesLetterOptions = true
                         addOption(optIdx, optBody)
                         continue
                     }
@@ -411,11 +414,16 @@ object BulkQuestionParser {
                 val bareNum = bareQ?.let {
                     it.groupValues[1].ifEmpty { it.groupValues[2] }.toIntOrNull()
                 }
+                val isSequentialNumberedOption = !curUsesLetterOptions &&
+                    numOpt != null &&
+                    bareNum != null &&
+                    bareNum == curOptions.size + 1
                 val isLikelyNextQuestion = when {
                     !hasCurrent -> pendingStemLines.isEmpty() || (bareNum != null && bareNum > 4)
                     curOptions.size >= 4 -> true
                     hasExplicitAnswer -> true
                     bareNum != null && bareNum > 4 -> true
+                    isSequentialNumberedOption -> false
                     curOptions.size >= 2 && bareNum != null && lastQuestionNum != null && bareNum == lastQuestionNum + 1 -> true
                     // If we are inside an active question with 0 options and the number is 1, it's Option 1!
                     else -> false

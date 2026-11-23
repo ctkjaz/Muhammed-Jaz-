@@ -225,35 +225,35 @@ object QuestionConverters {
     }
 }
 
-fun QuestionWithProgressRelation.toDomain(): QuestionItem {
-    val (fallbackYear, fallbackShift) = parseShiftYear(question.shiftYear)
-    val resolvedYear = question.examYear.ifBlank { fallbackYear }
-    val resolvedShift = question.examShift.ifBlank { fallbackShift }
-    val resolvedShiftYear = question.shiftYear.ifBlank { composeShiftYear(resolvedYear, resolvedShift) }
+fun QuestionEntity.toDomain(progress: QuestionProgressEntity? = null): QuestionItem {
+    val (fallbackYear, fallbackShift) = parseShiftYear(shiftYear)
+    val resolvedYear = examYear.ifBlank { fallbackYear }
+    val resolvedShift = examShift.ifBlank { fallbackShift }
+    val resolvedShiftYear = shiftYear.ifBlank { composeShiftYear(resolvedYear, resolvedShift) }
     val resolvedSourceType = QuestionSourceType.infer(
-        category = question.category,
+        category = category,
         shiftYear = resolvedShiftYear,
-        sourceStatus = question.sourceStatus,
-        sourceNote = question.sourceNote,
-        rawSourceType = question.sourceType
+        sourceStatus = sourceStatus,
+        sourceNote = sourceNote,
+        rawSourceType = sourceType
     )
-    val resolvedTopicId = question.topicId.ifBlank {
-        PlatformCatalogDefaults.defaultTopicIdFor(question.subject)
+    val resolvedTopicId = topicId.ifBlank {
+        PlatformCatalogDefaults.defaultTopicIdFor(subject)
     }
 
     val q = Question(
-        id = question.id,
-        category = question.category,
+        id = id,
+        category = category,
         shiftYear = resolvedShiftYear,
-        subject = question.subject,
-        difficulty = QuestionDifficulty.fromRaw(question.difficulty),
-        questionText = question.questionText,
-        options = QuestionConverters.jsonToList(question.optionsJson),
-        correctIndex = question.correctIndex,
-        explanation = question.explanation,
-        isCustom = question.isCustom,
-        sourceStatus = question.sourceStatus,
-        sourceNote = question.sourceNote,
+        subject = subject,
+        difficulty = QuestionDifficulty.fromRaw(difficulty),
+        questionText = questionText,
+        options = QuestionConverters.jsonToList(optionsJson),
+        correctIndex = correctIndex,
+        explanation = explanation,
+        isCustom = isCustom,
+        sourceStatus = sourceStatus,
+        sourceNote = sourceNote,
         topicId = resolvedTopicId,
         sourceType = resolvedSourceType,
         examYear = resolvedYear,
@@ -269,9 +269,11 @@ fun QuestionWithProgressRelation.toDomain(): QuestionItem {
             lastOutcome = it.lastOutcome,
             updatedAt = it.updatedAt
         )
-    } ?: QuestionProgress(questionId = question.id)
+    } ?: QuestionProgress(questionId = id)
     return QuestionItem(question = q, progress = p)
 }
+
+fun QuestionWithProgressRelation.toDomain(): QuestionItem = question.toDomain(progress)
 
 fun Question.toEntity(sortOrder: Int = 0): QuestionEntity {
     val (parsedYear, parsedShift) = parseShiftYear(shiftYear)

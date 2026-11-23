@@ -442,6 +442,73 @@
         "serverTime": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "serverTime"]
+    },
+    "DoubtThread": {
+      "title": "DoubtThread",
+      "description": "Student clinical or exam doubt submitted from a specific MCQ or general study desk, answered by ClinEdge owner faculty.",
+      "type": "object",
+      "properties": {
+        "doubtId": { "type": "string" },
+        "userId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentEmail": { "type": "string" },
+        "examId": { "type": "string" },
+        "subject": { "type": "string" },
+        "questionId": { "type": "string" },
+        "questionPreview": { "type": "string" },
+        "doubtText": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "answered", "closed"] },
+        "adminReply": { "type": "string" },
+        "repliedBy": { "type": "string" },
+        "repliedAt": { "type": "string", "format": "date-time" },
+        "studentReadReply": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "doubtId",
+        "userId",
+        "studentName",
+        "studentEmail",
+        "examId",
+        "subject",
+        "questionId",
+        "questionPreview",
+        "doubtText",
+        "status",
+        "adminReply",
+        "repliedBy",
+        "studentReadReply",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ExamAnnouncement": {
+      "title": "ExamAnnouncement",
+      "description": "Owner-admin pushed live notification for Indian nursing exam alerts, vacancies, news, study tips, and app updates.",
+      "type": "object",
+      "properties": {
+        "announcementId": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "category": { "type": "string", "enum": ["exam_alert", "vacancy", "news", "study_tip", "app_update"] },
+        "targetExamId": { "type": "string" },
+        "priority": { "type": "string", "enum": ["normal", "urgent"] },
+        "actionUrl": { "type": "string" },
+        "createdByEmail": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "announcementId",
+        "title",
+        "body",
+        "category",
+        "targetExamId",
+        "priority",
+        "actionUrl",
+        "createdByEmail",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -488,6 +555,14 @@
     "/clockSync/{userId}": {
       "schema": { "$ref": "#/entities/ClockSyncPing" },
       "description": "Owner-only server timestamp anchor for tamper-resistant expiry checks."
+    },
+    "/doubts/{doubtId}": {
+      "schema": { "$ref": "#/entities/DoubtThread" },
+      "description": "Student-owned doubts readable and answerable by the verified owner admin."
+    },
+    "/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/ExamAnnouncement" },
+      "description": "Owner-admin broadcast feed for nursing exam news, vacancies, dates, and live push alerts."
     }
   }
 }

@@ -47,7 +47,16 @@ class NursingPrepRepository(
         dao.observeTopics().map { list -> list.map { it.toDomain() } }
 
     val allQuestions: Flow<List<QuestionItem>> =
-        dao.observeAllQuestionsWithProgress().map { list -> list.map { it.toDomain() } }
+        combine(
+            dao.observeAllQuestionEntities(),
+            dao.observeAllProgress()
+        ) { entities, progressList ->
+            val progressMap = HashMap<String, QuestionProgressEntity>(progressList.size * 2 + 1)
+            for (p in progressList) {
+                progressMap[p.questionId] = p
+            }
+            entities.map { entity -> entity.toDomain(progressMap[entity.id]) }
+        }
 
     val allExamLinks: Flow<List<ExamQuestionLink>> =
         dao.observeAllExamLinks().map { list -> list.map { it.toDomain() } }
@@ -60,12 +69,20 @@ class NursingPrepRepository(
 
     fun observeQuestionsForExam(examId: String): Flow<List<QuestionItem>> =
         combine(
-            dao.observeQuestionsForExam(examId),
-            dao.observeExamLinksForExam(examId)
-        ) { relations, links ->
-            val linkMap = links.associateBy { it.questionId }
-            relations.map { rel ->
-                val item = rel.toDomain()
+            dao.observeQuestionEntitiesForExam(examId),
+            dao.observeExamLinksForExam(examId),
+            dao.observeAllProgress()
+        ) { entities, links, progressList ->
+            val linkMap = HashMap<String, ExamQuestionLinkEntity>(links.size * 2 + 1)
+            for (link in links) {
+                linkMap[link.questionId] = link
+            }
+            val progressMap = HashMap<String, QuestionProgressEntity>(progressList.size * 2 + 1)
+            for (p in progressList) {
+                progressMap[p.questionId] = p
+            }
+            entities.map { entity ->
+                val item = entity.toDomain(progressMap[entity.id])
                 val link = linkMap[item.id] ?: return@map item
                 projectQuestionForExam(item, link)
             }
@@ -171,54 +188,33 @@ class NursingPrepRepository(
         val needsNorcetLinks = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_AIIMS_NORCET) == 0
         val needsPgimerLinks = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_PGIMER_NURSING) == 0
         if (needsQuestions || needsRrbLinks || needsNorcetLinks || needsPgimerLinks) {
-            val rrbJson = context.assets.open("builtin_questions.json").bufferedReader().use { it.readText() }
-            val rrbQuestions = BulkQuestionParser.parseJsonBatch(rrbJson, markAsCustom = false)
-            val rrbEntities = rrbQuestions.mapIndexed { index, q -> q.toEntity(sortOrder = index) }
-
-            val norcetQuestions = runCatching {
-                val norcetJson = context.assets.open("norcet_questions.json").bufferedReader().use { it.readText() }
-                BulkQuestionParser.parseJsonBatch(norcetJson, markAsCustom = false)
+            fun loadAssetQuestions(assetName: String): List<Question> = runCatching {
+                val json = context.assets.open(assetName).bufferedReader().use { it.readText() }
+                BulkQuestionParser.parseJsonBatch(json, markAsCustom = false)
             }.getOrDefault(emptyList())
-            val norcetEntities = norcetQuestions.mapIndexed { index, q ->
-                q.toEntity(sortOrder = 2000 + index)
-            }
 
-            val pgimerQuestions = runCatching {
-                val pgimerJson = context.assets.open("pgimer_questions.json").bufferedReader().use { it.readText() }
-                BulkQuestionParser.parseJsonBatch(pgimerJson, markAsCustom = false)
-            }.getOrDefault(emptyList())
-            val pgimerEntities = pgimerQuestions.mapIndexed { index, q ->
-                q.toEntity(sortOrder = 4000 + index)
-            }
-
-            val subjectPracticeQuestions = runCatching {
-                val spJson = context.assets.open("subject_practice_bank.json").bufferedReader().use { it.readText() }
-                BulkQuestionParser.parseJsonBatch(spJson, markAsCustom = false)
-            }.getOrDefault(emptyList())
-            val subjectPracticeEntities = subjectPracticeQuestions.mapIndexed { index, q ->
-                q.toEntity(sortOrder = 10000 + index)
-            }
-
-            val predictedMockQuestions = runCatching {
-                val pmJson = context.assets.open("predicted_mock_bank.json").bufferedReader().use { it.readText() }
-                BulkQuestionParser.parseJsonBatch(pmJson, markAsCustom = false)
-            }.getOrDefault(emptyList())
-            val predictedMockEntities = predictedMockQuestions.mapIndexed { index, q ->
-                q.toEntity(sortOrder = 20000 + index)
-            }
-
-            if (needsQuestions) {
-                val allBuiltInEntities = buildList {
-                    addAll(rrbEntities)
-                    addAll(norcetEntities)
-                    addAll(pgimerEntities)
-                    addAll(subjectPracticeEntities)
-                    addAll(predictedMockEntities)
-                }
-                allBuiltInEntities.chunked(500).forEach { chunk ->
-                    dao.insertQuestions(chunk)
+            suspend fun insertQuestionBatch(questions: List<Question>, baseSortOrder: Int) {
+                if (!needsQuestions || questions.isEmpty()) return
+                questions.chunked(500).forEachIndexed { chunkIdx, chunk ->
+                    val offset = baseSortOrder + chunkIdx * 500
+                    dao.insertQuestions(chunk.mapIndexed { idx, q -> q.toEntity(sortOrder = offset + idx) })
                 }
             }
+
+            val rrbQuestions = loadAssetQuestions("builtin_questions.json")
+            insertQuestionBatch(rrbQuestions, baseSortOrder = 0)
+
+            val norcetQuestions = loadAssetQuestions("norcet_questions.json")
+            insertQuestionBatch(norcetQuestions, baseSortOrder = 2000)
+
+            val pgimerQuestions = loadAssetQuestions("pgimer_questions.json")
+            insertQuestionBatch(pgimerQuestions, baseSortOrder = 4000)
+
+            val subjectPracticeQuestions = loadAssetQuestions("subject_practice_bank.json")
+            insertQuestionBatch(subjectPracticeQuestions, baseSortOrder = 10000)
+
+            val predictedMockQuestions = loadAssetQuestions("predicted_mock_bank.json")
+            insertQuestionBatch(predictedMockQuestions, baseSortOrder = 20000)
 
             val expandedBank = subjectPracticeQuestions + predictedMockQuestions
 

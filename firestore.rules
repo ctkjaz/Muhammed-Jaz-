@@ -366,6 +366,59 @@ service cloud.firestore {
              isValidTimestamp(data.serverTime);
     }
 
+    // 11. DoubtThread
+    function isValidDoubt(data, doubtId) {
+      return data.keys().hasAll([
+               'doubtId', 'userId', 'studentName', 'studentEmail', 'examId',
+               'subject', 'questionId', 'questionPreview', 'doubtText',
+               'status', 'adminReply', 'repliedBy', 'studentReadReply',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'doubtId', 'userId', 'studentName', 'studentEmail', 'examId',
+               'subject', 'questionId', 'questionPreview', 'doubtText',
+               'status', 'adminReply', 'repliedBy', 'repliedAt',
+               'studentReadReply', 'createdAt', 'updatedAt'
+             ]) &&
+             data.doubtId is string && data.doubtId == doubtId &&
+             data.userId is string && isValidId(data.userId) &&
+             data.studentName is string && data.studentName.size() <= 60 &&
+             data.studentEmail is string && data.studentEmail.size() <= 120 &&
+             data.examId is string && data.examId.size() >= 1 && data.examId.size() <= 64 &&
+             data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 40 &&
+             data.questionId is string && data.questionId.size() <= 128 &&
+             data.questionPreview is string && data.questionPreview.size() <= 280 &&
+             data.doubtText is string && data.doubtText.size() >= 3 && data.doubtText.size() <= 1500 &&
+             data.status is string && data.status in ['open', 'answered', 'closed'] &&
+             data.adminReply is string && data.adminReply.size() <= 2500 &&
+             data.repliedBy is string && data.repliedBy.size() <= 80 &&
+             (!('repliedAt' in data) || isValidTimestamp(data.repliedAt)) &&
+             data.studentReadReply is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // 12. ExamAnnouncement
+    function isValidAnnouncement(data, announcementId) {
+      return data.keys().hasAll([
+               'announcementId', 'title', 'body', 'category', 'targetExamId',
+               'priority', 'actionUrl', 'createdByEmail', 'createdAt'
+             ]) &&
+             data.keys().hasOnly([
+               'announcementId', 'title', 'body', 'category', 'targetExamId',
+               'priority', 'actionUrl', 'createdByEmail', 'createdAt'
+             ]) &&
+             data.announcementId is string && data.announcementId == announcementId &&
+             data.title is string && data.title.size() >= 2 && data.title.size() <= 120 &&
+             data.body is string && data.body.size() >= 2 && data.body.size() <= 2000 &&
+             data.category is string && data.category in ['exam_alert', 'vacancy', 'news', 'study_tip', 'app_update'] &&
+             data.targetExamId is string && data.targetExamId.size() >= 1 && data.targetExamId.size() <= 64 &&
+             data.priority is string && data.priority in ['normal', 'urgent'] &&
+             data.actionUrl is string && data.actionUrl.size() <= 300 &&
+             data.createdByEmail is string && data.createdByEmail.size() <= 120 &&
+             isValidTimestamp(data.createdAt);
+    }
+
     // ------------------------------------------------------------------------
     // /users/{userId} — Owner-isolated profile; Owner Admin may inspect directory
     // ------------------------------------------------------------------------
@@ -697,6 +750,68 @@ service cloud.firestore {
                                isValidId(userId) &&
                                isValidClockSync(incoming(), userId);
       allow delete: if false;
+    }
+
+    // ------------------------------------------------------------------------
+    // /doubts/{doubtId} — Student clinical/exam doubts & faculty replies
+    // ------------------------------------------------------------------------
+    match /doubts/{doubtId} {
+      allow get: if isSignedIn() && isValidId(doubtId) &&
+                    (isAdmin() || existing().userId == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidId(doubtId) &&
+                       isValidDoubt(incoming(), doubtId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'open' &&
+                       incoming().adminReply == '' &&
+                       incoming().repliedBy == '' &&
+                       !('repliedAt' in incoming()) &&
+                       incoming().studentReadReply == true;
+
+      allow update: if isValidId(doubtId) &&
+                       isValidDoubt(incoming(), doubtId) &&
+                       incoming().doubtId == existing().doubtId &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt && (
+                         (isAdmin() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'status', 'adminReply', 'repliedBy', 'repliedAt',
+                            'studentReadReply', 'updatedAt'
+                          ])) ||
+                         (isSignedIn() &&
+                          existing().userId == request.auth.uid &&
+                          incoming().adminReply == existing().adminReply &&
+                          incoming().repliedBy == existing().repliedBy &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'studentReadReply', 'status', 'updatedAt'
+                          ]) &&
+                          (incoming().status == existing().status || incoming().status == 'closed'))
+                       );
+
+      allow delete: if isValidId(doubtId) &&
+                       (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+    }
+
+    // ------------------------------------------------------------------------
+    // /announcements/{announcementId} — Admin-pushed live exam news & alerts
+    // ------------------------------------------------------------------------
+    match /announcements/{announcementId} {
+      allow get: if isSignedIn() && isValidId(announcementId);
+      allow list: if isSignedIn();
+
+      allow create: if isAdmin() &&
+                       isValidId(announcementId) &&
+                       isValidAnnouncement(incoming(), announcementId);
+
+      allow update: if isAdmin() &&
+                       isValidId(announcementId) &&
+                       isValidAnnouncement(incoming(), announcementId) &&
+                       incoming().announcementId == existing().announcementId &&
+                       incoming().createdAt == existing().createdAt;
+
+      allow delete: if isAdmin() && isValidId(announcementId);
     }
   }
 }
