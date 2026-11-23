@@ -81,6 +81,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -409,11 +411,35 @@ class MainViewModel(
         initialValue = emptyList()
     )
 
+    private val dedupedPlatformQuestions: StateFlow<List<QuestionItem>> = allPlatformQuestions
+        .map { items -> SubjectPracticeLogic.deduplicateQuestions(items) }
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = emptyList()
+        )
+
     private val allPlatformLinks: StateFlow<List<ExamQuestionLink>> = repository.allExamLinks.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
         initialValue = emptyList()
     )
+
+    private val examCountsByExamId: StateFlow<Map<String, Int>> = allPlatformLinks
+        .map { links ->
+            val counts = HashMap<String, Int>(8)
+            for (link in links) {
+                counts[link.examId] = (counts[link.examId] ?: 0) + 1
+            }
+            counts
+        }
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = emptyMap()
+        )
 
     private val activeExamQuestions = activeExamId.flatMapLatest { examId ->
         repository.observeQuestionsForExam(examId)
@@ -443,7 +469,8 @@ class MainViewModel(
         val sections: List<ExamSection>,
         val topics: List<Topic>,
         val links: List<ExamQuestionLink>,
-        val allQuestions: List<QuestionItem>,
+        val examCounts: Map<String, Int>,
+        val dedupedAllQuestions: List<QuestionItem>,
         val activeStage: ExamStage,
         val subjectExamFilter: String?
     )
@@ -462,19 +489,22 @@ class MainViewModel(
             sections = sections,
             topics = topics,
             links = emptyList(),
-            allQuestions = emptyList(),
+            examCounts = emptyMap(),
+            dedupedAllQuestions = emptyList(),
             activeStage = ExamStage.PRELIMS,
             subjectExamFilter = null
         )
     }.combine(allPlatformLinks) { bundle, links ->
         bundle.copy(links = links)
-    }.combine(allPlatformQuestions) { bundle, allQs ->
-        bundle.copy(allQuestions = allQs)
+    }.combine(examCountsByExamId) { bundle, counts ->
+        bundle.copy(examCounts = counts)
+    }.combine(dedupedPlatformQuestions) { bundle, dedupedQs ->
+        bundle.copy(dedupedAllQuestions = dedupedQs)
     }.combine(_activeExamStage) { bundle, stage ->
         bundle.copy(activeStage = stage)
     }.combine(_subjectPracticeExamFilter) { bundle, filterId ->
         bundle.copy(subjectExamFilter = filterId)
-    }
+    }.flowOn(Dispatchers.Default)
 
     val mainState: StateFlow<DashboardDerivedState> = combine(
         activeExamQuestions,
@@ -487,11 +517,6 @@ class MainViewModel(
             ?: catalog.exams.firstOrNull()
             ?: PlatformCatalogDefaults.DEFAULT_EXAMS.first()
         val supportsStages = PlatformCatalogDefaults.supportsStages(activeExam.id)
-        val stageItems = if (supportsStages) {
-            PlatformCatalogDefaults.filterQuestionsForExamStage(activeExam.id, catalog.activeStage, items)
-        } else {
-            items
-        }
         val prelimsItems = if (supportsStages) {
             PlatformCatalogDefaults.filterQuestionsForExamStage(activeExam.id, ExamStage.PRELIMS, items)
         } else {
@@ -502,39 +527,66 @@ class MainViewModel(
         } else {
             emptyList()
         }
+        val stageItems = if (supportsStages) {
+            if (catalog.activeStage == ExamStage.MAINS) mainsItems else prelimsItems
+        } else {
+            items
+        }
 
         val statsPool = if (supportsStages) stageItems else items
-        val attemptedUnique = statsPool.count { it.attemptsCount > 0 }
-        val totalAttempts = statsPool.sumOf { it.attemptsCount }
-        val totalCorrect = statsPool.sumOf { it.correctCount }
-        val totalWrong = statsPool.sumOf { it.wrongCount }
+        var attemptedUnique = 0
+        var totalAttempts = 0
+        var totalCorrect = 0
+        var totalWrong = 0
+        var latestRight = 0
+        var latestWrong = 0
+        for (item in statsPool) {
+            val p = item.progress
+            if (p.attemptsCount > 0) attemptedUnique++
+            totalAttempts += p.attemptsCount
+            totalCorrect += p.correctCount
+            totalWrong += p.wrongCount
+            when (p.lastOutcome) {
+                "right" -> latestRight++
+                "wrong" -> latestWrong++
+            }
+        }
+        var bookmarkCount = 0
+        var customCount = 0
+        for (item in items) {
+            if (item.isBookmarked) bookmarkCount++
+            if (item.question.isCustom) customCount++
+        }
         val acc = if (totalAttempts > 0) ((totalCorrect.toFloat() / totalAttempts) * 100f).toInt() else 0
-        val latestRight = statsPool.count { it.lastOutcome == "right" }
-        val latestWrong = statsPool.count { it.lastOutcome == "wrong" }
         val netScore = latestRight - (latestWrong * activeExam.negativeMarks)
-        val countsByExam = catalog.links.groupingBy { it.examId }.eachCount()
-        val dedupedCrossExam = SubjectPracticeLogic.deduplicateQuestions(catalog.allQuestions.ifEmpty { items })
+
+        val dedupedCrossExam = catalog.dedupedAllQuestions.ifEmpty { items }
         val crossSubjectStats = SubjectPracticeLogic.computeCrossExamSubjectStats(
             allQuestions = dedupedCrossExam,
             allLinks = catalog.links,
-            examIdFilter = catalog.subjectExamFilter
+            examIdFilter = catalog.subjectExamFilter,
+            alreadyDeduplicated = catalog.dedupedAllQuestions.isNotEmpty()
         )
+        val computedSubjectStats = repository.computeSubjectStats(stageItems)
+        val prelimsAttempted = if (supportsStages) prelimsItems.count { it.attemptsCount > 0 } else 0
+        val mainsAttempted = if (supportsStages) mainsItems.count { it.attemptsCount > 0 } else 0
+
         DashboardDerivedState(
             activeExam = activeExam,
             activeExamSections = catalog.sections,
             availableProfessions = catalog.professions,
             availableExams = catalog.exams,
-            examQuestionCounts = countsByExam,
+            examQuestionCounts = catalog.examCounts,
             topicsById = catalog.topics.associateBy { it.id },
             questions = items,
             activeExamSupportsStages = supportsStages,
             activeExamStage = catalog.activeStage,
             stageQuestions = stageItems,
-            stageSubjectStats = repository.computeSubjectStats(stageItems),
+            stageSubjectStats = computedSubjectStats,
             prelimsQuestionCount = prelimsItems.size,
             mainsQuestionCount = mainsItems.size,
-            prelimsAttemptedCount = prelimsItems.count { it.attemptsCount > 0 },
-            mainsAttemptedCount = mainsItems.count { it.attemptsCount > 0 },
+            prelimsAttemptedCount = prelimsAttempted,
+            mainsAttemptedCount = mainsAttempted,
             crossExamQuestions = dedupedCrossExam,
             crossExamSubjectStats = crossSubjectStats,
             crossExamLinks = catalog.links,
@@ -546,18 +598,18 @@ class MainViewModel(
                 totalWrong = totalWrong,
                 accuracyPercent = acc,
                 netPracticeScore = netScore,
-                bookmarkCount = items.count { it.isBookmarked },
-                mistakeCount = statsPool.count { it.lastOutcome == "wrong" },
-                customCount = items.count { it.question.isCustom }
+                bookmarkCount = bookmarkCount,
+                mistakeCount = latestWrong,
+                customCount = customCount
             ),
-            subjectStats = repository.computeSubjectStats(stageItems),
+            subjectStats = computedSubjectStats,
             categoryStats = repository.computeCategoryStats(stageItems, activeExam.id),
             lowestAccuracyQuestions = repository.findLowestAccuracyQuestions(stageItems),
             flashcards = cards,
             mockHistory = history,
             isLoaded = seeded
         )
-    }.stateIn(
+    }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = DashboardDerivedState()
@@ -2440,10 +2492,11 @@ class MainViewModel(
                 if (extracted.isLikelyScannedPdf) {
                     showMessage("This PDF appears image-scanned without selectable text. Paste OCR text below to parse.")
                 } else {
-                    previewPdfTextImport()
-                    val count = _importerState.value.previewQuestions.size
-                    if (count > 0) {
-                        showMessage("Extracted $displayFileName — detected $count MCQ(s).")
+                    val st = _importerState.value
+                    val parsed = parseImporterDraftOffMain(st)
+                    _importerState.update { it.copy(previewQuestions = parsed, hasPreviewed = true) }
+                    if (parsed.isNotEmpty()) {
+                        showMessage("Extracted $displayFileName — detected ${parsed.size} MCQ(s).")
                     } else {
                         showMessage("Extracted $displayFileName (${extracted.text.length} chars). Review text and tap Parse & Preview.")
                     }
@@ -2454,27 +2507,35 @@ class MainViewModel(
         }
     }
 
+    private suspend fun parseImporterDraftOffMain(st: ImporterUiState): List<Question> =
+        withContext(Dispatchers.Default) {
+            val raw = st.rawText.trim()
+            if (raw.isBlank()) return@withContext emptyList()
+            val effectiveTopicId = BulkQuestionParser.slugTopicId(st.subject, st.topicName)
+            if (raw.startsWith("[") || raw.startsWith("{")) {
+                runCatching { BulkQuestionParser.parseJsonBatch(raw, markAsCustom = true) }
+                    .getOrDefault(emptyList())
+            } else {
+                BulkQuestionParser.parseRawPdfText(
+                    rawText = raw,
+                    category = st.category,
+                    subject = st.subject,
+                    shiftYear = st.shiftYear,
+                    defaultDifficulty = st.difficulty,
+                    defaultSourceNote = st.sourceNote,
+                    markAsVerified = st.markAsVerified,
+                    defaultSourceType = st.sourceType,
+                    defaultTopicId = effectiveTopicId
+                )
+            }
+        }
+
     fun previewPdfTextImport() {
         val st = _importerState.value
-        val raw = st.rawText.trim()
-        val effectiveTopicId = BulkQuestionParser.slugTopicId(st.subject, st.topicName)
-        val parsed = if (raw.startsWith("[") || raw.startsWith("{")) {
-            runCatching { BulkQuestionParser.parseJsonBatch(raw, markAsCustom = true) }
-                .getOrDefault(emptyList())
-        } else {
-            BulkQuestionParser.parseRawPdfText(
-                rawText = raw,
-                category = st.category,
-                subject = st.subject,
-                shiftYear = st.shiftYear,
-                defaultDifficulty = st.difficulty,
-                defaultSourceNote = st.sourceNote,
-                markAsVerified = st.markAsVerified,
-                defaultSourceType = st.sourceType,
-                defaultTopicId = effectiveTopicId
-            )
+        viewModelScope.launch {
+            val parsed = parseImporterDraftOffMain(st)
+            _importerState.update { it.copy(previewQuestions = parsed, hasPreviewed = true) }
         }
-        _importerState.update { it.copy(previewQuestions = parsed, hasPreviewed = true) }
     }
 
     fun commitPreviewImport() {
@@ -3096,34 +3157,46 @@ class MainViewModel(
             showMessage("Pick a PDF/TXT/JSON file or paste MCQ text first.")
             return
         }
-        val alignedSourceType = when (draft.category) {
-            "pyq" -> QuestionSourceType.OFFICIAL_PYQ
-            "mock" -> QuestionSourceType.PREDICTED_MOCK
-            else -> QuestionSourceType.PRACTICE
-        }
-        val parsed = if (raw.startsWith("[") || raw.startsWith("{")) {
-            runCatching { BulkQuestionParser.parseJsonBatch(raw, markAsCustom = false) }
-                .getOrDefault(emptyList())
-        } else {
-            BulkQuestionParser.parseRawPdfText(
-                rawText = raw,
-                category = draft.category,
-                subject = draft.subject,
-                shiftYear = if (draft.category == "pyq") draft.shiftYear else "",
-                defaultDifficulty = draft.difficulty,
-                defaultSourceNote = "ClinEdge Pack: ${draft.title.ifBlank { "Update" }}",
-                markAsVerified = draft.category == "pyq",
-                defaultSourceType = alignedSourceType,
-                defaultTopicId = PlatformCatalogDefaults.defaultTopicIdFor(draft.subject)
-            )
-        }
-        _adminState.update {
-            it.copy(contentDraft = it.contentDraft.copy(previewQuestions = parsed))
-        }
-        if (parsed.isEmpty()) {
-            showMessage("No MCQs detected. Ensure questions have options A–D (or 1–4) and an answer.")
-        } else {
-            showMessage("Parsed ${parsed.size} questions ready to review & publish.")
+        viewModelScope.launch {
+            _adminState.update {
+                it.copy(contentDraft = it.contentDraft.copy(isParsingOrExtracting = true))
+            }
+            val parsed = withContext(Dispatchers.Default) {
+                val alignedSourceType = when (draft.category) {
+                    "pyq" -> QuestionSourceType.OFFICIAL_PYQ
+                    "mock" -> QuestionSourceType.PREDICTED_MOCK
+                    else -> QuestionSourceType.PRACTICE
+                }
+                if (raw.startsWith("[") || raw.startsWith("{")) {
+                    runCatching { BulkQuestionParser.parseJsonBatch(raw, markAsCustom = false) }
+                        .getOrDefault(emptyList())
+                } else {
+                    BulkQuestionParser.parseRawPdfText(
+                        rawText = raw,
+                        category = draft.category,
+                        subject = draft.subject,
+                        shiftYear = if (draft.category == "pyq") draft.shiftYear else "",
+                        defaultDifficulty = draft.difficulty,
+                        defaultSourceNote = "ClinEdge Pack: ${draft.title.ifBlank { "Update" }}",
+                        markAsVerified = draft.category == "pyq",
+                        defaultSourceType = alignedSourceType,
+                        defaultTopicId = PlatformCatalogDefaults.defaultTopicIdFor(draft.subject)
+                    )
+                }
+            }
+            _adminState.update {
+                it.copy(
+                    contentDraft = it.contentDraft.copy(
+                        previewQuestions = parsed,
+                        isParsingOrExtracting = false
+                    )
+                )
+            }
+            if (parsed.isEmpty()) {
+                showMessage("No MCQs detected. Ensure questions have options A–D (or 1–4) and an answer.")
+            } else {
+                showMessage("Parsed ${parsed.size} questions ready to review & publish.")
+            }
         }
     }
 

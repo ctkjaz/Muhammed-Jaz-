@@ -168,31 +168,30 @@ private fun CrossExamSubjectPracticeView(
     val editorial = MaterialTheme.editorialColors
     var searchQuery by remember { mutableStateOf("") }
 
-    val visibleSubjects = remember(
+    val groupedSubjects = remember(
         state.crossExamQuestions,
         state.crossExamLinks,
         examFilter,
-        difficultyFilter,
-        searchQuery
+        difficultyFilter
     ) {
+        SubjectPracticeLogic.groupQuestionsBySubjectForPractice(
+            allQuestions = state.crossExamQuestions,
+            allLinks = state.crossExamLinks,
+            examIdFilter = examFilter,
+            difficultyFilter = difficultyFilter,
+            excludePyqAndMock = true,
+            alreadyDeduplicated = true
+        )
+    }
+
+    val visibleSubjects = remember(groupedSubjects, searchQuery) {
         val qTrim = searchQuery.trim().lowercase()
-        SubjectCatalog.ALL_SUBJS.mapNotNull { meta ->
-            val items = SubjectPracticeLogic.collectQuestionsForSubject(
-                allQuestions = state.crossExamQuestions,
-                allLinks = state.crossExamLinks,
-                subjectCode = meta.code,
-                examIdFilter = examFilter,
-                difficultyFilter = difficultyFilter,
-                excludePyqAndMock = true
-            )
-            if (items.isEmpty()) return@mapNotNull null
-            if (qTrim.isNotEmpty() &&
-                !meta.name.lowercase().contains(qTrim) &&
-                !meta.code.lowercase().contains(qTrim)
-            ) {
-                return@mapNotNull null
+        if (qTrim.isEmpty()) {
+            groupedSubjects
+        } else {
+            groupedSubjects.filter { (meta, _) ->
+                meta.name.lowercase().contains(qTrim) || meta.code.lowercase().contains(qTrim)
             }
-            meta to items
         }
     }
 
@@ -494,11 +493,12 @@ private fun SubjectListGrid(
     onStartPractice: (List<QuestionItem>, String) -> Unit,
     onStartTimedConfig: (String) -> Unit
 ) {
+    val bySubject = remember(allQuestions) { allQuestions.groupBy { it.question.subject } }
     val combined = remember(allQuestions, subjects) { allQuestions.filter(allFilter) }
-    val nonEmptySubjects = remember(allQuestions, subjects) {
-        subjects.filter { sub -> allQuestions.any { it.question.subject == sub.code } }
+    val nonEmptySubjects = remember(bySubject, subjects) {
+        subjects.filter { sub -> !bySubject[sub.code].isNullOrEmpty() }
     }
-    val rows = nonEmptySubjects.chunked(columns)
+    val rows = remember(nonEmptySubjects, columns) { nonEmptySubjects.chunked(columns) }
 
     LazyColumn(
         modifier = Modifier
@@ -522,7 +522,9 @@ private fun SubjectListGrid(
                     )
                 }
                 Button(
-                    onClick = { onStartPractice(combined, "$title$diffSuffix") },
+                    onClick = {
+                        onStartPractice(combined.shuffled().take(100), "$title · Random 100$diffSuffix")
+                    },
                     enabled = combined.isNotEmpty(),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -533,7 +535,7 @@ private fun SubjectListGrid(
                         .heightIn(min = 44.dp)
                         .testTag("practice_all_${subjects.firstOrNull()?.code}")
                 ) {
-                    Text("All (${combined.size})", fontWeight = FontWeight.Bold)
+                    Text("Random 100", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -545,7 +547,7 @@ private fun SubjectListGrid(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 rowItems.forEach { sub ->
-                    val list = allQuestions.filter { it.question.subject == sub.code }
+                    val list = bySubject[sub.code].orEmpty()
                     val mastered = list.count { it.lastOutcome == "right" }
                     val attempts = list.sumOf { it.attemptsCount }
                     val correct = list.sumOf { it.correctCount }
@@ -583,15 +585,16 @@ private fun PyqShiftList(
     onOpenImporter: () -> Unit
 ) {
     val editorial = MaterialTheme.editorialColors
-    val shifts = remember(allQuestions) {
-        allQuestions.mapNotNull { it.question.shiftYear.takeIf { sy -> sy.isNotBlank() } }
-            .distinct()
-            .sortedDescending()
+    val byShift = remember(allQuestions) {
+        allQuestions
+            .filter { it.question.shiftYear.isNotBlank() }
+            .groupBy { it.question.shiftYear }
     }
+    val shifts = remember(byShift) { byShift.keys.sortedDescending() }
     val allPyqs = remember(allQuestions) {
         allQuestions.filter { it.question.isPyqTagged }
     }
-    val rows = shifts.chunked(columns)
+    val rows = remember(shifts, columns) { shifts.chunked(columns) }
 
     LazyColumn(
         modifier = Modifier
@@ -613,7 +616,9 @@ private fun PyqShiftList(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
-                        onClick = { onStartPractice(allPyqs, "Previous Year Papers$diffSuffix") },
+                        onClick = {
+                            onStartPractice(allPyqs.shuffled().take(100), "Previous Year Papers · Random 100$diffSuffix")
+                        },
                         enabled = allPyqs.isNotEmpty(),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
@@ -624,7 +629,7 @@ private fun PyqShiftList(
                             .heightIn(min = 44.dp)
                             .testTag("practice_all_pyqs")
                     ) {
-                        Text("Practice All (${allPyqs.size})", fontWeight = FontWeight.Bold)
+                        Text("Random 100", fontWeight = FontWeight.Bold)
                     }
                     OutlinedButton(
                         onClick = onOpenImporter,
@@ -647,7 +652,7 @@ private fun PyqShiftList(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 rowItems.forEach { sh ->
-                    val list = allQuestions.filter { it.question.shiftYear == sh }
+                    val list = byShift[sh].orEmpty()
                     val solved = list.count { it.attemptsCount > 0 }
                     val allVerified = list.isNotEmpty() && list.all { it.question.isVerifiedSource }
                     val shiftBadgeText = if (allVerified) "Official PYQ" else "Memory-Based"
@@ -750,6 +755,7 @@ private fun CaAndFlashcardsList(
     onStartPractice: (List<QuestionItem>, String) -> Unit,
     onStartTimedConfig: (String) -> Unit
 ) {
+    val bySubject = remember(allQuestions) { allQuestions.groupBy { it.question.subject } }
     val allCa = remember(allQuestions) { allQuestions.filter { SubjectCatalog.isCa(it.question) } }
     val tags = remember(flashcards) { listOf("All") + flashcards.map { it.tag }.distinct() }
     var selectedTag by remember { mutableStateOf("All") }
@@ -763,8 +769,8 @@ private fun CaAndFlashcardsList(
             SubjectCatalog.CA_SUBJS
         }
     }
-    val caRows = visibleCaSubjs.chunked(columns)
-    val cardRows = visibleCards.chunked(columns)
+    val caRows = remember(visibleCaSubjs, columns) { visibleCaSubjs.chunked(columns) }
+    val cardRows = remember(visibleCards, columns) { visibleCards.chunked(columns) }
 
     LazyColumn(
         modifier = Modifier
@@ -787,7 +793,9 @@ private fun CaAndFlashcardsList(
                     )
                 }
                 Button(
-                    onClick = { onStartPractice(allCa, "Current Affairs & GK$diffSuffix") },
+                    onClick = {
+                        onStartPractice(allCa.shuffled().take(100), "Current Affairs & GK · Random 100$diffSuffix")
+                    },
                     enabled = allCa.isNotEmpty(),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -795,7 +803,7 @@ private fun CaAndFlashcardsList(
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 ) {
-                    Text("All (${allCa.size})", fontWeight = FontWeight.Bold)
+                    Text("Random 100", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -807,7 +815,7 @@ private fun CaAndFlashcardsList(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 rowItems.forEach { sub ->
-                    val list = allQuestions.filter { it.question.subject == sub.code }
+                    val list = bySubject[sub.code].orEmpty()
                     val mastered = list.count { it.lastOutcome == "right" }
                     val attempts = list.sumOf { it.attemptsCount }
                     val correct = list.sumOf { it.correctCount }

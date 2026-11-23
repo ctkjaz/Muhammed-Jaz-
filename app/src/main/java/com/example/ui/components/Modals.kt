@@ -213,7 +213,7 @@ fun TimedPracticeConfigDialog(
                 )
 
                 Text(
-                    text = "Questions ($availableCount available)",
+                    text = "Questions",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -221,7 +221,7 @@ fun TimedPracticeConfigDialog(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf(15 to "15 Qs", 30 to "30 Qs", 50 to "50 Qs", 0 to "All").forEach { (cnt, lbl) ->
+                    listOf(15 to "15 Qs", 30 to "30 Qs", 50 to "50 Qs", 100 to "Random 100").forEach { (cnt, lbl) ->
                         MonochromeFilterPill(
                             label = lbl,
                             selected = state.questionCount == cnt,

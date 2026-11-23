@@ -225,7 +225,7 @@ object QuestionConverters {
     }
 }
 
-fun QuestionEntity.toDomain(progress: QuestionProgressEntity? = null): QuestionItem {
+fun QuestionEntity.toDomainQuestion(): Question {
     val (fallbackYear, fallbackShift) = parseShiftYear(shiftYear)
     val resolvedYear = examYear.ifBlank { fallbackYear }
     val resolvedShift = examShift.ifBlank { fallbackShift }
@@ -241,7 +241,7 @@ fun QuestionEntity.toDomain(progress: QuestionProgressEntity? = null): QuestionI
         PlatformCatalogDefaults.defaultTopicIdFor(subject)
     }
 
-    val q = Question(
+    return Question(
         id = id,
         category = category,
         shiftYear = resolvedShiftYear,
@@ -259,17 +259,21 @@ fun QuestionEntity.toDomain(progress: QuestionProgressEntity? = null): QuestionI
         examYear = resolvedYear,
         examShift = resolvedShift
     )
-    val p = progress?.let {
-        QuestionProgress(
-            questionId = it.questionId,
-            isBookmarked = it.isBookmarked,
-            attemptsCount = it.attemptsCount,
-            correctCount = it.correctCount,
-            wrongCount = it.wrongCount,
-            lastOutcome = it.lastOutcome,
-            updatedAt = it.updatedAt
-        )
-    } ?: QuestionProgress(questionId = id)
+}
+
+fun QuestionProgressEntity.toDomain(): QuestionProgress = QuestionProgress(
+    questionId = questionId,
+    isBookmarked = isBookmarked,
+    attemptsCount = attemptsCount,
+    correctCount = correctCount,
+    wrongCount = wrongCount,
+    lastOutcome = lastOutcome,
+    updatedAt = updatedAt
+)
+
+fun QuestionEntity.toDomain(progress: QuestionProgressEntity? = null): QuestionItem {
+    val q = toDomainQuestion()
+    val p = progress?.toDomain() ?: QuestionProgress(questionId = id)
     return QuestionItem(question = q, progress = p)
 }
 

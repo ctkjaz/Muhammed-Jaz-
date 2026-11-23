@@ -9,6 +9,7 @@ import com.example.data.local.QuestionProgressEntity
 import com.example.data.local.SubjectEntity
 import com.example.data.local.TopicEntity
 import com.example.data.local.toDomain
+import com.example.data.local.toDomainQuestion
 import com.example.data.local.toEntity
 import com.example.data.model.CategoryStat
 import com.example.data.model.Exam
@@ -20,6 +21,7 @@ import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.Profession
 import com.example.data.model.Question
 import com.example.data.model.QuestionItem
+import com.example.data.model.QuestionProgress
 import com.example.data.model.QuestionSourceType
 import com.example.data.model.SubjectCatalog
 import com.example.data.model.SubjectStat
@@ -29,6 +31,7 @@ import com.example.data.parser.BulkQuestionParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -46,20 +49,34 @@ class NursingPrepRepository(
     val topics: Flow<List<Topic>> =
         dao.observeTopics().map { list -> list.map { it.toDomain() } }
 
-    val allQuestions: Flow<List<QuestionItem>> =
-        combine(
-            dao.observeAllQuestionEntities(),
-            dao.observeAllProgress()
-        ) { entities, progressList ->
-            val progressMap = HashMap<String, QuestionProgressEntity>(progressList.size * 2 + 1)
+    private val allProgressMap: Flow<Map<String, QuestionProgress>> =
+        dao.observeAllProgress().map { progressList ->
+            val map = HashMap<String, QuestionProgress>(progressList.size * 2 + 1)
             for (p in progressList) {
-                progressMap[p.questionId] = p
+                map[p.questionId] = p.toDomain()
             }
-            entities.map { entity -> entity.toDomain(progressMap[entity.id]) }
-        }
+            map
+        }.flowOn(Dispatchers.Default)
+
+    private val parsedAllQuestions: Flow<List<Question>> =
+        dao.observeAllQuestionEntities()
+            .map { entities -> entities.map { it.toDomainQuestion() } }
+            .flowOn(Dispatchers.Default)
+
+    val allQuestions: Flow<List<QuestionItem>> =
+        combine(parsedAllQuestions, allProgressMap) { questions, progressMap ->
+            questions.map { q ->
+                QuestionItem(
+                    question = q,
+                    progress = progressMap[q.id] ?: QuestionProgress(questionId = q.id)
+                )
+            }
+        }.flowOn(Dispatchers.Default)
 
     val allExamLinks: Flow<List<ExamQuestionLink>> =
-        dao.observeAllExamLinks().map { list -> list.map { it.toDomain() } }
+        dao.observeAllExamLinks()
+            .map { list -> list.map { it.toDomain() } }
+            .flowOn(Dispatchers.Default)
 
     val mockHistory: Flow<List<MockHistory>> =
         dao.observeMockHistory().map { list -> list.map { it.toDomain() } }
@@ -67,32 +84,38 @@ class NursingPrepRepository(
     fun observeExamSections(examId: String): Flow<List<ExamSection>> =
         dao.observeExamSections(examId).map { list -> list.map { it.toDomain() } }
 
-    fun observeQuestionsForExam(examId: String): Flow<List<QuestionItem>> =
-        combine(
+    fun observeQuestionsForExam(examId: String): Flow<List<QuestionItem>> {
+        // Parse JSON options and project exam metadata ONCE per exam/catalog change,
+        // NOT on every answer or bookmark progress update.
+        val projectedExamQuestions: Flow<List<Question>> = combine(
             dao.observeQuestionEntitiesForExam(examId),
-            dao.observeExamLinksForExam(examId),
-            dao.observeAllProgress()
-        ) { entities, links, progressList ->
+            dao.observeExamLinksForExam(examId)
+        ) { entities, links ->
             val linkMap = HashMap<String, ExamQuestionLinkEntity>(links.size * 2 + 1)
             for (link in links) {
                 linkMap[link.questionId] = link
             }
-            val progressMap = HashMap<String, QuestionProgressEntity>(progressList.size * 2 + 1)
-            for (p in progressList) {
-                progressMap[p.questionId] = p
-            }
             entities.map { entity ->
-                val item = entity.toDomain(progressMap[entity.id])
-                val link = linkMap[item.id] ?: return@map item
-                projectQuestionForExam(item, link)
+                val q = entity.toDomainQuestion()
+                val link = linkMap[q.id] ?: return@map q
+                projectQuestionForExam(q, link)
             }
-        }
+        }.flowOn(Dispatchers.Default)
+
+        return combine(projectedExamQuestions, allProgressMap) { questions, progressMap ->
+            questions.map { q ->
+                QuestionItem(
+                    question = q,
+                    progress = progressMap[q.id] ?: QuestionProgress(questionId = q.id)
+                )
+            }
+        }.flowOn(Dispatchers.Default)
+    }
 
     private fun projectQuestionForExam(
-        item: QuestionItem,
+        q: Question,
         link: ExamQuestionLinkEntity
-    ): QuestionItem {
-        val q = item.question
+    ): Question {
         return if (link.isPyqForExam) {
             val projectedShiftYear = composeShiftYear(link.examYear, link.examShift)
                 .ifBlank { q.shiftYear }
@@ -101,24 +124,20 @@ class NursingPrepRepository(
             } else {
                 if (q.isVerifiedSource) QuestionSourceType.OFFICIAL_PYQ else QuestionSourceType.MEMORY_BASED
             }
-            item.copy(
-                question = q.copy(
-                    category = "pyq",
-                    shiftYear = projectedShiftYear,
-                    examYear = link.examYear.ifBlank { q.examYear },
-                    examShift = link.examShift.ifBlank { q.examShift },
-                    sourceType = projectedSourceType
-                )
+            q.copy(
+                category = "pyq",
+                shiftYear = projectedShiftYear,
+                examYear = link.examYear.ifBlank { q.examYear },
+                examShift = link.examShift.ifBlank { q.examShift },
+                sourceType = projectedSourceType
             )
         } else if (q.isPredictedMock) {
-            item.copy(
-                question = q.copy(
-                    category = "mock",
-                    shiftYear = "",
-                    examYear = "",
-                    examShift = "",
-                    sourceType = QuestionSourceType.PREDICTED_MOCK
-                )
+            q.copy(
+                category = "mock",
+                shiftYear = "",
+                examYear = "",
+                examShift = "",
+                sourceType = QuestionSourceType.PREDICTED_MOCK
             )
         } else {
             val nonPyqCategory = when {
@@ -131,14 +150,12 @@ class NursingPrepRepository(
             } else {
                 QuestionSourceType.PRACTICE
             }
-            item.copy(
-                question = q.copy(
-                    category = nonPyqCategory,
-                    shiftYear = "",
-                    examYear = "",
-                    examShift = "",
-                    sourceType = nonPyqSourceType
-                )
+            q.copy(
+                category = nonPyqCategory,
+                shiftYear = "",
+                examYear = "",
+                examShift = "",
+                sourceType = nonPyqSourceType
             )
         }
     }
@@ -671,18 +688,31 @@ class NursingPrepRepository(
     fun computeSubjectStats(items: List<QuestionItem>): List<SubjectStat> {
         val grouped = items.groupBy { it.question.subject }
         return SubjectCatalog.ALL_SUBJS.mapNotNull { meta ->
-            val list = grouped[meta.code].orEmpty()
+            val list = grouped[meta.code] ?: return@mapNotNull null
             if (list.isEmpty()) return@mapNotNull null
+            var attempted = 0
+            var totalAttempts = 0
+            var correct = 0
+            var wrong = 0
+            var mastered = 0
+            for (item in list) {
+                val p = item.progress
+                if (p.attemptsCount > 0) attempted++
+                totalAttempts += p.attemptsCount
+                correct += p.correctCount
+                wrong += p.wrongCount
+                if (p.lastOutcome == "right") mastered++
+            }
             SubjectStat(
                 code = meta.code,
                 name = meta.name,
                 group = meta.group,
                 totalQuestions = list.size,
-                attemptedQuestions = list.count { it.attemptsCount > 0 },
-                totalAttempts = list.sumOf { it.attemptsCount },
-                correctAttempts = list.sumOf { it.correctCount },
-                wrongAttempts = list.sumOf { it.wrongCount },
-                masteredQuestions = list.count { it.lastOutcome == "right" },
+                attemptedQuestions = attempted,
+                totalAttempts = totalAttempts,
+                correctAttempts = correct,
+                wrongAttempts = wrong,
+                masteredQuestions = mastered,
                 accentColor = meta.accentColor
             )
         }
@@ -734,16 +764,30 @@ class NursingPrepRepository(
             )
         }
         return defs.map { d ->
-            val list = items.filter(d.filter)
+            var total = 0
+            var attempted = 0
+            var totalAttempts = 0
+            var correct = 0
+            var wrong = 0
+            for (item in items) {
+                if (d.filter(item)) {
+                    total++
+                    val p = item.progress
+                    if (p.attemptsCount > 0) attempted++
+                    totalAttempts += p.attemptsCount
+                    correct += p.correctCount
+                    wrong += p.wrongCount
+                }
+            }
             CategoryStat(
                 key = d.key,
                 label = d.label,
                 description = d.desc,
-                totalQuestions = list.size,
-                attemptedQuestions = list.count { it.attemptsCount > 0 },
-                totalAttempts = list.sumOf { it.attemptsCount },
-                correctAttempts = list.sumOf { it.correctCount },
-                wrongAttempts = list.sumOf { it.wrongCount },
+                totalQuestions = total,
+                attemptedQuestions = attempted,
+                totalAttempts = totalAttempts,
+                correctAttempts = correct,
+                wrongAttempts = wrong,
                 accentColor = d.color
             )
         }

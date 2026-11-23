@@ -326,21 +326,39 @@ enum class PracticePathway(val label: String) {
 }
 
 object SubjectPracticeLogic {
-    private val whitespaceRegex = Regex("\\s+")
-
-    fun normalizeStem(text: String): String =
-        text.trim().lowercase().replace(whitespaceRegex, " ")
+    fun normalizeStem(text: String): String {
+        val len = text.length
+        if (len == 0) return ""
+        val sb = StringBuilder(len)
+        var inSpace = true
+        for (i in 0 until len) {
+            val ch = text[i]
+            if (ch.isWhitespace()) {
+                if (!inSpace) {
+                    sb.append(' ')
+                    inSpace = true
+                }
+            } else {
+                sb.append(ch.lowercaseChar())
+                inSpace = false
+            }
+        }
+        if (sb.isNotEmpty() && sb[sb.length - 1] == ' ') {
+            sb.setLength(sb.length - 1)
+        }
+        return sb.toString()
+    }
 
     /** Deduplicates questions by ID and normalized stem, preserving higher progress/bookmark state. */
     fun deduplicateQuestions(items: List<QuestionItem>): List<QuestionItem> {
-        val byId = LinkedHashMap<String, QuestionItem>(items.size)
+        val byId = LinkedHashMap<String, QuestionItem>(items.size * 2 + 1)
         for (item in items) {
             val existing = byId[item.id]
             if (existing == null || item.attemptsCount > existing.attemptsCount || (!existing.isBookmarked && item.isBookmarked)) {
                 byId[item.id] = item
             }
         }
-        val byStem = LinkedHashMap<String, QuestionItem>(byId.size)
+        val byStem = LinkedHashMap<String, QuestionItem>(byId.size * 2 + 1)
         for (item in byId.values) {
             val stemKey = "${item.question.subject}|${normalizeStem(item.question.questionText)}"
             val existing = byStem[stemKey]
@@ -357,55 +375,121 @@ object SubjectPracticeLogic {
         subjectCode: String,
         examIdFilter: String? = null,
         difficultyFilter: DifficultyFilter = DifficultyFilter.ALL,
-        excludePyqAndMock: Boolean = false
+        excludePyqAndMock: Boolean = false,
+        alreadyDeduplicated: Boolean = false
     ): List<QuestionItem> {
         val allowedIds = if (!examIdFilter.isNullOrBlank()) {
-            allLinks.asSequence()
-                .filter { it.examId == examIdFilter }
-                .map { it.questionId }
-                .toHashSet()
+            val set = HashSet<String>()
+            for (link in allLinks) {
+                if (link.examId == examIdFilter) set.add(link.questionId)
+            }
+            set
         } else {
             null
         }
         val targetDiff = difficultyFilter.difficulty
-        val matched = allQuestions.filter { item ->
-            item.question.subject == subjectCode &&
+        val matched = ArrayList<QuestionItem>()
+        for (item in allQuestions) {
+            val q = item.question
+            if (q.subject == subjectCode &&
                 (allowedIds == null || item.id in allowedIds) &&
-                (targetDiff == null || item.question.difficulty == targetDiff) &&
-                (!excludePyqAndMock || (!item.question.isPyqTagged && !item.question.isPredictedMock))
+                (targetDiff == null || q.difficulty == targetDiff) &&
+                (!excludePyqAndMock || (!q.isPyqTagged && !q.isPredictedMock))
+            ) {
+                matched.add(item)
+            }
         }
-        return deduplicateQuestions(matched)
+        return if (alreadyDeduplicated) matched else deduplicateQuestions(matched)
+    }
+
+    /** Single-pass O(N) grouping of cross-exam subject practice questions across all 16 subjects. */
+    fun groupQuestionsBySubjectForPractice(
+        allQuestions: List<QuestionItem>,
+        allLinks: List<ExamQuestionLink>,
+        examIdFilter: String? = null,
+        difficultyFilter: DifficultyFilter = DifficultyFilter.ALL,
+        excludePyqAndMock: Boolean = true,
+        alreadyDeduplicated: Boolean = false
+    ): List<Pair<SubjectMeta, List<QuestionItem>>> {
+        val allowedIds = if (!examIdFilter.isNullOrBlank()) {
+            val set = HashSet<String>()
+            for (link in allLinks) {
+                if (link.examId == examIdFilter) set.add(link.questionId)
+            }
+            set
+        } else {
+            null
+        }
+        val source = if (alreadyDeduplicated) allQuestions else deduplicateQuestions(allQuestions)
+        val targetDiff = difficultyFilter.difficulty
+        val bySubject = HashMap<String, ArrayList<QuestionItem>>(SubjectCatalog.ALL_SUBJS.size * 2)
+        for (item in source) {
+            val q = item.question
+            if ((allowedIds == null || item.id in allowedIds) &&
+                (targetDiff == null || q.difficulty == targetDiff) &&
+                (!excludePyqAndMock || (!q.isPyqTagged && !q.isPredictedMock))
+            ) {
+                bySubject.getOrPut(q.subject) { ArrayList() }.add(item)
+            }
+        }
+        return SubjectCatalog.ALL_SUBJS.mapNotNull { meta ->
+            val list = bySubject[meta.code]
+            if (list.isNullOrEmpty()) null else meta to list
+        }
     }
 
     fun computeCrossExamSubjectStats(
         allQuestions: List<QuestionItem>,
         allLinks: List<ExamQuestionLink>,
-        examIdFilter: String? = null
+        examIdFilter: String? = null,
+        alreadyDeduplicated: Boolean = false
     ): List<SubjectStat> {
         val allowedIds = if (!examIdFilter.isNullOrBlank()) {
-            allLinks.asSequence()
-                .filter { it.examId == examIdFilter }
-                .map { it.questionId }
-                .toHashSet()
+            val set = HashSet<String>()
+            for (link in allLinks) {
+                if (link.examId == examIdFilter) set.add(link.questionId)
+            }
+            set
         } else {
             null
         }
-        val pool = deduplicateQuestions(
-            if (allowedIds == null) allQuestions else allQuestions.filter { it.id in allowedIds }
-        )
+        val source = if (alreadyDeduplicated) {
+            allQuestions
+        } else {
+            deduplicateQuestions(allQuestions)
+        }
+        val grouped = HashMap<String, ArrayList<QuestionItem>>(SubjectCatalog.ALL_SUBJS.size * 2)
+        for (item in source) {
+            if (allowedIds == null || item.id in allowedIds) {
+                grouped.getOrPut(item.question.subject) { ArrayList() }.add(item)
+            }
+        }
         return SubjectCatalog.ALL_SUBJS.mapNotNull { meta ->
-            val subItems = pool.filter { it.question.subject == meta.code }
-            if (subItems.isEmpty()) return@mapNotNull null
+            val subItems = grouped[meta.code]
+            if (subItems.isNullOrEmpty()) return@mapNotNull null
+            var attempted = 0
+            var totalAttempts = 0
+            var correct = 0
+            var wrong = 0
+            var mastered = 0
+            for (item in subItems) {
+                val p = item.progress
+                if (p.attemptsCount > 0) attempted++
+                totalAttempts += p.attemptsCount
+                correct += p.correctCount
+                wrong += p.wrongCount
+                if (p.lastOutcome == "right") mastered++
+            }
             SubjectStat(
                 code = meta.code,
                 name = meta.name,
                 group = meta.group,
                 totalQuestions = subItems.size,
-                attemptedQuestions = subItems.count { it.attemptsCount > 0 },
-                totalAttempts = subItems.sumOf { it.attemptsCount },
-                correctAttempts = subItems.sumOf { it.correctCount },
-                wrongAttempts = subItems.sumOf { it.wrongCount },
-                masteredQuestions = subItems.count { it.lastOutcome == "right" },
+                attemptedQuestions = attempted,
+                totalAttempts = totalAttempts,
+                correctAttempts = correct,
+                wrongAttempts = wrong,
+                masteredQuestions = mastered,
                 accentColor = meta.accentColor
             )
         }

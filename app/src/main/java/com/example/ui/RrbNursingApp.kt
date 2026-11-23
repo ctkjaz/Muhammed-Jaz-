@@ -1032,10 +1032,12 @@ fun RrbNursingApp(vm: MainViewModel) {
                 )
 
                 val pdfMatchingCount = remember(pdfExportConfig, state.questions, state.lowestAccuracyQuestions) {
-                    vm.resolvedPdfWorksheetQuestions(pdfExportConfig, state).size
+                    if (!pdfExportConfig.isVisible) 0
+                    else vm.resolvedPdfWorksheetQuestions(pdfExportConfig, state).size
                 }
                 val suggestedPdfName = remember(pdfExportConfig, pdfMatchingCount) {
-                    vm.suggestedPdfFileName(pdfExportConfig, state)
+                    if (!pdfExportConfig.isVisible) ""
+                    else vm.suggestedPdfFileName(pdfExportConfig, state)
                 }
                 PdfExportModalSheet(
                     state = pdfExportConfig,

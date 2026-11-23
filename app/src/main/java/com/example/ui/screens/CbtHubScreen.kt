@@ -30,6 +30,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -72,27 +73,64 @@ fun CbtHubScreen(
     val negMark = activeExam?.negativeMarks ?: 0.33
     val negMarkLabel = String.format(Locale.US, "%.2f", negMark)
 
-    // Strictly separate CBT Mock pools from PYQs (PYQs belong strictly in Subjects -> PYQ)
+    // Strictly separate CBT Mock pools from PYQs (PYQs belong strictly in Subjects -> PYQ).
+    // Partition once per stagePool change and defer shuffling until the user actually starts a mock.
     val stagePool = state.stageQuestions.ifEmpty { state.questions }
-    val mockOnlyPool = stagePool.filter { !it.question.isPyqTagged }
-    val predictedPool = mockOnlyPool.filter { it.question.isPredictedMock }
-    val predictedNurPool = predictedPool.filter { SubjectCatalog.isNursing(it.question) }
-    val predictedNonPool = predictedPool.filter { !SubjectCatalog.isNursing(it.question) }
+    val pools = remember(stagePool) {
+        val predicted = ArrayList<QuestionItem>()
+        val predictedNur = ArrayList<QuestionItem>()
+        val predictedNon = ArrayList<QuestionItem>()
+        val practiceNur = ArrayList<QuestionItem>()
+        val practiceNon = ArrayList<QuestionItem>()
+        val hardPredictedNur = ArrayList<QuestionItem>()
+        val hardPracticeNur = ArrayList<QuestionItem>()
 
-    // Prioritize Predicted Mock questions first, filling remainder only from non-PYQ practice
-    val nurPool = predictedNurPool.shuffled() +
-        mockOnlyPool.filter { !it.question.isPredictedMock && SubjectCatalog.isNursing(it.question) }.shuffled()
-    val nonPool = predictedNonPool.shuffled() +
-        mockOnlyPool.filter { !it.question.isPredictedMock && !SubjectCatalog.isNursing(it.question) }.shuffled()
-    val hardClinicalPool = (
-        predictedNurPool.filter { it.question.difficulty == QuestionDifficulty.HARD || it.question.questionText.contains("[Mains", ignoreCase = true) }.shuffled() +
-            mockOnlyPool.filter {
-                !it.question.isPredictedMock && SubjectCatalog.isNursing(it.question) &&
-                    (it.question.questionText.contains("[Mains", ignoreCase = true) ||
-                        it.id.startsWith("P_") ||
-                        it.question.difficulty == QuestionDifficulty.HARD)
-            }.shuffled()
-        ).ifEmpty { nurPool }
+        for (item in stagePool) {
+            val q = item.question
+            if (q.isPyqTagged) continue
+            val isNur = SubjectCatalog.isNursing(q)
+            if (q.isPredictedMock) {
+                predicted.add(item)
+                if (isNur) {
+                    predictedNur.add(item)
+                    if (q.difficulty == QuestionDifficulty.HARD || q.questionText.contains("[Mains", ignoreCase = true)) {
+                        hardPredictedNur.add(item)
+                    }
+                } else {
+                    predictedNon.add(item)
+                }
+            } else if (isNur) {
+                practiceNur.add(item)
+                if (q.questionText.contains("[Mains", ignoreCase = true) ||
+                    item.id.startsWith("P_") ||
+                    q.difficulty == QuestionDifficulty.HARD
+                ) {
+                    hardPracticeNur.add(item)
+                }
+            } else {
+                practiceNon.add(item)
+            }
+        }
+        CbtMockPools(
+            predicted = predicted,
+            predictedNur = predictedNur,
+            predictedNon = predictedNon,
+            practiceNur = practiceNur,
+            practiceNon = practiceNon,
+            hardPredictedNur = hardPredictedNur,
+            hardPracticeNur = hardPracticeNur
+        )
+    }
+    val predictedPool = pools.predicted
+    val predictedNurPool = pools.predictedNur
+    fun pickNur(limit: Int): List<QuestionItem> =
+        (pools.predictedNur.shuffled() + pools.practiceNur.shuffled()).take(limit)
+    fun pickNon(limit: Int): List<QuestionItem> =
+        (pools.predictedNon.shuffled() + pools.practiceNon.shuffled()).take(limit)
+    fun pickHardClinical(limit: Int): List<QuestionItem> =
+        (pools.hardPredictedNur.shuffled() + pools.hardPracticeNur.shuffled())
+            .ifEmpty { pools.predictedNur.shuffled() + pools.practiceNur.shuffled() }
+            .take(limit)
 
     val mini30Mins = SettingsPreferences.calculateSuggestedMinutes(30, secondsPerQuestion)
     val nur50Mins = SettingsPreferences.calculateSuggestedMinutes(50, secondsPerQuestion)
@@ -313,7 +351,7 @@ fun CbtHubScreen(
                         tag = "cbt_pgimer_predicted_btn",
                         onClick = {
                             onStartCustomCbt(
-                                predictedNurPool.shuffled().take(100).ifEmpty { nurPool.take(100) },
+                                predictedNurPool.shuffled().take(100).ifEmpty { pickNur(100) },
                                 "PGIMER High-Probability Predicted 100Q CBT",
                                 100
                             )
@@ -327,7 +365,7 @@ fun CbtHubScreen(
                         btnLabel = "Start 50Q Sprint",
                         isPrimary = false,
                         tag = "cbt_50q_nur_btn",
-                        onClick = { onStartCustomCbt(hardClinicalPool.take(50), "PGIMER 50Q Clinical Sprint", 50) }
+                        onClick = { onStartCustomCbt(pickHardClinical(50), "PGIMER 50Q Clinical Sprint", 50) }
                     ),
                     CbtOptionData(
                         badge = "Express",
@@ -393,7 +431,7 @@ fun CbtHubScreen(
                         btnLabel = "Start 20Q Section",
                         isPrimary = false,
                         tag = "cbt_norcet_prelims_sec_btn",
-                        onClick = { onStartCustomCbt(nurPool.take(20), "NORCET Prelims 20Q Section (18m)", 18) }
+                        onClick = { onStartCustomCbt(pickNur(20), "NORCET Prelims 20Q Section (18m)", 18) }
                     ),
                     CbtOptionData(
                         badge = "80:20 Express",
@@ -413,7 +451,7 @@ fun CbtHubScreen(
                         btnLabel = "Start 20Q GK Block",
                         isPrimary = false,
                         tag = "cbt_30q_gen_btn",
-                        onClick = { onStartCustomCbt(nonPool.take(20), "20Q NORCET Prelims GK & Aptitude", 18) }
+                        onClick = { onStartCustomCbt(pickNon(20), "20Q NORCET Prelims GK & Aptitude", 18) }
                     )
                 )
 
@@ -446,7 +484,7 @@ fun CbtHubScreen(
                         btnLabel = "Start 50Q Nursing",
                         isPrimary = false,
                         tag = "cbt_50q_nur_btn",
-                        onClick = { onStartCustomCbt(nurPool.take(50), "50Q Nursing Predicted CBT", null) }
+                        onClick = { onStartCustomCbt(pickNur(50), "50Q Nursing Predicted CBT", null) }
                     ),
                     CbtOptionData(
                         badge = "Non-Tech + CA",
@@ -456,7 +494,7 @@ fun CbtHubScreen(
                         btnLabel = "Start 30Q Non-Tech",
                         isPrimary = false,
                         tag = "cbt_30q_gen_btn",
-                        onClick = { onStartCustomCbt(nonPool.take(30), "30Q Non-Tech Predicted CBT", null) }
+                        onClick = { onStartCustomCbt(pickNon(30), "30Q Non-Tech Predicted CBT", null) }
                     )
                 )
             }
@@ -598,6 +636,16 @@ fun CbtHubScreen(
         }
     }
 }
+
+private data class CbtMockPools(
+    val predicted: List<QuestionItem>,
+    val predictedNur: List<QuestionItem>,
+    val predictedNon: List<QuestionItem>,
+    val practiceNur: List<QuestionItem>,
+    val practiceNon: List<QuestionItem>,
+    val hardPredictedNur: List<QuestionItem>,
+    val hardPracticeNur: List<QuestionItem>
+)
 
 private data class CbtOptionData(
     val badge: String,
