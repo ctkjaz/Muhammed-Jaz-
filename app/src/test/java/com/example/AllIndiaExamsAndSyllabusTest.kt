@@ -332,6 +332,106 @@ class AllIndiaExamsAndSyllabusTest {
         assertEquals(1, gimsMath.size)
         assertEquals(0, gimsRailways.size)
     }
+
+    @Test
+    fun virtualProjection_preservesExactBaselineCountsAndIsolatesDedicatedExamBanks() {
+        val rrbRaw = parseAssetObjects("builtin_questions.json").map { mapToQuestion(it) }
+        val norcetRaw = parseAssetObjects("norcet_questions.json").map { mapToQuestion(it) }
+        val pgimerRaw = parseAssetObjects("pgimer_questions.json").map { mapToQuestion(it) }
+        val practiceRaw = parseAssetObjects("subject_practice_bank.json").map { mapToQuestion(it) }
+        val predictedRaw = parseAssetObjects("predicted_mock_bank.json").map { mapToQuestion(it) }
+        val allIndiaPairs = parseAssetObjects("all_india_pyqs.json").map { obj ->
+            mapToQuestion(obj) to obj["examId"]?.toString()?.trim().orEmpty()
+        }
+
+        val allQuestions = rrbRaw + norcetRaw + pgimerRaw + practiceRaw + predictedRaw + allIndiaPairs.map { it.first }
+
+        fun projectNonPyq(q: Question): Question = q.copy(
+            category = when {
+                SubjectCatalog.isNursingCode(q.subject) -> "nur"
+                SubjectCatalog.isCaCode(q.subject) -> "ca"
+                else -> "gen"
+            },
+            shiftYear = "",
+            examYear = "",
+            examShift = "",
+            sourceType = if (SubjectCatalog.isCaCode(q.subject)) {
+                QuestionSourceType.CURRENT_AFFAIRS
+            } else {
+                QuestionSourceType.PRACTICE
+            }
+        )
+
+        fun simulateObserveQuestionsForExam(examId: String): List<Question> {
+            val explicit: List<Question> = when (examId) {
+                PlatformCatalogDefaults.EXAM_RRB_NURSING -> rrbRaw
+                PlatformCatalogDefaults.EXAM_AIIMS_NORCET -> {
+                    norcetRaw + rrbRaw
+                        .filter { PlatformCatalogDefaults.isNorcetSharedSubject(it.subject) }
+                        .map { projectNonPyq(it) }
+                }
+                PlatformCatalogDefaults.EXAM_PGIMER_NURSING -> {
+                    pgimerRaw + (norcetRaw + rrbRaw)
+                        .filter { PlatformCatalogDefaults.isPgimerSharedSubject(it.subject) }
+                        .distinctBy { it.id }
+                        .map { projectNonPyq(it) }
+                }
+                else -> allIndiaPairs.filter { it.second == examId }.map { it.first }
+            }
+            val result = ArrayList<Question>(explicit.size + 4096)
+            val seenIds = HashSet<String>(explicit.size * 2 + 16)
+            for (q in explicit) {
+                if (seenIds.add(q.id)) result.add(q)
+            }
+            for (q in allQuestions) {
+                if (PlatformCatalogDefaults.shouldVirtuallyProjectQuestion(examId, q) &&
+                    seenIds.add(q.id)
+                ) {
+                    result.add(q)
+                }
+            }
+            return result
+        }
+
+        // 1. RRB Nursing: exact 1,223 baseline + 8,000 practice + 500 predicted mocks = 9,723 (no N_* / P_* leakage)
+        val rrbProjected = simulateObserveQuestionsForExam(PlatformCatalogDefaults.EXAM_RRB_NURSING)
+        assertEquals(1223 + 8000 + 500, rrbProjected.size)
+        assertEquals(500, rrbProjected.count { it.isPredictedMock })
+        assertTrue(rrbProjected.none { it.id.startsWith("N_") || it.id.startsWith("P_") || it.id.startsWith("AIP_") })
+        val rrbPyqShifts = rrbProjected.filter { it.isPyqTagged }.map { it.shiftYear }.toSet()
+        assertTrue("2025-S1" in rrbPyqShifts)
+        assertTrue(rrbPyqShifts.none { it.startsWith("NORCET") })
+
+        // 2. AIIMS NORCET: exact 320 dedicated N_* + shared non-Railways > 9,000, zero Railways, zero P_* leakage
+        val norcetProjected = simulateObserveQuestionsForExam(PlatformCatalogDefaults.EXAM_AIIMS_NORCET)
+        assertEquals(320, norcetProjected.count { it.id.startsWith("N_") })
+        assertTrue(norcetProjected.size > 9000)
+        assertTrue(norcetProjected.none { it.subject == "Railways" })
+        assertTrue(norcetProjected.none { it.id.startsWith("P_") || it.id.startsWith("AIP_") })
+        val norcetPyqShifts = norcetProjected.filter { it.isPyqTagged }.map { it.shiftYear }.toSet()
+        assertEquals(
+            setOf("NORCET-10", "NORCET-9", "NORCET-8", "NORCET-7", "NORCET-6", "NORCET-5"),
+            norcetPyqShifts
+        )
+
+        // 3. PGIMER: 100% pure nursing, zero non-nursing subjects, zero AIP_* leakage
+        val pgimerProjected = simulateObserveQuestionsForExam(PlatformCatalogDefaults.EXAM_PGIMER_NURSING)
+        assertTrue(pgimerProjected.all { SubjectCatalog.isNursingCode(it.subject) })
+        assertTrue(pgimerProjected.size > 6000)
+        assertTrue(pgimerProjected.none { it.id.startsWith("AIP_") })
+
+        // 4. Newly added pure-nursing exam (NEIGRIHMS) & mixed exam (ESIC) get rich banks + isolated PYQs
+        val neigrihmsProjected = simulateObserveQuestionsForExam(PlatformCatalogDefaults.EXAM_NEIGRIHMS_NURSING)
+        assertEquals(20, neigrihmsProjected.count { it.isPyqTagged })
+        assertTrue(neigrihmsProjected.all { SubjectCatalog.isNursingCode(it.subject) })
+        assertTrue(neigrihmsProjected.size > 5000)
+        assertTrue(neigrihmsProjected.none { it.id.startsWith("N_") && it.questionText.contains("[Mains", ignoreCase = true) })
+
+        val esicProjected = simulateObserveQuestionsForExam(PlatformCatalogDefaults.EXAM_ESIC_NURSING)
+        assertEquals(20, esicProjected.count { it.isPyqTagged })
+        assertTrue(esicProjected.none { it.subject == "Railways" })
+        assertTrue(esicProjected.size > 7500)
+    }
 }
 
 private class TestJsonParser(private val src: String) {

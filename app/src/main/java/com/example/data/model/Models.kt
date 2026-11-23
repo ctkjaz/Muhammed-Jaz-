@@ -677,6 +677,37 @@ object PlatformCatalogDefaults {
         else -> subjectCode != "Railways"
     }
 
+    fun isVirtualSharedBankId(questionId: String): Boolean =
+        questionId.startsWith("S_") || questionId.startsWith("SP_") || questionId.startsWith("PM_")
+
+    fun isDedicatedBaselineExam(examId: String?): Boolean =
+        examId == EXAM_RRB_NURSING || examId == EXAM_AIIMS_NORCET || examId == EXAM_PGIMER_NURSING
+
+    /**
+     * Determines whether a built-in question should be virtually projected into [examId]
+     * without requiring an explicit SQLite join row in `exam_question_links`.
+     *
+     * - PYQs and custom questions are strictly exam-scoped via explicit links.
+     * - The 8,000-item Subject Practice Bank (`S_*`) and 500-item Predicted Mock Bank (`PM_*`)
+     *   virtually project into every exam whose syllabus includes [Question.subject].
+     * - RRB, AIIMS NORCET, and PGIMER already maintain explicit `exam_question_links` for their
+     *   baseline & exam-dedicated banks (`builtin_questions`, `norcet_questions`, `pgimer_questions`),
+     *   so other exam-dedicated banks (`N_*`, `P_*`) never leak into them.
+     * - All other All-India exams additionally receive compatible non-PYQ baseline practice items,
+     *   while keeping NORCET Mains clinical cases (`[Mains...]`) isolated to NORCET.
+     */
+    fun shouldVirtuallyProjectQuestion(examId: String?, question: Question): Boolean {
+        if (examId.isNullOrBlank()) return false
+        if (question.isPyqTagged || question.isCustom) return false
+        if (!isSharedSubjectForExam(examId, question.subject)) return false
+        if (isVirtualSharedBankId(question.id)) return true
+        if (isDedicatedBaselineExam(examId)) return false
+        if (question.id.startsWith("N_") && question.questionText.contains("[Mains", ignoreCase = true)) {
+            return false
+        }
+        return true
+    }
+
     val DEFAULT_SECTIONS: List<ExamSection> = buildList {
         add(ExamSection(SECTION_RRB_NURSING_CORE, EXAM_RRB_NURSING, "Nursing Core (70%)", 70, 0))
         add(ExamSection(SECTION_RRB_CA_GK, EXAM_RRB_NURSING, "Current Affairs & Static GK", 10, 1))
@@ -844,8 +875,7 @@ object SubjectPracticeLogic {
         if (allowedIds == null) return true
         if (item.id in allowedIds) return true
         if (!includeVirtualShared || examIdFilter.isNullOrBlank()) return false
-        val q = item.question
-        return !q.isPyqTagged && !q.isCustom && PlatformCatalogDefaults.isSharedSubjectForExam(examIdFilter, q.subject)
+        return PlatformCatalogDefaults.shouldVirtuallyProjectQuestion(examIdFilter, item.question)
     }
 
     fun collectQuestionsForSubject(

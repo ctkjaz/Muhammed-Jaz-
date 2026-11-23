@@ -108,8 +108,7 @@ class NursingPrepRepository(
                 }
             }
             for (q in allParsed) {
-                if (!q.isPyqTagged && !q.isCustom &&
-                    PlatformCatalogDefaults.isSharedSubjectForExam(examId, q.subject) &&
+                if (PlatformCatalogDefaults.shouldVirtuallyProjectQuestion(examId, q) &&
                     seenIds.add(q.id)
                 ) {
                     result.add(q)

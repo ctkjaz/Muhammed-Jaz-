@@ -1912,9 +1912,8 @@ class MainViewModel(
                 .map { it.questionId }
                 .toHashSet()
             return st.crossExamQuestions.filter { item ->
-                val q = item.question
                 item.id in allowedIds ||
-                    (!q.isPyqTagged && !q.isCustom && PlatformCatalogDefaults.isSharedSubjectForExam(filterId, q.subject))
+                    PlatformCatalogDefaults.shouldVirtuallyProjectQuestion(filterId, item.question)
             }
         }
         return st.stageQuestions.ifEmpty { st.questions }
