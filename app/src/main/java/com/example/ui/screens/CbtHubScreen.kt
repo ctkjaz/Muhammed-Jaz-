@@ -66,12 +66,13 @@ fun CbtHubScreen(
     val editorial = MaterialTheme.editorialColors
     val activeExam = state.activeExam
     val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExam?.id)
-    val isPgimer = PlatformCatalogDefaults.isPgimerExam(activeExam?.id)
+    val isPureNursing = PlatformCatalogDefaults.examIsPureNursing(activeExam?.id)
     val examShort = activeExam?.shortName ?: "RRB Nursing"
     val fullQ = activeExam?.defaultMockQuestions ?: 100
     val fullMins = activeExam?.defaultMockMinutes ?: 90
-    val negMark = activeExam?.negativeMarks ?: 0.33
-    val negMarkLabel = String.format(Locale.US, "%.2f", negMark)
+    val nurPct = PlatformCatalogDefaults.nursingWeightagePercent(activeExam?.id)
+    val nonPct = 100 - nurPct
+    val markLabel = activeExam?.let { PlatformCatalogDefaults.formatMarkingLabel(it) } ?: "+1 / -0.33"
 
     // Strictly separate CBT Mock pools from PYQs (PYQs belong strictly in Subjects -> PYQ).
     // Partition once per stagePool change and defer shuffling until the user actually starts a mock.
@@ -156,10 +157,10 @@ fun CbtHubScreen(
                     )
                     Text(
                         text = when {
-                            isPgimer -> "100Q · 100m · 100% Core Nursing · +1 / -$negMarkLabel"
-                            isNorcet && state.activeExamStage == ExamStage.MAINS -> "Stage II Mains · 160Q · 180m (4×45m locked) · 100% Clinical · +1 / -$negMarkLabel"
-                            isNorcet -> "Stage I Prelims · 100Q · 90m (5×18m locked) · 80:20 · +1 / -$negMarkLabel"
-                            else -> "100Q · 90m · 70:30 Pattern · +1 / -$negMarkLabel"
+                            isNorcet && state.activeExamStage == ExamStage.MAINS -> "Stage II Mains · 160Q · 180m (4×45m locked) · 100% Clinical · $markLabel"
+                            isNorcet -> "Stage I Prelims · 100Q · 90m (5×18m locked) · 80:20 · $markLabel"
+                            isPureNursing -> "${fullQ}Q · ${fullMins}m · 100% Core Nursing · $markLabel"
+                            else -> "${fullQ}Q · ${fullMins}m · ${nurPct}:${nonPct} Pattern · $markLabel"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -229,7 +230,7 @@ fun CbtHubScreen(
                                     }
                                 }
                                 Text(
-                                    text = "${predictedPool.size} Qs",
+                                    text = "High-Yield Bank",
                                     style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -239,8 +240,8 @@ fun CbtHubScreen(
                                 text = when {
                                     isNorcet && state.activeExamStage == ExamStage.MAINS ->
                                         "NORCET Mains Predicted Clinical Bank"
-                                    isPgimer ->
-                                        "PGIMER Predicted Core Nursing Bank"
+                                    isPureNursing ->
+                                        "$examShort Predicted Core Nursing Bank"
                                     else ->
                                         "$examShort Predicted Mock Bank"
                                 },
@@ -256,7 +257,7 @@ fun CbtHubScreen(
                                 onClick = {
                                     onPracticePredictedBank(
                                         predictedPool,
-                                        "$examShort Predicted Mock Bank (${predictedPool.size} Qs)"
+                                        "$examShort Predicted Mock Bank"
                                     )
                                 },
                                 shape = RoundedCornerShape(12.dp),
@@ -329,22 +330,24 @@ fun CbtHubScreen(
                 }
             }
 
+            val miniNur = (30 * nurPct) / 100
+            val miniNon = 30 - miniNur
             val cbtOptions = when {
-                isPgimer -> listOf(
+                isPureNursing -> listOf(
                     CbtOptionData(
                         badge = "Predicted Pattern",
                         durationLabel = "$fullMins min",
-                        title = "PGIMER Predicted Full Mock ($fullQ Qs)",
-                        desc = "100% High-Probability Core Nursing • +1 / -0.25 marking • 0% PYQ repeat.",
+                        title = "$examShort Predicted Full Mock ($fullQ Qs)",
+                        desc = "100% High-Probability Core Nursing • $markLabel marking • 0% PYQ repeat.",
                         btnLabel = "Start Full Mock",
                         isPrimary = true,
                         tag = "cbt_100q_btn",
-                        onClick = { onStartStandardMock(fullQ, fullMins, "PGIMER Predicted ${fullQ}Q CBT Mock", true) }
+                        onClick = { onStartStandardMock(fullQ, fullMins, "$examShort Predicted ${fullQ}Q CBT Mock", true) }
                     ),
                     CbtOptionData(
                         badge = "Predicted 100",
-                        durationLabel = "100 min",
-                        title = "PGIMER High-Yield Predicted (${predictedNurPool.size.coerceAtMost(100)} Qs)",
+                        durationLabel = "$fullMins min",
+                        title = "$examShort High-Yield Predicted (100 Qs)",
                         desc = "Trend-weighted clinical & ICU predictions with rationales (PYQs kept in Subjects → PYQ).",
                         btnLabel = "Start Predicted 100Q",
                         isPrimary = false,
@@ -352,8 +355,8 @@ fun CbtHubScreen(
                         onClick = {
                             onStartCustomCbt(
                                 predictedNurPool.shuffled().take(100).ifEmpty { pickNur(100) },
-                                "PGIMER High-Probability Predicted 100Q CBT",
-                                100
+                                "$examShort High-Probability Predicted 100Q CBT",
+                                fullMins
                             )
                         }
                     ),
@@ -365,17 +368,17 @@ fun CbtHubScreen(
                         btnLabel = "Start 50Q Sprint",
                         isPrimary = false,
                         tag = "cbt_50q_nur_btn",
-                        onClick = { onStartCustomCbt(pickHardClinical(50), "PGIMER 50Q Clinical Sprint", 50) }
+                        onClick = { onStartCustomCbt(pickHardClinical(50), "$examShort 50Q Clinical Sprint", 50) }
                     ),
                     CbtOptionData(
                         badge = "Express",
                         durationLabel = if (useTimeLimit) "$mini30Mins min" else "Untimed",
                         title = "Mini 30Q Core Nursing",
-                        desc = "Quick daily PGIMER-pattern predicted drill.",
+                        desc = "Quick daily $examShort-pattern predicted drill.",
                         btnLabel = "Start 30Q Mock",
                         isPrimary = false,
                         tag = "cbt_30q_btn",
-                        onClick = { onStartStandardMock(30, null, "PGIMER Mini 30Q Nursing CBT", false) }
+                        onClick = { onStartStandardMock(30, null, "$examShort Mini 30Q Nursing CBT", false) }
                     )
                 )
 
@@ -459,22 +462,22 @@ fun CbtHubScreen(
                     CbtOptionData(
                         badge = "Predicted Pattern",
                         durationLabel = "$fullMins min",
-                        title = "Full $fullQ-Question Predicted Mock",
-                        desc = "70% Nursing + 30% Non-Tech & CA • -$negMarkLabel marking • 0% PYQ repeat.",
+                        title = "$examShort Full $fullQ-Q Predicted Mock",
+                        desc = "$nurPct% Nursing + $nonPct% Non-Tech & CA • $markLabel • 0% PYQ repeat.",
                         btnLabel = "Start Full Mock",
                         isPrimary = true,
                         tag = "cbt_100q_btn",
-                        onClick = { onStartStandardMock(fullQ, fullMins, "Full Official ${fullQ}Q Predicted CBT Mock", true) }
+                        onClick = { onStartStandardMock(fullQ, fullMins, "$examShort Full ${fullQ}Q Predicted CBT Mock", true) }
                     ),
                     CbtOptionData(
                         badge = "Express",
                         durationLabel = if (useTimeLimit) "$mini30Mins min" else "Untimed",
                         title = "Mini 30Q Predicted Mock",
-                        desc = "21 Nursing + 9 Non-Tech/CA high-probability drill.",
+                        desc = "$miniNur Nursing + $miniNon Non-Tech/CA high-probability drill.",
                         btnLabel = "Start 30Q Mock",
                         isPrimary = false,
                         tag = "cbt_30q_btn",
-                        onClick = { onStartStandardMock(30, null, "Mini 30Q Predicted CBT Mock", false) }
+                        onClick = { onStartStandardMock(30, null, "$examShort Mini 30Q Predicted CBT Mock", false) }
                     ),
                     CbtOptionData(
                         badge = "Clinical Speed",
@@ -484,7 +487,7 @@ fun CbtHubScreen(
                         btnLabel = "Start 50Q Nursing",
                         isPrimary = false,
                         tag = "cbt_50q_nur_btn",
-                        onClick = { onStartCustomCbt(pickNur(50), "50Q Nursing Predicted CBT", null) }
+                        onClick = { onStartCustomCbt(pickNur(50), "$examShort 50Q Nursing Predicted CBT", null) }
                     ),
                     CbtOptionData(
                         badge = "Non-Tech + CA",
@@ -494,7 +497,7 @@ fun CbtHubScreen(
                         btnLabel = "Start 30Q Non-Tech",
                         isPrimary = false,
                         tag = "cbt_30q_gen_btn",
-                        onClick = { onStartCustomCbt(pickNon(30), "30Q Non-Tech Predicted CBT", null) }
+                        onClick = { onStartCustomCbt(pickNon(30), "$examShort 30Q Non-Tech Predicted CBT", null) }
                     )
                 )
             }

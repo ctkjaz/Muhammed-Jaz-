@@ -481,6 +481,8 @@ object EntitlementEvaluator {
             tier == PlanTier.ALL_EXAM -> "ALL"
             examId == PlatformCatalogDefaults.EXAM_AIIMS_NORCET -> "NOR"
             examId == PlatformCatalogDefaults.EXAM_PGIMER_NURSING -> "PGI"
+            examId == PlatformCatalogDefaults.EXAM_RRB_NURSING -> "RRB"
+            !examId.isNullOrBlank() -> examId.substringBefore('_').uppercase(Locale.US).take(3).padEnd(3, 'X')
             else -> "RRB"
         }
         val part1 = randomCodeSegment(4)
@@ -508,12 +510,10 @@ object EntitlementEvaluator {
         return "${prefix}***$domain"
     }
 
-    fun shortExamLabel(examId: String): String = when (examId) {
-        PlatformCatalogDefaults.EXAM_RRB_NURSING -> "RRB Nursing"
-        PlatformCatalogDefaults.EXAM_AIIMS_NORCET -> "AIIMS NORCET"
-        PlatformCatalogDefaults.EXAM_PGIMER_NURSING -> "PGIMER"
-        "all" -> "All Exams"
-        else -> examId.uppercase(Locale.US)
+    fun shortExamLabel(examId: String): String {
+        if (examId == "all") return "All 29 Exams"
+        PlatformCatalogDefaults.examById(examId)?.let { return it.shortName }
+        return examId.uppercase(Locale.US)
     }
 
     fun formatShortDate(epochMs: Long): String {

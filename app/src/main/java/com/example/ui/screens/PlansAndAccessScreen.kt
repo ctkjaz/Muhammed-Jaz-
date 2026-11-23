@@ -8,6 +8,7 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -348,7 +350,7 @@ fun PlansAndAccessScreen(
                         ) {
                             PlanChoiceCard(
                                 title = "All-Exam Prep",
-                                subtitle = "RRB + NORCET + PGIMER",
+                                subtitle = "All 29 Nursing Exams",
                                 badge = "BEST VALUE",
                                 selected = selectedPlanGroup == PlanTier.ALL_EXAM,
                                 onClick = { selectedPlanGroup = PlanTier.ALL_EXAM },
@@ -375,18 +377,16 @@ fun PlansAndAccessScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                listOf(
-                                    PlatformCatalogDefaults.EXAM_AIIMS_NORCET to "NORCET",
-                                    PlatformCatalogDefaults.EXAM_RRB_NURSING to "RRB",
-                                    PlatformCatalogDefaults.EXAM_PGIMER_NURSING to "PGIMER"
-                                ).forEach { (id, label) ->
+                                PlatformCatalogDefaults.DEFAULT_EXAMS.forEach { exam ->
                                     MonochromeFilterPill(
-                                        label = label,
-                                        selected = selectedExamId == id,
-                                        onClick = { selectedExamId = id }
+                                        label = exam.shortName,
+                                        selected = selectedExamId == exam.id,
+                                        onClick = { selectedExamId = exam.id }
                                     )
                                 }
                             }
@@ -445,8 +445,8 @@ fun PlansAndAccessScreen(
                         // Benefits List
                         val features = if (selectedPlanGroup == PlanTier.ALL_EXAM) {
                             listOf(
-                                "Unlimited questions across RRB, AIIMS NORCET (Prelims + Mains) & PGIMER",
-                                "Full PYQ shift-wise vaults & Cross-Exam Subject Practice mode",
+                                "Unlimited questions across all 29 Central, Autonomous, State & Defence Nursing exams",
+                                "Full PYQ paper-wise vaults & INC syllabus Chapter-Wise practice mode",
                                 "Unlimited Full CBT Mock Exams with section locks & score reports",
                                 "Watermarked A4 PDF study worksheets & OTA new question packs"
                             )

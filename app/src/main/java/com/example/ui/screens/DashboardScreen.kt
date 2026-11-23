@@ -111,8 +111,13 @@ fun DashboardScreen(
     val diffLabelSuffix = difficultyFilter.difficulty?.let { " • ${it.label}" } ?: ""
     val activeExam = state.activeExam
     val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExam?.id)
-    val isPgimer = PlatformCatalogDefaults.isPgimerExam(activeExam?.id)
+    val isPureNursing = PlatformCatalogDefaults.examIsPureNursing(activeExam?.id)
     val examShortName = activeExam?.shortName ?: "RRB Nursing"
+    val fullQ = activeExam?.defaultMockQuestions ?: 100
+    val fullMins = activeExam?.defaultMockMinutes ?: 90
+    val nurPct = PlatformCatalogDefaults.nursingWeightagePercent(activeExam?.id)
+    val nonPct = 100 - nurPct
+    val markLabel = activeExam?.let { PlatformCatalogDefaults.formatMarkingLabel(it) } ?: "+1 / -0.33"
 
     val greeting = remember {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
@@ -135,17 +140,16 @@ fun DashboardScreen(
     val activeStreak = studyGoal.effectiveCurrentStreak()
 
     val stagePatternMeta = when {
-        isPgimer -> "100Q · 100m · 100% Core Nursing · -0.25"
-        isNorcet && state.activeExamStage == ExamStage.MAINS -> "160Q · 180m · 4×45m Clinical · -0.33"
-        isNorcet -> "100Q · 90m · 5×18m (80:20) · -0.33"
-        else -> "100Q · 90m · 70:30 Pattern · -0.33"
+        isNorcet && state.activeExamStage == ExamStage.MAINS -> "160Q · 180m · 4×45m Clinical · $markLabel"
+        isNorcet -> "100Q · 90m · 5×18m (80:20) · $markLabel"
+        isPureNursing -> "${fullQ}Q · ${fullMins}m · 100% Core Nursing · $markLabel"
+        else -> "${fullQ}Q · ${fullMins}m · ${nurPct}:${nonPct} Pattern · $markLabel"
     }
 
     val mockCtaLabel = when {
-        isPgimer -> "100Q Mock"
         isNorcet && state.activeExamStage == ExamStage.MAINS -> "160Q Mains"
         isNorcet -> "100Q Prelims"
-        else -> "100Q Mock"
+        else -> "${fullQ}Q Mock"
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -508,8 +512,8 @@ fun DashboardScreen(
                                     selected = state.activeExamStage,
                                     labelOf = { stage ->
                                         when (stage) {
-                                            ExamStage.PRELIMS -> "Prelims (${state.prelimsQuestionCount})"
-                                            ExamStage.MAINS -> "Mains (${state.mainsQuestionCount})"
+                                            ExamStage.PRELIMS -> "Stage I · Prelims"
+                                            ExamStage.MAINS -> "Stage II · Mains"
                                         }
                                     },
                                     onSelect = onSelectExamStage,
@@ -525,15 +529,15 @@ fun DashboardScreen(
                             ) {
                                 Text(
                                     text = if (state.activeExamSupportsStages) {
-                                        "${state.activeExamStage.shortLabel} coverage"
+                                        "${state.activeExamStage.shortLabel} progress"
                                     } else {
-                                        "Bank coverage"
+                                        "Bank progress"
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = "$solvedCount / $bankSize",
+                                    text = "$solvedCount practised · ${PlatformCatalogDefaults.EVERGREEN_BANK_LABEL}",
                                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -616,7 +620,7 @@ fun DashboardScreen(
                     ) {
                         PathwayCard(
                             title = "By Exam",
-                            meta = "$examShortName · ${stagePool.size} Qs",
+                            meta = "$examShortName · ${PlatformCatalogDefaults.EVERGREEN_BANK_LABEL}",
                             icon = Icons.Filled.School,
                             onClick = { onOpenSubjectSection(SubjectHubSection.NURSING) },
                             modifier = Modifier
@@ -625,7 +629,7 @@ fun DashboardScreen(
                         )
                         PathwayCard(
                             title = "By Subject",
-                            meta = "All Exams · ${state.crossExamQuestions.size} Qs",
+                            meta = "All ${state.availableExams.size} Exams · ${PlatformCatalogDefaults.EVERGREEN_BANK_LABEL}",
                             icon = Icons.AutoMirrored.Filled.MenuBook,
                             accentDot = true,
                             onClick = onOpenSubjectPracticeMode,
@@ -738,7 +742,7 @@ fun DashboardScreen(
                         add(
                             Triple(
                                 "Previous Year Papers",
-                                "$pyqCount Qs",
+                                "Paper-Wise Sets",
                                 Icons.Filled.History
                             ) to { onOpenSubjectSection(SubjectHubSection.PYQ) }
                         )
@@ -750,7 +754,7 @@ fun DashboardScreen(
                             Icons.Filled.Quiz
                         ) to { onSelectTab(MainTab.CBT) }
                     )
-                    if (!isPgimer && (!isNorcet || state.activeExamStage == ExamStage.PRELIMS)) {
+                    if (!isPureNursing && (!isNorcet || state.activeExamStage == ExamStage.PRELIMS)) {
                         add(
                             Triple(
                                 "Fact Flashcards",

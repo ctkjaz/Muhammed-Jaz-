@@ -417,7 +417,7 @@ private fun CategoryStatCard(cat: CategoryStat, modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "${cat.attemptedQuestions}/${cat.totalQuestions} covered",
+                    text = "${cat.attemptedQuestions} practised",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -481,7 +481,7 @@ private fun SubjectStatCard(sub: SubjectStat, modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    "Mastered ${sub.masteredQuestions}/${sub.totalQuestions}",
+                    "${sub.masteredQuestions} mastered",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

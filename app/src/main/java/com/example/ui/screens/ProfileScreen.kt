@@ -79,6 +79,7 @@ import com.example.data.cloud.SyncBadgeState
 import com.example.data.local.SettingsPreferences
 import com.example.data.model.AccountSessionLogic
 import com.example.data.model.DailyStudyGoalState
+import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.QuestionItem
 import com.example.data.model.StudyGoalLogic
 import com.example.data.model.SubjectCatalog
@@ -87,7 +88,6 @@ import com.example.data.subscription.SubscriptionUiState
 import com.example.ui.components.AcidLimeProgressBar
 import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.components.ProfileAvatarCircle
-import com.example.ui.components.formatApproxQuestionCount
 import com.example.ui.theme.AcidLime
 import com.example.ui.theme.AmoledBorder
 import com.example.ui.theme.EditorialBannerSubtext
@@ -1207,7 +1207,7 @@ fun ProfileScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "${formatApproxQuestionCount(state.overall.totalQuestions)}  ·  ${activeExam?.defaultMockQuestions ?: 100}Q / ${activeExam?.defaultMockMinutes ?: 90}m",
+                                    text = "${PlatformCatalogDefaults.EVERGREEN_BANK_LABEL}  ·  ${activeExam?.defaultMockQuestions ?: 100}Q / ${activeExam?.defaultMockMinutes ?: 90}m",
                                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

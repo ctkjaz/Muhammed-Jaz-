@@ -534,7 +534,13 @@ object BulkQuestionParser {
         }
     }
 
-    fun parseJsonBatch(jsonText: String, markAsCustom: Boolean = true): List<Question> {
+    fun parseJsonBatch(jsonText: String, markAsCustom: Boolean = true): List<Question> =
+        parseJsonBatchWithExamIds(jsonText, markAsCustom).map { it.first }
+
+    fun parseJsonBatchWithExamIds(
+        jsonText: String,
+        markAsCustom: Boolean = true
+    ): List<Pair<Question, String>> {
         val trimmed = jsonText.trim().removePrefix("\uFEFF")
         val arr = if (trimmed.startsWith("{")) {
             val root = JSONObject(trimmed)
@@ -547,7 +553,7 @@ object BulkQuestionParser {
             JSONArray(trimmed)
         }
         val baseTs = System.currentTimeMillis()
-        val list = mutableListOf<Question>()
+        val list = mutableListOf<Pair<Question, String>>()
         for (i in 0 until arr.length()) {
             val obj = arr.optJSONObject(i) ?: continue
             val qText = obj.optString("q", "").trim()
@@ -559,6 +565,7 @@ object BulkQuestionParser {
             val rawDiff = obj.optString("d", "").ifBlank { obj.optString("difficulty", "") }
             val category = obj.optString("c", "nur").ifBlank { "nur" }
             val subject = obj.optString("s", "MSN").ifBlank { "MSN" }
+            val rawExamId = obj.optString("examId", "").trim()
             val rawShiftYear = obj.optString("y", "").trim()
             val rawExamYear = obj.optString("examYear", "").trim()
             val rawExamShift = obj.optString("examShift", "").trim()
@@ -600,26 +607,25 @@ object BulkQuestionParser {
                 else -> PlatformCatalogDefaults.defaultTopicIdFor(subject)
             }
 
-            list.add(
-                Question(
-                    id = rawId ?: "J_${baseTs}_$i",
-                    category = category,
-                    shiftYear = resolvedShiftYear,
-                    subject = subject,
-                    difficulty = QuestionDifficulty.fromRaw(rawDiff),
-                    questionText = qText,
-                    options = opts.take(4),
-                    correctIndex = obj.optInt("a", 0).coerceIn(0, 3),
-                    explanation = obj.optString("e", ""),
-                    isCustom = markAsCustom,
-                    sourceStatus = resolvedStatus,
-                    sourceNote = resolvedNote,
-                    topicId = resolvedTopicId,
-                    sourceType = resolvedSourceType,
-                    examYear = resolvedYear,
-                    examShift = resolvedShift
-                )
+            val question = Question(
+                id = rawId ?: "J_${baseTs}_$i",
+                category = category,
+                shiftYear = resolvedShiftYear,
+                subject = subject,
+                difficulty = QuestionDifficulty.fromRaw(rawDiff),
+                questionText = qText,
+                options = opts.take(4),
+                correctIndex = obj.optInt("a", 0).coerceIn(0, 3),
+                explanation = obj.optString("e", ""),
+                isCustom = markAsCustom,
+                sourceStatus = resolvedStatus,
+                sourceNote = resolvedNote,
+                topicId = resolvedTopicId,
+                sourceType = resolvedSourceType,
+                examYear = resolvedYear,
+                examShift = resolvedShift
             )
+            list.add(question to rawExamId)
         }
         return list
     }

@@ -118,6 +118,7 @@ import com.example.ui.screens.CbtHubScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.DeviceLockSupportDialog
 import com.example.ui.screens.OnboardingScreen
+import com.example.ui.screens.SubjectChaptersScreen
 import com.example.ui.screens.PaywallPromptDialog
 import com.example.ui.screens.PlansAndAccessScreen
 import com.example.ui.screens.PracticeScreen
@@ -235,6 +236,8 @@ fun RrbNursingApp(vm: MainViewModel) {
         val subjectExamFilter by vm.subjectPracticeExamFilter.collectAsStateWithLifecycle()
         val subjectSection by vm.subjectHubSection.collectAsStateWithLifecycle()
         val difficultyFilter by vm.difficultyFilter.collectAsStateWithLifecycle()
+        val subjectChaptersNav by vm.subjectChaptersNav.collectAsStateWithLifecycle()
+        val chaptersHighYieldOnly by vm.chaptersHighYieldOnly.collectAsStateWithLifecycle()
         val practiceSession by vm.practiceSession.collectAsStateWithLifecycle()
         val cbtSession by vm.cbtSession.collectAsStateWithLifecycle()
         val timedConfig by vm.timedConfig.collectAsStateWithLifecycle()
@@ -392,7 +395,7 @@ fun RrbNursingApp(vm: MainViewModel) {
         }
 
         val inActiveSession = practiceSession != null || cbtSession != null
-        val inSubScreen = isSettingsOpen || isProfileOpen || isPlansOpen || isAdminOpen
+        val inSubScreen = isSettingsOpen || isProfileOpen || isPlansOpen || isAdminOpen || subjectChaptersNav != null
         val shouldKeepScreenOn = keepScreenOn && inActiveSession
 
         DisposableEffect(context, shouldKeepScreenOn) {
@@ -870,6 +873,29 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     )
                                 }
 
+                                subjectChaptersNav != null -> {
+                                    SubjectChaptersScreen(
+                                        navState = subjectChaptersNav!!,
+                                        state = state,
+                                        difficultyFilter = difficultyFilter,
+                                        highYieldOnly = chaptersHighYieldOnly,
+                                        secondsPerQuestion = secondsPerQuestion,
+                                        onSelectDifficulty = vm::selectDifficultyFilter,
+                                        onToggleHighYieldOnly = vm::toggleChaptersHighYieldOnly,
+                                        onStartPractice = { list, title -> vm.startPractice(list, title) },
+                                        onStartTimedPractice = { list, title, mins ->
+                                            vm.startPractice(
+                                                items = list,
+                                                title = title,
+                                                timedMode = true,
+                                                durationMinutes = mins,
+                                                hasCountdown = true
+                                            )
+                                        },
+                                        onBack = vm::closeSubjectChapters
+                                    )
+                                }
+
                                 else -> {
                                     when (selectedTab) {
                                         MainTab.DASHBOARD -> DashboardScreen(
@@ -923,6 +949,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onSelectExamStage = vm::selectExamStage,
                                             onSelectDifficulty = vm::selectDifficultyFilter,
                                             onSelectSection = vm::selectSubjectSection,
+                                            onOpenSubjectChapters = vm::openSubjectChapters,
                                             onStartPractice = { list, title -> vm.startPractice(list, title) },
                                             onStartCrossExamSubjectPractice = vm::startCrossExamSubjectPractice,
                                             onStartTimedConfig = { subjCode, useCrossExam, filterId ->

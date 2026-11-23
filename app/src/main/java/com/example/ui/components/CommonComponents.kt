@@ -488,10 +488,18 @@ fun SubjectProgressCard(
     onPractice: () -> Unit,
     onTimed: () -> Unit,
     subtitleBadge: String? = null,
+    chapterCount: Int? = null,
+    hideTotalCeiling: Boolean = true,
+    primaryButtonLabel: String = "Chapters",
     modifier: Modifier = Modifier
 ) {
     val editorial = MaterialTheme.editorialColors
     val progress = if (totalCount > 0) masteredCount.toFloat() / totalCount else 0f
+    val badgeText = when {
+        !hideTotalCeiling -> "$totalCount Qs"
+        chapterCount != null && chapterCount > 0 -> "$chapterCount Chapters"
+        else -> "Syllabus Unit"
+    }
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
@@ -530,7 +538,7 @@ fun SubjectProgressCard(
                     border = BorderStroke(1.dp, editorial.borderSubtle)
                 ) {
                     Text(
-                        text = "$totalCount Qs",
+                        text = badgeText,
                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -552,7 +560,7 @@ fun SubjectProgressCard(
             ) {
                 Text(
                     text = if (attemptsCount > 0) {
-                        "$masteredCount/$totalCount mastered"
+                        if (hideTotalCeiling) "$masteredCount mastered" else "$masteredCount/$totalCount mastered"
                     } else {
                         "Not started"
                     },
@@ -578,7 +586,7 @@ fun SubjectProgressCard(
                     enabled = totalCount > 0,
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 44.dp)
+                        .heightIn(min = 48.dp)
                         .testTag("practice_${title}"),
                     shape = RoundedCornerShape(12.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
@@ -587,13 +595,13 @@ fun SubjectProgressCard(
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 ) {
-                    Text("Practice", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    Text(primaryButtonLabel, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 }
                 OutlinedButton(
                     onClick = onTimed,
                     enabled = totalCount > 0,
                     modifier = Modifier
-                        .heightIn(min = 44.dp)
+                        .heightIn(min = 48.dp)
                         .testTag("timed_${title}"),
                     shape = RoundedCornerShape(12.dp),
                     border = BorderStroke(1.dp, editorial.borderSubtle),

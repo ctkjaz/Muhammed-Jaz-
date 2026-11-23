@@ -394,13 +394,16 @@ private fun AdminEditUserPlanDialog(
                 }
                 if (tier == PlanTier.SINGLE_EXAM) {
                     Text("Exam Track", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(
-                            PlatformCatalogDefaults.EXAM_AIIMS_NORCET to "NORCET",
-                            PlatformCatalogDefaults.EXAM_RRB_NURSING to "RRB",
-                            PlatformCatalogDefaults.EXAM_PGIMER_NURSING to "PGIMER"
-                        ).forEach { (id, lbl) ->
-                            MonochromeFilterPill(label = lbl, selected = examId == id, onClick = { examId = id })
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        PlatformCatalogDefaults.DEFAULT_EXAMS.forEach { exam ->
+                            MonochromeFilterPill(
+                                label = exam.shortName,
+                                selected = examId == exam.id,
+                                onClick = { examId = exam.id }
+                            )
                         }
                     }
                 }
@@ -506,13 +509,16 @@ private fun AdminCodesTab(
                         )
                     }
                     if (tier == PlanTier.SINGLE_EXAM) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(
-                                PlatformCatalogDefaults.EXAM_AIIMS_NORCET to "NORCET",
-                                PlatformCatalogDefaults.EXAM_RRB_NURSING to "RRB",
-                                PlatformCatalogDefaults.EXAM_PGIMER_NURSING to "PGIMER"
-                            ).forEach { (id, lbl) ->
-                                MonochromeFilterPill(label = lbl, selected = examId == id, onClick = { examId = id })
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            PlatformCatalogDefaults.DEFAULT_EXAMS.forEach { exam ->
+                                MonochromeFilterPill(
+                                    label = exam.shortName,
+                                    selected = examId == exam.id,
+                                    onClick = { examId = exam.id }
+                                )
                             }
                         }
                     }
@@ -811,16 +817,15 @@ private fun AdminContentPushTab(
                     )
 
                     Text("Target Exam", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(
-                            PlatformCatalogDefaults.EXAM_AIIMS_NORCET to "NORCET",
-                            PlatformCatalogDefaults.EXAM_RRB_NURSING to "RRB",
-                            PlatformCatalogDefaults.EXAM_PGIMER_NURSING to "PGIMER"
-                        ).forEach { (id, lbl) ->
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        PlatformCatalogDefaults.DEFAULT_EXAMS.forEach { exam ->
                             MonochromeFilterPill(
-                                label = lbl,
-                                selected = draft.examId == id,
-                                onClick = { onUpdateDraft { it.copy(examId = id) } }
+                                label = exam.shortName,
+                                selected = draft.examId == exam.id,
+                                onClick = { onUpdateDraft { it.copy(examId = exam.id) } }
                             )
                         }
                     }

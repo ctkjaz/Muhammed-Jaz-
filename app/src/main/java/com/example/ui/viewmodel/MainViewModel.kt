@@ -116,9 +116,30 @@ enum class SubjectHubSection(val label: String) {
             CA_GK -> "GK & Health"
             NON_TECH -> "Aptitude & Sci"
         }
-        else -> label
+        examId == PlatformCatalogDefaults.EXAM_RRB_NURSING || examId.isNullOrBlank() -> when (this) {
+            NURSING -> "Nursing 70%"
+            PYQ -> "RRB PYQs"
+            CA_GK -> "CA & GK"
+            NON_TECH -> "Sci/Math 30%"
+        }
+        else -> {
+            val nurPct = PlatformCatalogDefaults.nursingWeightagePercent(examId)
+            val shortName = PlatformCatalogDefaults.examById(examId)?.shortName ?: "Exam"
+            when (this) {
+                NURSING -> "Nursing $nurPct%"
+                PYQ -> "$shortName PYQs"
+                CA_GK -> "GK & Health"
+                NON_TECH -> "Aptitude ${100 - nurPct}%"
+            }
+        }
     }
 }
+
+data class SubjectChaptersNavState(
+    val subjectCode: String,
+    val isCrossExam: Boolean = false,
+    val examIdFilter: String? = null
+)
 
 enum class CbtPaletteStatus {
     NOT_VISITED, NOT_ANSWERED, ANSWERED, MARKED, ANSWERED_MARKED
@@ -565,7 +586,8 @@ class MainViewModel(
             allQuestions = dedupedCrossExam,
             allLinks = catalog.links,
             examIdFilter = catalog.subjectExamFilter,
-            alreadyDeduplicated = catalog.dedupedAllQuestions.isNotEmpty()
+            alreadyDeduplicated = catalog.dedupedAllQuestions.isNotEmpty(),
+            includeVirtualShared = true
         )
         val computedSubjectStats = repository.computeSubjectStats(stageItems)
         val prelimsAttempted = if (supportsStages) prelimsItems.count { it.attemptsCount > 0 } else 0
@@ -626,6 +648,12 @@ class MainViewModel(
 
     private val _difficultyFilter = MutableStateFlow(DifficultyFilter.ALL)
     val difficultyFilter: StateFlow<DifficultyFilter> = _difficultyFilter.asStateFlow()
+
+    private val _subjectChaptersNav = MutableStateFlow<SubjectChaptersNavState?>(null)
+    val subjectChaptersNav: StateFlow<SubjectChaptersNavState?> = _subjectChaptersNav.asStateFlow()
+
+    private val _chaptersHighYieldOnly = MutableStateFlow(false)
+    val chaptersHighYieldOnly: StateFlow<Boolean> = _chaptersHighYieldOnly.asStateFlow()
 
     private val _practiceSession = MutableStateFlow<PracticeSessionState?>(null)
     val practiceSession: StateFlow<PracticeSessionState?> = _practiceSession.asStateFlow()
@@ -1244,6 +1272,7 @@ class MainViewModel(
         stopActiveTimer()
         _practiceSession.value = null
         _cbtSession.value = null
+        _subjectChaptersNav.value = null
         _isSettingsOpen.value = false
         _isProfileOpen.value = false
         _isPlansOpen.value = false
@@ -1252,6 +1281,7 @@ class MainViewModel(
     }
 
     fun openSettings() {
+        _subjectChaptersNav.value = null
         _isProfileOpen.value = false
         _isPlansOpen.value = false
         _isAdminOpen.value = false
@@ -1263,6 +1293,7 @@ class MainViewModel(
     }
 
     fun openProfile() {
+        _subjectChaptersNav.value = null
         _isSettingsOpen.value = false
         _isPlansOpen.value = false
         _isAdminOpen.value = false
@@ -1275,6 +1306,7 @@ class MainViewModel(
 
     fun openPlans() {
         _paywallPrompt.value = null
+        _subjectChaptersNav.value = null
         _isSettingsOpen.value = false
         _isProfileOpen.value = false
         _isAdminOpen.value = false
@@ -1290,6 +1322,7 @@ class MainViewModel(
             showMessage("Admin Console is restricted to the app owner.")
             return
         }
+        _subjectChaptersNav.value = null
         _isSettingsOpen.value = false
         _isProfileOpen.value = false
         _isPlansOpen.value = false
@@ -1299,6 +1332,40 @@ class MainViewModel(
 
     fun closeAdminConsole() {
         _isAdminOpen.value = false
+    }
+
+    fun openSubjectChapters(
+        subjectCode: String,
+        isCrossExam: Boolean = false,
+        examIdFilter: String? = null
+    ) {
+        val sub = subscriptionState.value
+        if (isCrossExam && examIdFilter == null && !sub.canAccessCrossExamPractice()) {
+            showPaywallPrompt(
+                title = "All-Exam Subject Mode",
+                message = "Cross-exam combined subject drills across all 29 Indian nursing exams are included in All-Exam Nursing Prep or your 3-Day Free Trial.",
+                featureTag = "cross_exam"
+            )
+            return
+        }
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = false
+        _isPlansOpen.value = false
+        _isAdminOpen.value = false
+        _chaptersHighYieldOnly.value = false
+        _subjectChaptersNav.value = SubjectChaptersNavState(
+            subjectCode = subjectCode,
+            isCrossExam = isCrossExam,
+            examIdFilter = examIdFilter
+        )
+    }
+
+    fun closeSubjectChapters() {
+        _subjectChaptersNav.value = null
+    }
+
+    fun toggleChaptersHighYieldOnly() {
+        _chaptersHighYieldOnly.update { !it }
     }
 
     fun dismissPaywallPrompt() {
@@ -1338,6 +1405,7 @@ class MainViewModel(
         if (changed) {
             _activeExamStage.value = ExamStage.PRELIMS
             _subjectHubSection.value = SubjectHubSection.NURSING
+            _subjectChaptersNav.value = null
             scheduleProfileCloudPush()
             stopActiveTimer()
             _practiceSession.value = null
@@ -1377,6 +1445,7 @@ class MainViewModel(
         stopActiveTimer()
         _practiceSession.value = null
         _cbtSession.value = null
+        _subjectChaptersNav.value = null
         _isSettingsOpen.value = false
         _isProfileOpen.value = false
         _practicePathway.value = PracticePathway.BY_EXAM
@@ -1388,6 +1457,7 @@ class MainViewModel(
         stopActiveTimer()
         _practiceSession.value = null
         _cbtSession.value = null
+        _subjectChaptersNav.value = null
         _isSettingsOpen.value = false
         _isProfileOpen.value = false
         _practicePathway.value = PracticePathway.BY_SUBJECT
@@ -1403,7 +1473,7 @@ class MainViewModel(
         if (examIdFilter == null && !sub.canAccessCrossExamPractice()) {
             showPaywallPrompt(
                 title = "All-Exam Subject Mode",
-                message = "Cross-exam combined subject drills across RRB, NORCET & PGIMER are included in All-Exam Nursing Prep or your 3-Day Free Trial.",
+                message = "Cross-exam combined subject drills across all 29 Indian nursing exams are included in All-Exam Nursing Prep or your 3-Day Free Trial.",
                 featureTag = "cross_exam"
             )
             return
@@ -1415,7 +1485,9 @@ class MainViewModel(
             subjectCode = subjectCode,
             examIdFilter = examIdFilter,
             difficultyFilter = difficultyFilter,
-            excludePyqAndMock = true
+            excludePyqAndMock = true,
+            alreadyDeduplicated = true,
+            includeVirtualShared = true
         )
         if (items.isEmpty()) {
             showMessage("No questions match this subject filter.")
@@ -1425,7 +1497,9 @@ class MainViewModel(
         val scopeLabel = if (examIdFilter == null) {
             "All Exams"
         } else {
-            state.availableExams.firstOrNull { it.id == examIdFilter }?.shortName ?: "Filtered"
+            state.availableExams.firstOrNull { it.id == examIdFilter }?.shortName
+                ?: PlatformCatalogDefaults.examById(examIdFilter)?.shortName
+                ?: "Filtered"
         }
         startPractice(items = items, title = "$subjectName • $scopeLabel")
     }
@@ -1832,12 +1906,16 @@ class MainViewModel(
         val st = mainState.value
         if (cfg.useCrossExamPool) {
             val filterId = cfg.crossExamFilterId
-            val allowedIds = if (!filterId.isNullOrBlank()) {
-                st.crossExamLinks.asSequence().filter { it.examId == filterId }.map { it.questionId }.toHashSet()
-            } else {
-                null
+            if (filterId.isNullOrBlank()) return st.crossExamQuestions
+            val allowedIds = st.crossExamLinks.asSequence()
+                .filter { it.examId == filterId }
+                .map { it.questionId }
+                .toHashSet()
+            return st.crossExamQuestions.filter { item ->
+                val q = item.question
+                item.id in allowedIds ||
+                    (!q.isPyqTagged && !q.isCustom && PlatformCatalogDefaults.isSharedSubjectForExam(filterId, q.subject))
             }
-            return if (allowedIds == null) st.crossExamQuestions else st.crossExamQuestions.filter { it.id in allowedIds }
         }
         return st.stageQuestions.ifEmpty { st.questions }
     }

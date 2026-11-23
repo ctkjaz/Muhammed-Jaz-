@@ -85,21 +85,37 @@ class NursingPrepRepository(
         dao.observeExamSections(examId).map { list -> list.map { it.toDomain() } }
 
     fun observeQuestionsForExam(examId: String): Flow<List<QuestionItem>> {
-        // Parse JSON options and project exam metadata ONCE per exam/catalog change,
-        // NOT on every answer or bookmark progress update.
+        // Combine explicit exam-linked questions (PYQs, custom imports, OTA packs) with
+        // virtually projected shared non-PYQ core practice & predicted mocks on Dispatchers.Default.
+        // This avoids 29 × 10,000 duplicate SQLite join rows while keeping every exam 100% populated.
         val projectedExamQuestions: Flow<List<Question>> = combine(
             dao.observeQuestionEntitiesForExam(examId),
-            dao.observeExamLinksForExam(examId)
-        ) { entities, links ->
+            dao.observeExamLinksForExam(examId),
+            parsedAllQuestions
+        ) { entities, links, allParsed ->
             val linkMap = HashMap<String, ExamQuestionLinkEntity>(links.size * 2 + 1)
             for (link in links) {
                 linkMap[link.questionId] = link
             }
-            entities.map { entity ->
+            val result = ArrayList<Question>(entities.size + 4096)
+            val seenIds = HashSet<String>(entities.size * 2 + 16)
+            for (entity in entities) {
                 val q = entity.toDomainQuestion()
-                val link = linkMap[q.id] ?: return@map q
-                projectQuestionForExam(q, link)
+                val link = linkMap[q.id]
+                val projected = if (link != null) projectQuestionForExam(q, link) else q
+                if (seenIds.add(projected.id)) {
+                    result.add(projected)
+                }
             }
+            for (q in allParsed) {
+                if (!q.isPyqTagged && !q.isCustom &&
+                    PlatformCatalogDefaults.isSharedSubjectForExam(examId, q.subject) &&
+                    seenIds.add(q.id)
+                ) {
+                    result.add(q)
+                }
+            }
+            result
         }.flowOn(Dispatchers.Default)
 
         return combine(projectedExamQuestions, allProgressMap) { questions, progressMap ->
@@ -204,10 +220,16 @@ class NursingPrepRepository(
         val needsRrbLinks = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_RRB_NURSING) == 0
         val needsNorcetLinks = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_AIIMS_NORCET) == 0
         val needsPgimerLinks = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_PGIMER_NURSING) == 0
-        if (needsQuestions || needsRrbLinks || needsNorcetLinks || needsPgimerLinks) {
+        val needsAllIndiaPyqLinks = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_ESIC_NURSING) == 0
+        if (needsQuestions || needsRrbLinks || needsNorcetLinks || needsPgimerLinks || needsAllIndiaPyqLinks) {
             fun loadAssetQuestions(assetName: String): List<Question> = runCatching {
                 val json = context.assets.open(assetName).bufferedReader().use { it.readText() }
                 BulkQuestionParser.parseJsonBatch(json, markAsCustom = false)
+            }.getOrDefault(emptyList())
+
+            fun loadAssetQuestionsWithExamIds(assetName: String): List<Pair<Question, String>> = runCatching {
+                val json = context.assets.open(assetName).bufferedReader().use { it.readText() }
+                BulkQuestionParser.parseJsonBatchWithExamIds(json, markAsCustom = false)
             }.getOrDefault(emptyList())
 
             suspend fun insertQuestionBatch(questions: List<Question>, baseSortOrder: Int) {
@@ -233,7 +255,8 @@ class NursingPrepRepository(
             val predictedMockQuestions = loadAssetQuestions("predicted_mock_bank.json")
             insertQuestionBatch(predictedMockQuestions, baseSortOrder = 20000)
 
-            val expandedBank = subjectPracticeQuestions + predictedMockQuestions
+            val allIndiaPyqPairs = loadAssetQuestionsWithExamIds("all_india_pyqs.json")
+            insertQuestionBatch(allIndiaPyqPairs.map { it.first }, baseSortOrder = 25000)
 
             if (needsQuestions || needsRrbLinks) {
                 val rrbBaseLinks = rrbQuestions.mapIndexed { index, q ->
@@ -247,18 +270,7 @@ class NursingPrepRepository(
                         examShift = q.examShift
                     )
                 }
-                val rrbExpandedLinks = expandedBank.mapIndexed { index, q ->
-                    ExamQuestionLinkEntity(
-                        examId = PlatformCatalogDefaults.EXAM_RRB_NURSING,
-                        questionId = q.id,
-                        sectionId = PlatformCatalogDefaults.sectionIdForRrbSubject(q.subject),
-                        sortOrder = 10000 + index,
-                        isPyqForExam = false,
-                        examYear = "",
-                        examShift = ""
-                    )
-                }
-                (rrbBaseLinks + rrbExpandedLinks).chunked(500).forEach { chunk ->
+                rrbBaseLinks.chunked(500).forEach { chunk ->
                     dao.upsertExamQuestionLinks(chunk)
                 }
             }
@@ -288,20 +300,7 @@ class NursingPrepRepository(
                             examShift = ""
                         )
                     }
-                val expandedNorcetLinks = expandedBank
-                    .filter { PlatformCatalogDefaults.isNorcetSharedSubject(it.subject) }
-                    .mapIndexed { index, q ->
-                        ExamQuestionLinkEntity(
-                            examId = PlatformCatalogDefaults.EXAM_AIIMS_NORCET,
-                            questionId = q.id,
-                            sectionId = PlatformCatalogDefaults.sectionIdForNorcetSubject(q.subject),
-                            sortOrder = 10000 + index,
-                            isPyqForExam = false,
-                            examYear = "",
-                            examShift = ""
-                        )
-                    }
-                (dedicatedNorcetLinks + sharedNorcetLinks + expandedNorcetLinks).chunked(500).forEach { chunk ->
+                (dedicatedNorcetLinks + sharedNorcetLinks).chunked(500).forEach { chunk ->
                     dao.upsertExamQuestionLinks(chunk)
                 }
             }
@@ -332,20 +331,26 @@ class NursingPrepRepository(
                             examShift = ""
                         )
                     }
-                val expandedPgimerLinks = expandedBank
-                    .filter { PlatformCatalogDefaults.isPgimerSharedSubject(it.subject) }
-                    .mapIndexed { index, q ->
-                        ExamQuestionLinkEntity(
-                            examId = PlatformCatalogDefaults.EXAM_PGIMER_NURSING,
-                            questionId = q.id,
-                            sectionId = PlatformCatalogDefaults.sectionIdForPgimerSubject(q.subject),
-                            sortOrder = 10000 + index,
-                            isPyqForExam = false,
-                            examYear = "",
-                            examShift = ""
-                        )
-                    }
-                (dedicatedPgimerLinks + sharedPgimerNursing + expandedPgimerLinks).chunked(500).forEach { chunk ->
+                (dedicatedPgimerLinks + sharedPgimerNursing).chunked(500).forEach { chunk ->
+                    dao.upsertExamQuestionLinks(chunk)
+                }
+            }
+
+            if (needsQuestions || needsAllIndiaPyqLinks) {
+                val allIndiaLinks = allIndiaPyqPairs.mapIndexedNotNull { index, (q, targetExamId) ->
+                    val resolvedExamId = targetExamId.trim()
+                    if (resolvedExamId.isEmpty()) return@mapIndexedNotNull null
+                    ExamQuestionLinkEntity(
+                        examId = resolvedExamId,
+                        questionId = q.id,
+                        sectionId = PlatformCatalogDefaults.sectionIdForExam(resolvedExamId, q.subject),
+                        sortOrder = index,
+                        isPyqForExam = true,
+                        examYear = q.examYear,
+                        examShift = q.examShift
+                    )
+                }
+                allIndiaLinks.chunked(500).forEach { chunk ->
                     dao.upsertExamQuestionLinks(chunk)
                 }
             }
@@ -408,7 +413,7 @@ class NursingPrepRepository(
     }
 
     companion object {
-        const val CURRENT_SEED_VERSION = 9
+        const val CURRENT_SEED_VERSION = 10
     }
 
     suspend fun loadFlashcards(): List<Flashcard> = withContext(Dispatchers.IO) {
@@ -723,11 +728,14 @@ class NursingPrepRepository(
         activeExamId: String = PlatformCatalogDefaults.EXAM_RRB_NURSING
     ): List<CategoryStat> {
         val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExamId)
-        val isPgimer = PlatformCatalogDefaults.isPgimerExam(activeExamId)
+        val isPureNursing = PlatformCatalogDefaults.examIsPureNursing(activeExamId)
+        val examShort = PlatformCatalogDefaults.examById(activeExamId)?.shortName ?: "Exam"
+        val nurPct = PlatformCatalogDefaults.nursingWeightagePercent(activeExamId)
+        val nonPct = 100 - nurPct
         data class CatDef(val key: String, val label: String, val desc: String, val color: Color, val filter: (QuestionItem) -> Boolean)
         val defs = when {
-            isPgimer -> listOf(
-                CatDef("pyq", "PGIMER PYQs (2020–2025)", "Memory-based Chandigarh recruitment recall sets", Color(0xFFA67942)) {
+            isPureNursing -> listOf(
+                CatDef("pyq", "$examShort PYQs", "Paper-wise memory-based recall sets", Color(0xFFA67942)) {
                     it.question.isPyqTagged
                 },
                 CatDef("nur", "Core Nursing (100%)", "All 9 clinical & foundational nursing subjects", Color(0xFF8E4456)) {
@@ -735,7 +743,7 @@ class NursingPrepRepository(
                 }
             )
             isNorcet -> listOf(
-                CatDef("pyq", "NORCET Papers (5–10)", "Memory-based Prelims & Mains recall sets", Color(0xFFA67942)) {
+                CatDef("pyq", "NORCET Papers (5–10)", "Paper-wise Prelims & Mains recall sets", Color(0xFFA67942)) {
                     it.question.isPyqTagged
                 },
                 CatDef("nur", "Nursing Core (80%)", "All 9 clinical nursing subjects & Mains scenarios", Color(0xFF8E4456)) {
@@ -748,8 +756,8 @@ class NursingPrepRepository(
                     SubjectCatalog.isGen(it.question)
                 }
             )
-            else -> listOf(
-                CatDef("pyq", "Previous Year Papers (2015–2026)", "Shift-wise exam sets", Color(0xFFA67942)) {
+            activeExamId == PlatformCatalogDefaults.EXAM_RRB_NURSING -> listOf(
+                CatDef("pyq", "RRB Previous Papers (2015–2026)", "Shift-wise exam sets", Color(0xFFA67942)) {
                     it.question.isPyqTagged
                 },
                 CatDef("nur", "Nursing (70%)", "All 9 clinical nursing subjects", Color(0xFF8E4456)) {
@@ -759,6 +767,20 @@ class NursingPrepRepository(
                     SubjectCatalog.isCa(it.question)
                 },
                 CatDef("gen", "Sci / Math / Reas (30%)", "General science, arithmetic & reasoning", Color(0xFF527D86)) {
+                    SubjectCatalog.isGen(it.question)
+                }
+            )
+            else -> listOf(
+                CatDef("pyq", "$examShort Papers", "Paper-wise memory-based recall sets", Color(0xFFA67942)) {
+                    it.question.isPyqTagged
+                },
+                CatDef("nur", "Nursing Core ($nurPct%)", "All 9 clinical & foundational nursing subjects", Color(0xFF8E4456)) {
+                    SubjectCatalog.isNursing(it.question)
+                },
+                CatDef("ca", "GK & Health Programs", "Current affairs, health schemes & static GK", Color(0xFFB78B79)) {
+                    SubjectCatalog.isCa(it.question)
+                },
+                CatDef("gen", "Aptitude & Science ($nonPct%)", "General science, dosage math & reasoning", Color(0xFF527D86)) {
                     SubjectCatalog.isGen(it.question)
                 }
             )

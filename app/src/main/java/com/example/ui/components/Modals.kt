@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
@@ -47,6 +48,7 @@ import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -69,6 +71,7 @@ import com.example.data.backup.BackupFolderSummary
 import com.example.data.export.PdfWorksheetWriter
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.Exam
+import com.example.data.model.ExamCategory
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.Profession
 import com.example.data.model.QuestionDifficulty
@@ -106,41 +109,50 @@ fun TimedPracticeConfigDialog(
     if (!state.isVisible) return
 
     val editorial = MaterialTheme.editorialColors
-    val isNorcet = activeExamId == PlatformCatalogDefaults.EXAM_AIIMS_NORCET
-    val isPgimer = activeExamId == PlatformCatalogDefaults.EXAM_PGIMER_NURSING
-    val negLabel = if (isPgimer && !state.useCrossExamPool) "0.25" else "0.33"
-    val sourceOptions = remember(isNorcet, isPgimer, state.useCrossExamPool) {
-        val visibleSubjs = when {
-            state.useCrossExamPool -> SubjectCatalog.ALL_SUBJS
-            isPgimer -> SubjectCatalog.NURSING_SUBJS
-            isNorcet -> SubjectCatalog.ALL_SUBJS.filter { it.code != "Railways" }
-            else -> SubjectCatalog.ALL_SUBJS
+    val activeExam = remember(activeExamId) { PlatformCatalogDefaults.examById(activeExamId) }
+    val examShort = activeExam?.shortName ?: "Exam"
+    val isPureNursing = PlatformCatalogDefaults.examIsPureNursing(activeExamId)
+    val supportsCaGk = PlatformCatalogDefaults.examSupportsCaGk(activeExamId)
+    val supportsNonTech = PlatformCatalogDefaults.examSupportsNonTech(activeExamId)
+    val nurPct = PlatformCatalogDefaults.nursingWeightagePercent(activeExamId)
+    val nonPct = 100 - nurPct
+    val negMarks = PlatformCatalogDefaults.negativeMarksForExam(activeExamId)
+    val markingSummary = if (state.useCrossExamPool) {
+        "+1 / -0.33"
+    } else {
+        activeExam?.let { PlatformCatalogDefaults.formatMarkingLabel(it) } ?: "+1 / -0.33"
+    }
+    val negLabel = if (state.useCrossExamPool) {
+        "0.33"
+    } else if (negMarks <= 0.0) {
+        "0"
+    } else {
+        String.format(java.util.Locale.US, "%.2f", negMarks).trimEnd('0').trimEnd('.')
+    }
+    val sourceOptions = remember(activeExamId, state.useCrossExamPool) {
+        val visibleSubjs = if (state.useCrossExamPool) {
+            SubjectCatalog.ALL_SUBJS
+        } else {
+            SubjectCatalog.ALL_SUBJS.filter { PlatformCatalogDefaults.isSharedSubjectForExam(activeExamId, it.code) }
         }
-        val baseGroups = when {
-            state.useCrossExamPool -> listOf(
+        val baseGroups = if (state.useCrossExamPool) {
+            listOf(
                 "MIXED" to "All Subjects",
                 "NURSING" to "Nursing Core",
                 "PYQ" to "All PYQs"
             )
-            isPgimer -> listOf(
-                "MIXED" to "Mixed (All)",
-                "PYQ" to "PGIMER PYQs",
-                "NURSING" to "Nursing (100%)"
-            )
-            isNorcet -> listOf(
-                "MIXED" to "Mixed (All)",
-                "PYQ" to "NORCET PYQs",
-                "NURSING" to "Nursing (80%)",
-                "CA" to "GK & Health",
-                "GEN" to "Aptitude & Sci (20%)"
-            )
-            else -> listOf(
-                "MIXED" to "Mixed (All)",
-                "PYQ" to "PYQs Only",
-                "NURSING" to "Nursing (70%)",
-                "CA" to "CA & GK",
-                "GEN" to "Sci/Math/Reas (30%)"
-            )
+        } else {
+            buildList {
+                add("MIXED" to "Mixed (All)")
+                add("PYQ" to "$examShort PYQs")
+                add("NURSING" to "Nursing ($nurPct%)")
+                if (!isPureNursing && supportsCaGk) {
+                    add("CA" to if (PlatformCatalogDefaults.isNorcetExam(activeExamId)) "GK & Health" else "CA & GK")
+                }
+                if (!isPureNursing && supportsNonTech) {
+                    add("GEN" to "Non-Nursing ($nonPct%)")
+                }
+            }
         }
         baseGroups + visibleSubjs.map { it.code to "${it.code} (${it.name})" }
     }
@@ -309,9 +321,17 @@ fun TimedPracticeConfigDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Negative Marking (-$negLabel)", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                         Text(
-                            text = "+1 / -$negLabel exam scoring",
+                            text = if (negMarks <= 0.0 && !state.useCrossExamPool) {
+                                "Negative Marking (Optional)"
+                            } else {
+                                "Negative Marking (-$negLabel)"
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "$markingSummary exam scoring",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1181,16 +1201,38 @@ fun PdfExportModalSheet(
 @Composable
 fun ExamPickerModalSheet(
     isVisible: Boolean,
-    professions: List<Profession>,
+    @Suppress("UNUSED_PARAMETER") professions: List<Profession>,
     exams: List<Exam>,
     activeExamId: String,
-    examQuestionCounts: Map<String, Int>,
+    @Suppress("UNUSED_PARAMETER") examQuestionCounts: Map<String, Int>,
     onSelectExam: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     if (!isVisible) return
 
     val editorial = MaterialTheme.editorialColors
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf<ExamCategory?>(null) }
+
+    val filteredExams = remember(exams, searchQuery, selectedCategory) {
+        val q = searchQuery.trim().lowercase()
+        exams.filter { exam ->
+            val catOk = selectedCategory == null ||
+                PlatformCatalogDefaults.examCategoryFor(exam.id) == selectedCategory
+            val qOk = q.isEmpty() ||
+                exam.name.lowercase().contains(q) ||
+                exam.shortName.lowercase().contains(q) ||
+                exam.description.lowercase().contains(q) ||
+                PlatformCatalogDefaults.examCategoryFor(exam.id).label.lowercase().contains(q)
+            catOk && qOk
+        }
+    }
+    val groupedByCategory = remember(filteredExams) {
+        ExamCategory.entries.mapNotNull { cat ->
+            val list = filteredExams.filter { PlatformCatalogDefaults.examCategoryFor(it.id) == cat }
+            if (list.isEmpty()) null else cat to list
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1202,9 +1244,8 @@ fun ExamPickerModalSheet(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 28.dp)
-                .verticalScroll(rememberScrollState())
                 .testTag("exam_picker_sheet"),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1224,7 +1265,7 @@ fun ExamPickerModalSheet(
                     Column {
                         Text("Active Exam Track", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Text(
-                            "Switch between nursing exam banks anytime",
+                            "${exams.size} All-India Nursing exams · ${PlatformCatalogDefaults.EVERGREEN_BANK_LABEL}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1238,97 +1279,189 @@ fun ExamPickerModalSheet(
                 }
             }
 
-            val examsByProfession = exams.groupBy { it.professionId }
-            professions.forEach { profession ->
-                val profExams = examsByProfession[profession.id].orEmpty()
-                if (profExams.isNotEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = profession.name.uppercase(),
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        profExams.forEach { exam ->
-                            val isSelected = exam.id == activeExamId
-                            val qCount = examQuestionCounts[exam.id] ?: 0
-                            val hasStages = PlatformCatalogDefaults.supportsStages(exam.id)
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 56.dp)
-                                    .clickable { onSelectExam(exam.id) }
-                                    .testTag("exam_option_${exam.id}"),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isSelected) editorial.elevatedSurface else editorial.cardSurface
-                                ),
-                                border = BorderStroke(
-                                    width = if (isSelected) 2.dp else 1.dp,
-                                    color = if (isSelected) {
-                                        if (editorial.isDark) editorial.acidLime else PureBlack
-                                    } else {
-                                        editorial.borderSubtle
-                                    }
-                                ),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Search AIIMS, ESIC, DSSSB, NEIGRIHMS, GIMS...") },
+                singleLine = true,
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Clear exam search")
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(14.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedBorderColor = editorial.borderSubtle,
+                    focusedContainerColor = editorial.elevatedSurface,
+                    unfocusedContainerColor = editorial.elevatedSurface
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("exam_picker_search")
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                MonochromeFilterPill(
+                    label = "All (${exams.size})",
+                    selected = selectedCategory == null,
+                    onClick = { selectedCategory = null },
+                    modifier = Modifier.testTag("exam_cat_all")
+                )
+                ExamCategory.entries.forEach { cat ->
+                    MonochromeFilterPill(
+                        label = cat.shortLabel,
+                        selected = selectedCategory == cat,
+                        onClick = { selectedCategory = cat },
+                        modifier = Modifier.testTag("exam_cat_${cat.name.lowercase()}")
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                if (groupedByCategory.isEmpty()) {
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = editorial.elevatedSurface),
+                        border = BorderStroke(1.dp, editorial.borderSubtle),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(18.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text("No matching nursing exams", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text(
+                                "Try searching by institute, state, or exam short name.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
+                    groupedByCategory.forEach { (category, catExams) ->
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
+                                Text(
+                                    text = category.label.uppercase(),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "${catExams.size}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            catExams.forEach { exam ->
+                                val isSelected = exam.id == activeExamId
+                                val hasStages = PlatformCatalogDefaults.supportsStages(exam.id)
+                                val markingLabel = PlatformCatalogDefaults.formatMarkingLabel(exam)
+                                Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(14.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .heightIn(min = 56.dp)
+                                        .clickable { onSelectExam(exam.id) }
+                                        .testTag("exam_option_${exam.id}"),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isSelected) editorial.elevatedSurface else editorial.cardSurface
+                                    ),
+                                    border = BorderStroke(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) {
+                                            if (editorial.isDark) editorial.acidLime else PureBlack
+                                        } else {
+                                            editorial.borderSubtle
+                                        }
+                                    ),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                                 ) {
-                                    Column(
-                                        modifier = Modifier.weight(1f),
-                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
-                                            Text(
-                                                text = exam.name,
-                                                style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.weight(1f, fill = false)
-                                            )
-                                            if (hasStages) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    color = editorial.acidLime
-                                                ) {
-                                                    Text(
-                                                        text = "2-Stage",
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = editorial.onAcidLime,
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = exam.name,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.weight(1f, fill = false)
+                                                )
+                                                if (hasStages) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = editorial.acidLime
+                                                    ) {
+                                                        Text(
+                                                            text = "2-Stage",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = editorial.onAcidLime,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
                                                 }
                                             }
-                                        }
-                                        Text(
-                                            text = "${formatApproxQuestionCount(qCount)}  ·  ${exam.defaultMockQuestions}Q / ${exam.defaultMockMinutes}m  ·  -${exam.negativeMarks}",
-                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        if (exam.description.isNotBlank()) {
                                             Text(
-                                                text = exam.description,
-                                                style = MaterialTheme.typography.bodySmall,
+                                                text = "${PlatformCatalogDefaults.EVERGREEN_BANK_LABEL}  ·  ${exam.defaultMockQuestions}Q / ${exam.defaultMockMinutes}m  ·  $markingLabel",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
+                                            if (exam.description.isNotBlank()) {
+                                                Text(
+                                                    text = exam.description,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                         }
-                                    }
-                                    if (isSelected) {
-                                        Icon(
-                                            imageVector = Icons.Filled.CheckCircle,
-                                            contentDescription = "Active exam",
-                                            tint = if (editorial.isDark) editorial.acidLime else PureBlack,
-                                            modifier = Modifier.size(22.dp)
-                                        )
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Filled.CheckCircle,
+                                                contentDescription = "Active exam",
+                                                tint = if (editorial.isDark) editorial.acidLime else PureBlack,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }

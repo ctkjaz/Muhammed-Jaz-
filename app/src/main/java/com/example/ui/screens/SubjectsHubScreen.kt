@@ -54,6 +54,7 @@ import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectCatalog
 import com.example.data.model.SubjectMeta
 import com.example.data.model.SubjectPracticeLogic
+import com.example.data.model.SyllabusCatalog
 import com.example.ui.components.DifficultyFilterBar
 import com.example.ui.components.FlashcardItemCard
 import com.example.ui.components.MonochromeFilterPill
@@ -78,16 +79,15 @@ fun SubjectsHubScreen(
     onSelectDifficulty: (DifficultyFilter) -> Unit,
     onSelectSection: (SubjectHubSection) -> Unit,
     onStartPractice: (List<QuestionItem>, String) -> Unit,
-    onStartCrossExamSubjectPractice: (String) -> Unit,
+    @Suppress("UNUSED_PARAMETER") onStartCrossExamSubjectPractice: (String) -> Unit,
+    onOpenSubjectChapters: (String, Boolean, String?) -> Unit,
     onStartTimedConfig: (String, Boolean, String?) -> Unit,
     onStartCbtCustom: (List<QuestionItem>, String) -> Unit,
     onOpenImporter: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val editorial = MaterialTheme.editorialColors
     val activeExamId = state.activeExam?.id
     val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExamId)
-    val isPgimer = PlatformCatalogDefaults.isPgimerExam(activeExamId)
 
     Column(modifier = modifier.fillMaxSize()) {
         // Primary Pathway Switch: By Exam vs By Subject (Req 16)
@@ -112,8 +112,8 @@ fun SubjectsHubScreen(
                     selected = state.activeExamStage,
                     labelOf = { stage ->
                         when (stage) {
-                            ExamStage.PRELIMS -> "Stage I · Prelims (${state.prelimsQuestionCount})"
-                            ExamStage.MAINS -> "Stage II · Mains (${state.mainsQuestionCount})"
+                            ExamStage.PRELIMS -> "Stage I · Prelims"
+                            ExamStage.MAINS -> "Stage II · Mains"
                         }
                     },
                     onSelect = onSelectExamStage,
@@ -130,7 +130,7 @@ fun SubjectsHubScreen(
                     difficultyFilter = difficultyFilter,
                     onSelectExamFilter = onSelectSubjectExamFilter,
                     onSelectDifficulty = onSelectDifficulty,
-                    onStartSubjectPractice = onStartCrossExamSubjectPractice,
+                    onOpenSubjectChapters = { code -> onOpenSubjectChapters(code, true, subjectExamFilter) },
                     onStartTimed = { code -> onStartTimedConfig(code, true, subjectExamFilter) }
                 )
             }
@@ -140,12 +140,12 @@ fun SubjectsHubScreen(
                     state = state,
                     activeExamId = activeExamId,
                     isNorcet = isNorcet,
-                    isPgimer = isPgimer,
                     activeSection = activeSection,
                     difficultyFilter = difficultyFilter,
                     onSelectDifficulty = onSelectDifficulty,
                     onSelectSection = onSelectSection,
                     onStartPractice = onStartPractice,
+                    onOpenSubjectChapters = { code -> onOpenSubjectChapters(code, false, null) },
                     onStartTimedConfig = { code -> onStartTimedConfig(code, false, null) },
                     onStartCbtCustom = onStartCbtCustom,
                     onOpenImporter = onOpenImporter
@@ -162,7 +162,7 @@ private fun CrossExamSubjectPracticeView(
     difficultyFilter: DifficultyFilter,
     onSelectExamFilter: (String?) -> Unit,
     onSelectDifficulty: (DifficultyFilter) -> Unit,
-    onStartSubjectPractice: (String) -> Unit,
+    onOpenSubjectChapters: (String) -> Unit,
     onStartTimed: (String) -> Unit
 ) {
     val editorial = MaterialTheme.editorialColors
@@ -180,7 +180,8 @@ private fun CrossExamSubjectPracticeView(
             examIdFilter = examFilter,
             difficultyFilter = difficultyFilter,
             excludePyqAndMock = true,
-            alreadyDeduplicated = true
+            alreadyDeduplicated = true,
+            includeVirtualShared = true
         )
     }
 
@@ -195,7 +196,10 @@ private fun CrossExamSubjectPracticeView(
         }
     }
 
-    val totalPoolCount = remember(visibleSubjects) { visibleSubjects.sumOf { it.second.size } }
+    val orderedExams = remember(state.availableExams, state.activeExam?.id) {
+        val activeId = state.activeExam?.id
+        state.availableExams.sortedBy { if (it.id == activeId) 0 else 1 }
+    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val columns = when {
@@ -259,7 +263,7 @@ private fun CrossExamSubjectPracticeView(
                             onClick = { onSelectExamFilter(null) },
                             modifier = Modifier.testTag("subj_exam_filter_all")
                         )
-                        state.availableExams.forEach { exam ->
+                        orderedExams.forEach { exam ->
                             MonochromeFilterPill(
                                 label = exam.shortName,
                                 selected = examFilter == exam.id,
@@ -275,9 +279,15 @@ private fun CrossExamSubjectPracticeView(
                         testTagPrefix = "cross_diff"
                     )
 
+                    val examFilterName = examFilter?.let { id ->
+                        state.availableExams.firstOrNull { it.id == id }?.shortName
+                    }
                     Text(
-                        text = "${visibleSubjects.size} subjects · $totalPoolCount questions" +
-                            if (examFilter == null) " across all exams" else "",
+                        text = if (examFilterName == null) {
+                            "${visibleSubjects.size} syllabus subjects · ${PlatformCatalogDefaults.EVERGREEN_BANK_LABEL} across ${state.availableExams.size} exams"
+                        } else {
+                            "${visibleSubjects.size} syllabus subjects · $examFilterName · ${PlatformCatalogDefaults.EVERGREEN_BANK_LABEL}"
+                        },
                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.testTag("subject_pool_summary")
@@ -328,7 +338,10 @@ private fun CrossExamSubjectPracticeView(
                                 accuracyPercent = acc,
                                 attemptsCount = attempts,
                                 subtitleBadge = if (examFilter == null) "All Exams · ${sub.code}" else sub.code,
-                                onPractice = { onStartSubjectPractice(sub.code) },
+                                chapterCount = SyllabusCatalog.chapterCountForSubject(sub.code),
+                                hideTotalCeiling = true,
+                                primaryButtonLabel = "Chapters",
+                                onPractice = { onOpenSubjectChapters(sub.code) },
                                 onTimed = { onStartTimed(sub.code) },
                                 modifier = Modifier.weight(1f)
                             )
@@ -348,21 +361,35 @@ private fun ExamScopedSubjectsView(
     state: DashboardDerivedState,
     activeExamId: String?,
     isNorcet: Boolean,
-    isPgimer: Boolean,
     activeSection: SubjectHubSection,
     difficultyFilter: DifficultyFilter,
     onSelectDifficulty: (DifficultyFilter) -> Unit,
     onSelectSection: (SubjectHubSection) -> Unit,
     onStartPractice: (List<QuestionItem>, String) -> Unit,
+    onOpenSubjectChapters: (String) -> Unit,
     onStartTimedConfig: (String) -> Unit,
     onStartCbtCustom: (List<QuestionItem>, String) -> Unit,
     onOpenImporter: () -> Unit
 ) {
+    val activeExam = state.activeExam
+    val examShort = activeExam?.shortName ?: "Nursing"
     val isNorcetMains = isNorcet && state.activeExamStage == ExamStage.MAINS
+    val isPureNursing = PlatformCatalogDefaults.examIsPureNursing(activeExamId)
+    val supportsCaGk = PlatformCatalogDefaults.examSupportsCaGk(activeExamId)
+    val supportsNonTech = PlatformCatalogDefaults.examSupportsNonTech(activeExamId)
+    val nurPct = PlatformCatalogDefaults.nursingWeightagePercent(activeExamId)
+    val nonPct = 100 - nurPct
+    val markLabel = activeExam?.let { PlatformCatalogDefaults.formatMarkingLabel(it) } ?: "+1 / -0.33"
+
     val sections = when {
         isNorcetMains -> listOf(SubjectHubSection.NURSING)
-        isPgimer -> listOf(SubjectHubSection.NURSING, SubjectHubSection.PYQ)
-        else -> SubjectHubSection.entries
+        isPureNursing -> listOf(SubjectHubSection.NURSING, SubjectHubSection.PYQ)
+        else -> buildList {
+            add(SubjectHubSection.NURSING)
+            add(SubjectHubSection.PYQ)
+            if (supportsCaGk) add(SubjectHubSection.CA_GK)
+            if (supportsNonTech) add(SubjectHubSection.NON_TECH)
+        }
     }
     val effectiveSection = if (activeSection in sections) activeSection else SubjectHubSection.NURSING
 
@@ -424,16 +451,16 @@ private fun ExamScopedSubjectsView(
             when (effectiveSection) {
                 SubjectHubSection.NURSING -> SubjectListGrid(
                     title = when {
-                        isPgimer -> "PGIMER Core Nursing"
                         isNorcetMains -> "NORCET Mains · Clinical Nursing"
                         isNorcet -> "NORCET Prelims · Nursing"
-                        else -> "Nursing Subjects"
+                        isPureNursing -> "$examShort Core Nursing"
+                        else -> "$examShort Nursing Subjects"
                     },
                     subtitle = when {
-                        isPgimer -> "100% Core Nursing practice bank • +1 / -0.25"
-                        isNorcetMains -> "100% Clinical scenarios & priority care"
-                        isNorcet -> "80% Stage I Prelims nursing practice bank"
-                        else -> "500+ practice questions per subject • 70% weightage"
+                        isNorcetMains -> "100% Clinical scenarios & priority care · $markLabel"
+                        isNorcet -> "80% Stage I Prelims nursing chapters · $markLabel"
+                        isPureNursing -> "100% Core Nursing syllabus chapters · $markLabel"
+                        else -> "INC syllabus chapters & clinical practice · $nurPct% weightage"
                     },
                     subjects = SubjectCatalog.NURSING_SUBJS,
                     allQuestions = practicePool,
@@ -441,13 +468,14 @@ private fun ExamScopedSubjectsView(
                     columns = columns,
                     allFilter = { SubjectCatalog.isNursing(it.question) },
                     onStartPractice = onStartPractice,
+                    onOpenSubjectChapters = onOpenSubjectChapters,
                     onStartTimedConfig = onStartTimedConfig
                 )
 
                 SubjectHubSection.PYQ -> PyqShiftList(
                     allQuestions = pyqOnlyPool,
+                    activeExamShortName = examShort,
                     isNorcet = isNorcet,
-                    isPgimer = isPgimer,
                     diffSuffix = diffSuffix,
                     columns = columns,
                     onStartPractice = onStartPractice,
@@ -457,23 +485,30 @@ private fun ExamScopedSubjectsView(
 
                 SubjectHubSection.CA_GK -> CaAndFlashcardsList(
                     allQuestions = practicePool,
+                    activeExamId = activeExamId,
                     isNorcet = isNorcet,
                     diffSuffix = diffSuffix,
                     flashcards = state.flashcards,
                     columns = columns,
                     onStartPractice = onStartPractice,
+                    onOpenSubjectChapters = onOpenSubjectChapters,
                     onStartTimedConfig = onStartTimedConfig
                 )
 
                 SubjectHubSection.NON_TECH -> SubjectListGrid(
                     title = if (isNorcet) "Prelims Aptitude & Science" else "Science, Math & Reasoning",
-                    subtitle = if (isNorcet) "20% Stage I Prelims non-nursing practice bank" else "500+ practice questions per subject • 30% weightage",
+                    subtitle = if (isNorcet) {
+                        "20% Stage I Prelims non-nursing chapters"
+                    } else {
+                        "Syllabus chapters & drills · $nonPct% weightage"
+                    },
                     subjects = SubjectCatalog.GEN_SUBJS,
                     allQuestions = practicePool,
                     diffSuffix = diffSuffix,
                     columns = columns,
                     allFilter = { SubjectCatalog.isGen(it.question) },
                     onStartPractice = onStartPractice,
+                    onOpenSubjectChapters = onOpenSubjectChapters,
                     onStartTimedConfig = onStartTimedConfig
                 )
             }
@@ -491,6 +526,7 @@ private fun SubjectListGrid(
     columns: Int,
     allFilter: (QuestionItem) -> Boolean,
     onStartPractice: (List<QuestionItem>, String) -> Unit,
+    onOpenSubjectChapters: (String) -> Unit,
     onStartTimedConfig: (String) -> Unit
 ) {
     val bySubject = remember(allQuestions) { allQuestions.groupBy { it.question.subject } }
@@ -532,7 +568,7 @@ private fun SubjectListGrid(
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     modifier = Modifier
-                        .heightIn(min = 44.dp)
+                        .heightIn(min = 48.dp)
                         .testTag("practice_all_${subjects.firstOrNull()?.code}")
                 ) {
                     Text("Random 100", fontWeight = FontWeight.Bold)
@@ -559,7 +595,10 @@ private fun SubjectListGrid(
                         masteredCount = mastered,
                         accuracyPercent = acc,
                         attemptsCount = attempts,
-                        onPractice = { onStartPractice(list, "${sub.name}$diffSuffix") },
+                        chapterCount = SyllabusCatalog.chapterCountForSubject(sub.code),
+                        hideTotalCeiling = true,
+                        primaryButtonLabel = "Chapters",
+                        onPractice = { onOpenSubjectChapters(sub.code) },
                         onTimed = { onStartTimedConfig(sub.code) },
                         modifier = Modifier.weight(1f)
                     )
@@ -576,8 +615,8 @@ private fun SubjectListGrid(
 @Composable
 private fun PyqShiftList(
     allQuestions: List<QuestionItem>,
+    activeExamShortName: String,
     isNorcet: Boolean,
-    isPgimer: Boolean,
     diffSuffix: String,
     columns: Int,
     onStartPractice: (List<QuestionItem>, String) -> Unit,
@@ -606,10 +645,10 @@ private fun PyqShiftList(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = when {
-                        isPgimer -> "PGIMER Papers (2020–2025)"
-                        isNorcet -> "NORCET Stage I Prelims Papers"
-                        else -> "Previous Year Papers"
+                    text = if (isNorcet) {
+                        "NORCET Stage I Prelims Papers"
+                    } else {
+                        "$activeExamShortName Previous Year Papers"
                     },
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
@@ -656,7 +695,7 @@ private fun PyqShiftList(
                     val solved = list.count { it.attemptsCount > 0 }
                     val allVerified = list.isNotEmpty() && list.all { it.question.isVerifiedSource }
                     val shiftBadgeText = if (allVerified) "Official PYQ" else "Memory-Based"
-                    val title = SubjectCatalog.SHIFT_NAMES[sh] ?: "Paper $sh"
+                    val title = SubjectCatalog.formatPaperTitle(sh)
                     Card(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(16.dp),
@@ -748,11 +787,13 @@ private fun PyqShiftList(
 @Composable
 private fun CaAndFlashcardsList(
     allQuestions: List<QuestionItem>,
+    activeExamId: String?,
     isNorcet: Boolean,
     diffSuffix: String,
     flashcards: List<Flashcard>,
     columns: Int,
     onStartPractice: (List<QuestionItem>, String) -> Unit,
+    onOpenSubjectChapters: (String) -> Unit,
     onStartTimedConfig: (String) -> Unit
 ) {
     val bySubject = remember(allQuestions) { allQuestions.groupBy { it.question.subject } }
@@ -762,12 +803,8 @@ private fun CaAndFlashcardsList(
     val visibleCards = remember(flashcards, selectedTag) {
         if (selectedTag == "All") flashcards else flashcards.filter { it.tag == selectedTag }
     }
-    val visibleCaSubjs = remember(isNorcet) {
-        if (isNorcet) {
-            SubjectCatalog.CA_SUBJS.filter { PlatformCatalogDefaults.isNorcetSharedSubject(it.code) }
-        } else {
-            SubjectCatalog.CA_SUBJS
-        }
+    val visibleCaSubjs = remember(activeExamId) {
+        SubjectCatalog.CA_SUBJS.filter { PlatformCatalogDefaults.isSharedSubjectForExam(activeExamId, it.code) }
     }
     val caRows = remember(visibleCaSubjs, columns) { visibleCaSubjs.chunked(columns) }
     val cardRows = remember(visibleCards, columns) { visibleCards.chunked(columns) }
@@ -827,7 +864,10 @@ private fun CaAndFlashcardsList(
                         masteredCount = mastered,
                         accuracyPercent = acc,
                         attemptsCount = attempts,
-                        onPractice = { onStartPractice(list, "${sub.name}$diffSuffix") },
+                        chapterCount = SyllabusCatalog.chapterCountForSubject(sub.code),
+                        hideTotalCeiling = true,
+                        primaryButtonLabel = "Chapters",
+                        onPractice = { onOpenSubjectChapters(sub.code) },
                         onTimed = { onStartTimedConfig(sub.code) },
                         modifier = Modifier.weight(1f)
                     )
