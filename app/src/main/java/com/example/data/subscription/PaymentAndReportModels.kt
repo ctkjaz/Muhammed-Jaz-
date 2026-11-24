@@ -124,6 +124,7 @@ data class OtaQuestionEditDraft(
     val options: List<String>,
     val correctIndex: Int,
     val explanation: String,
+    val imageUrl: String = "",
     val reportId: String? = null
 )
 

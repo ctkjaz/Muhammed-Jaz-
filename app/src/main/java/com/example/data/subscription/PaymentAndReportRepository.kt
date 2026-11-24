@@ -5,6 +5,7 @@ import android.util.Log
 import com.example.R
 import com.example.data.cloud.CloudMergeLogic
 import com.example.data.model.Question
+import com.example.data.model.ClinicalImageRef
 import com.example.data.model.QuestionDifficulty
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
@@ -477,6 +478,7 @@ class PaymentAndReportRepository(
                     options = cloudQ.options,
                     correctIndex = cloudQ.correctIndex.toInt().coerceIn(0, (cloudQ.options.size - 1).coerceAtLeast(0)),
                     explanation = cloudQ.explanation,
+                    imageUrl = cloudQ.imageUrl,
                     reportId = reportId
                 )
             )
@@ -512,7 +514,8 @@ class PaymentAndReportRepository(
                     "options" to cleanOptions,
                     "correctIndex" to safeCorrect,
                     "explanation" to draft.explanation.trim().take(4000),
-                    "difficulty" to draft.difficulty.label
+                    "difficulty" to draft.difficulty.label,
+                    "imageUrl" to ClinicalImageRef.sanitize(draft.imageUrl).take(512)
                 )
             ).await()
 

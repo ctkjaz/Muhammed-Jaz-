@@ -71,7 +71,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.AcidLimeProgressBar
+import com.example.ui.components.ClinicalQuestionImageCard
 import com.example.ui.components.DifficultyBadge
+import com.example.ui.components.ImageBasedQuestionBadge
 import com.example.ui.components.MetricTile
 import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.components.PyqSourceBadge
@@ -356,6 +358,9 @@ fun PracticeScreen(
                                 }
                                 PyqSourceBadge(question = q)
                                 DifficultyBadge(difficulty = q.difficulty)
+                                if (q.isImageBased) {
+                                    ImageBasedQuestionBadge()
+                                }
                             }
 
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -396,6 +401,10 @@ fun PracticeScreen(
                                     )
                                 }
                             }
+                        }
+
+                        if (q.isImageBased) {
+                            ClinicalQuestionImageCard(imageUrl = q.imageUrl)
                         }
 
                         Text(

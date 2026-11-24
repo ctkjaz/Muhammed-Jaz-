@@ -62,6 +62,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.ui.components.AcidLimeProgressBar
+import com.example.ui.components.ClinicalQuestionImageCard
+import com.example.ui.components.ImageBasedQuestionBadge
 import com.example.ui.components.MetricTile
 import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.components.PyqSourceBadge
@@ -409,6 +411,13 @@ fun CbtExamScreen(
                                         )
                                     }
                                     PyqSourceBadge(question = q)
+                                    if (q.isImageBased) {
+                                        ImageBasedQuestionBadge()
+                                    }
+                                }
+
+                                if (q.isImageBased) {
+                                    ClinicalQuestionImageCard(imageUrl = q.imageUrl)
                                 }
 
                                 Text(

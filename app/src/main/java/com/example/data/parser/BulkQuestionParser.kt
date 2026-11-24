@@ -1,6 +1,7 @@
 package com.example.data.parser
 
 import com.example.data.local.QuestionProgressEntity
+import com.example.data.model.ClinicalImageRef
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
@@ -62,6 +63,7 @@ object BulkQuestionParser {
     private val sourceNoteRegex = Regex("""^(?:Source(?:\s*Note)?|Ref(?:erence)?)\s*[:.\-]\s*(.+)""", RegexOption.IGNORE_CASE)
     private val sourceStatusRegex = Regex("""^(?:Source\s*Status|Verification)\s*[:.\-]\s*(verified|unverified)""", RegexOption.IGNORE_CASE)
     private val topicRegex = Regex("""^(?:Topic)\s*[:.\-]\s*(.+)""", RegexOption.IGNORE_CASE)
+    private val imageRegex = Regex("""^(?:Image(?:\s*Url)?|Img)\s*[:.\-]\s*(.+)""", RegexOption.IGNORE_CASE)
 
     // Trailing Answer Key header & entries (e.g. "Answer Key" followed by "1. C  2. A  3-D")
     private val answerKeyHeaderRegex = Regex("""^(?:Answer\s*Key|Answers|Official\s*Key|Key)\s*[:.\-]?$""", RegexOption.IGNORE_CASE)
@@ -88,7 +90,8 @@ object BulkQuestionParser {
         val difficulty: QuestionDifficulty,
         val sourceNote: String,
         val sourceStatus: String?,
-        val topicName: String
+        val topicName: String,
+        val imageUrl: String = ""
     )
 
     fun resolveSourceStatus(
@@ -256,6 +259,7 @@ object BulkQuestionParser {
         var curSourceNote = ""
         var curSourceStatus: String? = null
         var curTopicName = ""
+        var curImageUrl = ""
         val pendingStemLines = mutableListOf<String>()
 
         fun resetCurrent(num: Int?, stem: String) {
@@ -273,6 +277,7 @@ object BulkQuestionParser {
             curSourceNote = ""
             curSourceStatus = null
             curTopicName = ""
+            curImageUrl = ""
             pendingStemLines.clear()
         }
 
@@ -292,7 +297,8 @@ object BulkQuestionParser {
                         difficulty = curDifficulty,
                         sourceNote = curSourceNote,
                         sourceStatus = curSourceStatus,
-                        topicName = curTopicName
+                        topicName = curTopicName,
+                        imageUrl = curImageUrl
                     )
                 )
             }
@@ -349,6 +355,11 @@ object BulkQuestionParser {
             val topicMatch = topicRegex.find(line)
             if (topicMatch != null && hasCurrent) {
                 curTopicName = topicMatch.groupValues[1].trim()
+                continue
+            }
+            val imageMatch = imageRegex.find(line)
+            if (imageMatch != null && hasCurrent) {
+                curImageUrl = ClinicalImageRef.sanitize(imageMatch.groupValues[1])
                 continue
             }
             val expMatch = expRegex.find(line)
@@ -529,7 +540,8 @@ object BulkQuestionParser {
                 topicId = resolvedTopicId,
                 sourceType = resolvedSourceType,
                 examYear = parsedYear,
-                examShift = parsedShift
+                examShift = parsedShift,
+                imageUrl = ClinicalImageRef.sanitize(draft.imageUrl)
             )
         }
     }
@@ -607,6 +619,11 @@ object BulkQuestionParser {
                 else -> PlatformCatalogDefaults.defaultTopicIdFor(subject)
             }
 
+            val rawImageUrl = obj.optString("imageUrl", "")
+                .ifBlank { obj.optString("image", "") }
+                .ifBlank { obj.optString("img", "") }
+            val resolvedImageUrl = ClinicalImageRef.sanitize(rawImageUrl)
+
             val question = Question(
                 id = rawId ?: "J_${baseTs}_$i",
                 category = category,
@@ -623,7 +640,8 @@ object BulkQuestionParser {
                 topicId = resolvedTopicId,
                 sourceType = resolvedSourceType,
                 examYear = resolvedYear,
-                examShift = resolvedShift
+                examShift = resolvedShift,
+                imageUrl = resolvedImageUrl
             )
             list.add(question to rawExamId)
         }
@@ -686,6 +704,7 @@ object BulkQuestionParser {
                         put("sourceType", q.sourceType.dbValue)
                         put("examYear", q.examYear)
                         put("examShift", q.examShift)
+                        if (q.imageUrl.isNotBlank()) put("imageUrl", q.imageUrl)
                         put("examIds", JSONArray(examIds))
                     }
                 )

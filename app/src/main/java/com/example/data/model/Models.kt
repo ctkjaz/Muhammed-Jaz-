@@ -1095,8 +1095,12 @@ data class Question(
     val topicId: String = PlatformCatalogDefaults.defaultTopicIdFor(subject),
     val sourceType: QuestionSourceType = QuestionSourceType.infer(category, shiftYear, sourceStatus, sourceNote),
     val examYear: String = parseShiftYear(shiftYear).first,
-    val examShift: String = parseShiftYear(shiftYear).second
+    val examShift: String = parseShiftYear(shiftYear).second,
+    val imageUrl: String = ""
 ) {
+    val isImageBased: Boolean
+        get() = ClinicalImageRef.sanitize(imageUrl).isNotEmpty()
+
     val isPyqTagged: Boolean
         get() = sourceType == QuestionSourceType.OFFICIAL_PYQ ||
             sourceType == QuestionSourceType.MEMORY_BASED ||

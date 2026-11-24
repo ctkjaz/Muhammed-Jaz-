@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.rrbnursing.kptvmz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 19
-    versionName = "2.6.0"
+    versionCode = 20
+    versionName = "2.7.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -123,7 +123,7 @@ dependencies {
   // implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
-  // implementation(libs.coil.compose)
+  implementation(libs.coil.compose)
   // implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
   // Uncomment to use Firestore:

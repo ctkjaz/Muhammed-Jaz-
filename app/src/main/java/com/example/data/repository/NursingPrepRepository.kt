@@ -12,6 +12,7 @@ import com.example.data.local.toDomain
 import com.example.data.local.toDomainQuestion
 import com.example.data.local.toEntity
 import com.example.data.model.CategoryStat
+import com.example.data.model.ClinicalSpotterCatalog
 import com.example.data.model.Exam
 import com.example.data.model.ExamQuestionLink
 import com.example.data.model.ExamSection
@@ -257,6 +258,9 @@ class NursingPrepRepository(
             val allIndiaPyqPairs = loadAssetQuestionsWithExamIds("all_india_pyqs.json")
             insertQuestionBatch(allIndiaPyqPairs.map { it.first }, baseSortOrder = 25000)
 
+            val clinicalSpotterQuestions = ClinicalSpotterCatalog.builtinSpotterQuestions()
+            insertQuestionBatch(clinicalSpotterQuestions, baseSortOrder = 29000)
+
             if (needsQuestions || needsRrbLinks) {
                 val rrbBaseLinks = rrbQuestions.mapIndexed { index, q ->
                     ExamQuestionLinkEntity(
@@ -353,6 +357,49 @@ class NursingPrepRepository(
                     dao.upsertExamQuestionLinks(chunk)
                 }
             }
+
+            if (needsQuestions || needsRrbLinks || needsNorcetLinks || needsPgimerLinks) {
+                val spotterLinks = buildList {
+                    clinicalSpotterQuestions.forEachIndexed { idx, q ->
+                        add(
+                            ExamQuestionLinkEntity(
+                                examId = PlatformCatalogDefaults.EXAM_RRB_NURSING,
+                                questionId = q.id,
+                                sectionId = PlatformCatalogDefaults.sectionIdForRrbSubject(q.subject),
+                                sortOrder = 9000 + idx,
+                                isPyqForExam = false,
+                                examYear = "",
+                                examShift = ""
+                            )
+                        )
+                        add(
+                            ExamQuestionLinkEntity(
+                                examId = PlatformCatalogDefaults.EXAM_AIIMS_NORCET,
+                                questionId = q.id,
+                                sectionId = PlatformCatalogDefaults.sectionIdForNorcetSubject(q.subject),
+                                sortOrder = 9000 + idx,
+                                isPyqForExam = false,
+                                examYear = "",
+                                examShift = ""
+                            )
+                        )
+                        add(
+                            ExamQuestionLinkEntity(
+                                examId = PlatformCatalogDefaults.EXAM_PGIMER_NURSING,
+                                questionId = q.id,
+                                sectionId = PlatformCatalogDefaults.sectionIdForPgimerSubject(q.subject),
+                                sortOrder = 9000 + idx,
+                                isPyqForExam = false,
+                                examYear = "",
+                                examShift = ""
+                            )
+                        )
+                    }
+                }
+                spotterLinks.chunked(500).forEach { chunk ->
+                    dao.upsertExamQuestionLinks(chunk)
+                }
+            }
             onSeededVersionUpdated(CURRENT_SEED_VERSION)
         }
     }
@@ -412,7 +459,7 @@ class NursingPrepRepository(
     }
 
     companion object {
-        const val CURRENT_SEED_VERSION = 10
+        const val CURRENT_SEED_VERSION = 11
     }
 
     suspend fun loadFlashcards(): List<Flashcard> = withContext(Dispatchers.IO) {

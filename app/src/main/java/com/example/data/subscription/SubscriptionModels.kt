@@ -2,6 +2,7 @@ package com.example.data.subscription
 
 import androidx.annotation.Keep
 import com.example.data.cloud.CloudUserProfile
+import com.example.data.model.ClinicalImageRef
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
@@ -185,6 +186,7 @@ data class CloudPackQuestion(
     val sourceType: String = QuestionSourceType.PRACTICE.dbValue,
     val examYear: String = "",
     val examShift: String = "",
+    val imageUrl: String = "",
     val sortOrder: Long = 0L,
     @ServerTimestamp val createdAt: Timestamp? = null
 ) {
@@ -211,7 +213,8 @@ data class CloudPackQuestion(
             topicId = topicId.ifBlank { PlatformCatalogDefaults.defaultTopicIdFor(subject.ifBlank { "MSN" }) },
             sourceType = QuestionSourceType.fromDbValue(sourceType) ?: QuestionSourceType.PRACTICE,
             examYear = examYear,
-            examShift = examShift
+            examShift = examShift,
+            imageUrl = ClinicalImageRef.sanitize(imageUrl)
         )
     }
 }

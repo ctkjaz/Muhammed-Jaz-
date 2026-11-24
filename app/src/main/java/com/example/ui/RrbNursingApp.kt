@@ -1239,7 +1239,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onStartSmartWeakDrill = { vm.startSmartWeakTopicDrill() },
                                             onStartRecoveryDayDrill = { subjCode, count ->
                                                 vm.startSmartWeakTopicDrill(subjectCode = subjCode, targetCount = count)
-                                            }
+                                            },
+                                            onStartImageSpotterDrill = vm::startImageBasedSpotterDrill
                                         )
 
                                         MainTab.SUBJECTS -> SubjectsHubScreen(

@@ -718,6 +718,7 @@ private fun AdminOtaQuestionEditorDialog(
     var correctIndex by remember(initialDraft) { mutableStateOf(initialDraft.correctIndex) }
     var difficulty by remember(initialDraft) { mutableStateOf(initialDraft.difficulty) }
     var explanation by remember(initialDraft) { mutableStateOf(initialDraft.explanation) }
+    var imageUrl by remember(initialDraft) { mutableStateOf(initialDraft.imageUrl) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -793,6 +794,14 @@ private fun AdminOtaQuestionEditorDialog(
                     maxLines = 6,
                     modifier = Modifier.fillMaxWidth()
                 )
+                OutlinedTextField(
+                    value = imageUrl,
+                    onValueChange = { imageUrl = it.take(512) },
+                    label = { Text("Clinical Image URL or Diagram (Optional)") },
+                    placeholder = { Text("https://... or diagram://ecg_vtach") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 HorizontalDivider(color = editorial.borderSubtle)
                 Text(
                     text = "Saving bumps catalogVersion so all students automatically sync this fix.",
@@ -810,7 +819,8 @@ private fun AdminOtaQuestionEditorDialog(
                             options = options,
                             correctIndex = correctIndex,
                             difficulty = difficulty,
-                            explanation = explanation
+                            explanation = explanation,
+                            imageUrl = imageUrl.trim()
                         )
                     )
                 },

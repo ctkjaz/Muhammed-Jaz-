@@ -7,6 +7,7 @@ import com.example.data.cloud.CloudMergeLogic
 import com.example.data.cloud.CloudUserProfile
 import com.example.data.cloud.OperationType
 import com.example.data.cloud.handleFirestoreError
+import com.example.data.model.ClinicalImageRef
 import com.example.data.model.Question
 import com.google.firebase.Firebase
 import com.google.firebase.Timestamp
@@ -862,6 +863,7 @@ class SubscriptionRepository(
                         "sourceType" to q.sourceType.dbValue.ifBlank { "practice" }.take(40),
                         "examYear" to q.examYear.take(20),
                         "examShift" to stageShiftTag.take(32),
+                        "imageUrl" to ClinicalImageRef.sanitize(q.imageUrl).take(512),
                         "sortOrder" to globalIndex,
                         "createdAt" to FieldValue.serverTimestamp()
                     )

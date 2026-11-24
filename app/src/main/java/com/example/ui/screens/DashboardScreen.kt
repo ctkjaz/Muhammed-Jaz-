@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.QuestionAnswer
@@ -134,6 +135,7 @@ fun DashboardScreen(
     smartStudyPlan: SmartStudyPlanSummary? = null,
     onStartSmartWeakDrill: () -> Unit = {},
     onStartRecoveryDayDrill: (String, Int) -> Unit = { _, _ -> },
+    onStartImageSpotterDrill: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showExamDateDialog by remember { mutableStateOf(false) }
@@ -149,6 +151,10 @@ fun DashboardScreen(
         difficultyFilter.difficulty?.let { d ->
             state.lowestAccuracyQuestions.filter { it.question.difficulty == d }
         } ?: state.lowestAccuracyQuestions
+    }
+    val imageSpotterCount = remember(stagePool, state.crossExamQuestions) {
+        val activeCount = stagePool.count { it.question.isImageBased }
+        if (activeCount > 0) activeCount else state.crossExamQuestions.count { it.question.isImageBased }
     }
     val diffLabelSuffix = difficultyFilter.difficulty?.let { " • ${it.label}" } ?: ""
     val activeExam = state.activeExam
@@ -1234,15 +1240,46 @@ fun DashboardScreen(
                             ) {
                                 Text("25Q Mix", fontWeight = FontWeight.Bold)
                             }
+                            if (imageSpotterCount > 0) {
+                                OutlinedButton(
+                                    onClick = onStartImageSpotterDrill,
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, editorial.acidLime.copy(alpha = 0.75f)),
+                                    modifier = Modifier
+                                        .heightIn(min = 44.dp)
+                                        .testTag("dashboard_image_spotters_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Image,
+                                        contentDescription = null,
+                                        tint = if (editorial.isDark) editorial.acidLime else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Spotters ($imageSpotterCount)",
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // 7. Compact Navigation Shortcuts (PYQs & CBT)
+            // 7. Compact Navigation Shortcuts (Spotters, PYQs & CBT)
             item {
                 val pyqCount = stagePool.count { it.question.isPyqTagged }
                 val shortcuts = buildList {
+                    if (imageSpotterCount > 0) {
+                        add(
+                            Triple(
+                                "Image-Based Spotters",
+                                "$imageSpotterCount ECG & Instruments",
+                                Icons.Filled.Image
+                            ) to onStartImageSpotterDrill
+                        )
+                    }
                     if (pyqCount > 0) {
                         add(
                             Triple(

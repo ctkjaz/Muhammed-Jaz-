@@ -1842,6 +1842,23 @@ class MainViewModel(
         startPractice(selected, title)
     }
 
+    fun startImageBasedSpotterDrill() {
+        val st = mainState.value
+        val activePool = st.stageQuestions.ifEmpty { st.questions }
+            .filter { it.question.isImageBased }
+        val pool = activePool.ifEmpty {
+            st.crossExamQuestions.filter { it.question.isImageBased }
+        }
+        if (pool.isEmpty()) {
+            showMessage("No image-based clinical spotters available yet.")
+            return
+        }
+        // Unattempted spotters first so students see fresh ECGs & instruments immediately
+        val ordered = (pool.filter { it.attemptsCount == 0 } + pool.filter { it.attemptsCount > 0 })
+            .distinctBy { it.id }
+        startPractice(ordered, "Image-Based Spotters (${ordered.size}Q)")
+    }
+
     fun openSubjectChapters(
         subjectCode: String,
         isCrossExam: Boolean = false,

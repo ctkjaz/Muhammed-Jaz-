@@ -129,7 +129,9 @@ data class QuestionEntity(
     @ColumnInfo(defaultValue = "")
     val examYear: String = "",
     @ColumnInfo(defaultValue = "")
-    val examShift: String = ""
+    val examShift: String = "",
+    @ColumnInfo(defaultValue = "")
+    val imageUrl: String = ""
 )
 
 @Entity(
@@ -257,7 +259,8 @@ fun QuestionEntity.toDomainQuestion(): Question {
         topicId = resolvedTopicId,
         sourceType = resolvedSourceType,
         examYear = resolvedYear,
-        examShift = resolvedShift
+        examShift = resolvedShift,
+        imageUrl = imageUrl
     )
 }
 
@@ -308,7 +311,8 @@ fun Question.toEntity(sortOrder: Int = 0): QuestionEntity {
         topicId = topicId.ifBlank { PlatformCatalogDefaults.defaultTopicIdFor(subject) },
         sourceType = finalSourceType.dbValue,
         examYear = finalYear,
-        examShift = finalShift
+        examShift = finalShift,
+        imageUrl = imageUrl
     )
 }
 
