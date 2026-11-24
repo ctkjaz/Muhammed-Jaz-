@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
@@ -119,6 +120,7 @@ fun ProfileDrawerContent(
     onOpenPlans: () -> Unit = {},
     onOpenNotifications: () -> Unit = {},
     onOpenDoubtBox: () -> Unit = {},
+    onOpenClinicalTools: () -> Unit = {},
     onOpenExamPicker: () -> Unit,
     onOpenSubjectSection: (SubjectHubSection) -> Unit,
     onOpenSettings: () -> Unit,
@@ -457,6 +459,12 @@ fun ProfileDrawerContent(
             HorizontalDivider(color = editorial.borderSubtle)
 
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                DrawerActionRow(
+                    icon = Icons.Filled.MedicalServices,
+                    label = "Clinical Calculators & Lab Values",
+                    onClick = onOpenClinicalTools,
+                    testTag = "drawer_clinical_tools_btn"
+                )
                 DrawerActionRow(
                     icon = Icons.Filled.Notifications,
                     label = if (unreadNotificationsCount > 0) "Notification Center ($unreadNotificationsCount)" else "Notification Center",

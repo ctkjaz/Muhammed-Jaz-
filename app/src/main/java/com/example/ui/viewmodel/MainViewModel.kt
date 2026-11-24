@@ -46,7 +46,9 @@ import com.example.data.model.CategoryStat
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.Exam
+import com.example.data.model.ExamCountdownLogic
 import com.example.data.model.ExamQuestionLink
+import com.example.data.model.ExamRoadmapSummary
 import com.example.data.model.ExamSection
 import com.example.data.model.ExamStage
 import com.example.data.model.Flashcard
@@ -60,6 +62,9 @@ import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
 import com.example.data.model.QuestionSourceType
 import com.example.data.model.SessionCheckResult
+import com.example.data.model.SpacedRepetitionLogic
+import com.example.data.model.SrsCardState
+import com.example.data.model.SrsNotebookSummary
 import com.example.data.model.StudyGoalLogic
 import com.example.data.model.SubjectCatalog
 import com.example.data.model.SubjectPracticeLogic
@@ -67,6 +72,7 @@ import com.example.data.model.SubjectStat
 import com.example.data.model.Topic
 import com.example.data.parser.BulkQuestionParser
 import com.example.data.parser.PdfTextExtractor
+import com.example.data.parser.QuestionSubjectClassifier
 import com.example.data.repository.NursingPrepRepository
 import com.example.data.subscription.CloudAccessCode
 import com.example.data.subscription.CloudPaymentRequest
@@ -513,6 +519,15 @@ class MainViewModel(
 
     private val _isFlagBusy = MutableStateFlow(false)
     val isFlagBusy: StateFlow<Boolean> = _isFlagBusy.asStateFlow()
+
+    // ------------------------------------------------------------------------
+    // v2.4: SPACED REPETITION (SRS) NOTEBOOK, EXAM COUNTDOWN & CLINICAL TOOLS
+    // ------------------------------------------------------------------------
+    private val _isClinicalToolsOpen = MutableStateFlow(false)
+    val isClinicalToolsOpen: StateFlow<Boolean> = _isClinicalToolsOpen.asStateFlow()
+
+    val targetExamDateIso: StateFlow<String> = settings.targetExamDateIso
+    val srsCards: StateFlow<Map<String, SrsCardState>> = settings.srsCards
 
     val lastSeenAnnouncementMs: StateFlow<Long> = settings.lastSeenAnnouncementMs
 
@@ -1604,6 +1619,7 @@ class MainViewModel(
         _isAdminOpen.value = false
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
+        _isClinicalToolsOpen.value = false
         _selectedTab.value = tab
     }
 
@@ -1614,6 +1630,7 @@ class MainViewModel(
         _isAdminOpen.value = false
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
+        _isClinicalToolsOpen.value = false
         _isSettingsOpen.value = true
     }
 
@@ -1628,6 +1645,7 @@ class MainViewModel(
         _isAdminOpen.value = false
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
+        _isClinicalToolsOpen.value = false
         _isProfileOpen.value = true
     }
 
@@ -1645,6 +1663,7 @@ class MainViewModel(
         _isAdminOpen.value = false
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
+        _isClinicalToolsOpen.value = false
         _isPlansOpen.value = true
     }
 
@@ -1662,6 +1681,7 @@ class MainViewModel(
         _isAdminOpen.value = false
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
+        _isClinicalToolsOpen.value = false
         _isPlansOpen.value = true
     }
 
@@ -1681,12 +1701,71 @@ class MainViewModel(
         _isPlansOpen.value = false
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
+        _isClinicalToolsOpen.value = false
         _isAdminOpen.value = true
         refreshAdminDashboard()
     }
 
     fun closeAdminConsole() {
         _isAdminOpen.value = false
+    }
+
+    fun openClinicalTools() {
+        _subjectChaptersNav.value = null
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = false
+        _isPlansOpen.value = false
+        _isAdminOpen.value = false
+        _isNotificationsOpen.value = false
+        _isDoubtBoxOpen.value = false
+        _isClinicalToolsOpen.value = true
+    }
+
+    fun closeClinicalTools() {
+        _isClinicalToolsOpen.value = false
+    }
+
+    fun setTargetExamDate(dateIso: String) {
+        val clean = dateIso.trim()
+        if (clean.isNotEmpty() && ExamCountdownLogic.daysUntil(clean) == null) {
+            showMessage("Please enter a valid date (YYYY-MM-DD).")
+            return
+        }
+        settings.setTargetExamDateIso(clean)
+        showMessage(
+            if (clean.isBlank()) "Target exam date cleared."
+            else "Exam countdown set for ${ExamCountdownLogic.formatFriendlyDate(clean)}!"
+        )
+    }
+
+    fun resetSrsCard(questionId: String) {
+        val updated = SpacedRepetitionLogic.resetToBox1(settings.srsCards.value, questionId)
+        settings.setSrsCards(updated)
+        showMessage("Card reset to Box 1d (Due Now).")
+    }
+
+    fun removeSrsCard(questionId: String) {
+        val updated = SpacedRepetitionLogic.removeCard(settings.srsCards.value, questionId)
+        settings.setSrsCards(updated)
+        showMessage("Removed from SRS Mistake Notebook.")
+    }
+
+    fun startSrsDueDrill() {
+        val summary = SpacedRepetitionLogic.buildSummary(
+            questions = mainState.value.questions,
+            storedCards = settings.srsCards.value
+        )
+        val pool = summary.dueEntries.map { it.item }.ifEmpty { summary.allEntries.map { it.item } }
+        if (pool.isEmpty()) {
+            showMessage("No SRS mistakes due right now — great job!")
+            return
+        }
+        val title = if (summary.dueEntries.isNotEmpty()) {
+            "SRS Due Review (${summary.dueEntries.size}Q)"
+        } else {
+            "SRS Mistake Notebook (${pool.size}Q)"
+        }
+        startPractice(pool, title)
     }
 
     fun openSubjectChapters(
@@ -1711,6 +1790,7 @@ class MainViewModel(
         _isProfileOpen.value = false
         _isPlansOpen.value = false
         _isAdminOpen.value = false
+        _isClinicalToolsOpen.value = false
         _chaptersHighYieldOnly.value = false
         _subjectChaptersNav.value = SubjectChaptersNavState(
             subjectCode = subjectCode,
@@ -1959,6 +2039,18 @@ class MainViewModel(
                     },
                     status = if (result.status == AppUpdateStatus.ERROR) AppUpdateStatus.IDLE else result.status
                 )
+            }
+            if (result.status == AppUpdateStatus.UPDATE_AVAILABLE && result.latestVersion.isNotBlank()) {
+                val ctx = appContext
+                if (ctx != null && result.latestVersion != settings.getLastNotifiedAppUpdateVersion()) {
+                    ClinEdgeNotificationManager.postAppUpdateNotification(
+                        context = ctx,
+                        latestVersion = result.latestVersion,
+                        releaseTitle = result.releaseTitle,
+                        releaseNotes = result.releaseNotes
+                    )
+                    settings.setLastNotifiedAppUpdateVersion(result.latestVersion)
+                }
             }
             if (userInitiated) {
                 when (result.status) {
@@ -2230,8 +2322,19 @@ class MainViewModel(
         }
         recordDailyStudyProgress(answeredDelta = 1)
 
-        // 2. Offload Room write to IO and debounce cloud write by 350ms so zero hitching overlaps rationale reveal
+        // Update Spaced Repetition (SRS) Mistake Notebook card state
         val qId = qItem.id
+        val currentSrs = settings.srsCards.value
+        val nextSrs = if (isCorrect) {
+            SpacedRepetitionLogic.recordRight(currentSrs, qId)
+        } else {
+            SpacedRepetitionLogic.recordWrong(currentSrs, qId)
+        }
+        if (nextSrs !== currentSrs) {
+            settings.setSrsCards(nextSrs)
+        }
+
+        // 2. Offload Room write to IO and debounce cloud write by 350ms so zero hitching overlaps rationale reveal
         practiceCloudSyncJob?.cancel()
         viewModelScope.launch(Dispatchers.IO) {
             val savedProgress = repository.recordAttempt(qId, isCorrect)
@@ -2858,6 +2961,17 @@ class MainViewModel(
 
         if (batchResults.isNotEmpty()) {
             recordDailyStudyProgress(answeredDelta = batchResults.size)
+            var updatedSrs = settings.srsCards.value
+            batchResults.forEach { (qId, isRight) ->
+                updatedSrs = if (isRight) {
+                    SpacedRepetitionLogic.recordRight(updatedSrs, qId)
+                } else {
+                    SpacedRepetitionLogic.recordWrong(updatedSrs, qId)
+                }
+            }
+            if (updatedSrs !== settings.srsCards.value) {
+                settings.setSrsCards(updatedSrs)
+            }
         }
 
         viewModelScope.launch {
@@ -3652,27 +3766,34 @@ class MainViewModel(
             _adminState.update {
                 it.copy(contentDraft = it.contentDraft.copy(isParsingOrExtracting = true))
             }
+            val isAutoSubject = draft.subject.equals(QuestionSubjectClassifier.AUTO_SUBJECT_CODE, ignoreCase = true)
             val parsed = withContext(Dispatchers.Default) {
                 val alignedSourceType = when (draft.category) {
                     "pyq" -> QuestionSourceType.OFFICIAL_PYQ
                     "mock" -> QuestionSourceType.PREDICTED_MOCK
                     else -> QuestionSourceType.PRACTICE
                 }
-                if (raw.startsWith("[") || raw.startsWith("{")) {
+                val rawParsed = if (raw.startsWith("[") || raw.startsWith("{")) {
                     runCatching { BulkQuestionParser.parseJsonBatch(raw, markAsCustom = false) }
                         .getOrDefault(emptyList())
                 } else {
+                    val parserDefaultSubject = if (isAutoSubject) "MSN" else draft.subject
                     BulkQuestionParser.parseRawPdfText(
                         rawText = raw,
                         category = draft.category,
-                        subject = draft.subject,
+                        subject = parserDefaultSubject,
                         shiftYear = if (draft.category == "pyq") draft.shiftYear else "",
                         defaultDifficulty = draft.difficulty,
                         defaultSourceNote = "ClinEdge Pack: ${draft.title.ifBlank { "Update" }}",
                         markAsVerified = draft.category == "pyq",
                         defaultSourceType = alignedSourceType,
-                        defaultTopicId = PlatformCatalogDefaults.defaultTopicIdFor(draft.subject)
+                        defaultTopicId = PlatformCatalogDefaults.defaultTopicIdFor(parserDefaultSubject)
                     )
+                }
+                if (isAutoSubject) {
+                    QuestionSubjectClassifier.autoDistributeBySubject(rawParsed)
+                } else {
+                    rawParsed
                 }
             }
             _adminState.update {
@@ -3685,6 +3806,9 @@ class MainViewModel(
             }
             if (parsed.isEmpty()) {
                 showMessage("No MCQs detected. Ensure questions have options A–D (or 1–4) and an answer.")
+            } else if (isAutoSubject) {
+                val dist = QuestionSubjectClassifier.summarizeSubjectDistribution(parsed)
+                showMessage("Scanned ${parsed.size} Qs & auto-distributed across ${dist.size} subjects!")
             } else {
                 showMessage("Parsed ${parsed.size} questions ready to review & publish.")
             }
@@ -3699,6 +3823,21 @@ class MainViewModel(
         }
     }
 
+    fun adminOverridePreviewQuestionSubject(index: Int, newSubjectCode: String) {
+        val cleanCode = newSubjectCode.trim().ifBlank { "MSN" }
+        _adminState.update { st ->
+            val updated = st.contentDraft.previewQuestions.toMutableList()
+            if (index in updated.indices) {
+                val target = updated[index]
+                updated[index] = target.copy(
+                    subject = cleanCode,
+                    topicId = PlatformCatalogDefaults.defaultTopicIdFor(cleanCode)
+                )
+            }
+            st.copy(contentDraft = st.contentDraft.copy(previewQuestions = updated))
+        }
+    }
+
     fun adminPublishContentPack() {
         val repo = subscriptionRepo ?: return
         if (!isOwnerAdmin) return
@@ -3707,7 +3846,12 @@ class MainViewModel(
             showMessage("Parse and preview at least 1 question before publishing.")
             return
         }
-        val packTitle = draft.title.trim().ifBlank { "ClinEdge ${draft.subject} Pack" }
+        val titleSubjectLabel = if (draft.subject.equals(QuestionSubjectClassifier.AUTO_SUBJECT_CODE, ignoreCase = true)) {
+            "Mixed PYQ"
+        } else {
+            draft.subject
+        }
+        val packTitle = draft.title.trim().ifBlank { "ClinEdge $titleSubjectLabel Pack" }
         viewModelScope.launch {
             _adminState.update {
                 it.copy(contentDraft = it.contentDraft.copy(isPublishing = true))
@@ -3767,6 +3911,7 @@ class MainViewModel(
         _isPlansOpen.value = false
         _isAdminOpen.value = false
         _isDoubtBoxOpen.value = false
+        _isClinicalToolsOpen.value = false
         _isNotificationsOpen.value = true
         val newestAnnMs = _announcements.value.maxOfOrNull { it.createdAtMs } ?: System.currentTimeMillis()
         settings.markAnnouncementsSeenUpTo(maxOf(newestAnnMs, System.currentTimeMillis()))
@@ -3821,6 +3966,7 @@ class MainViewModel(
         _isPlansOpen.value = false
         _isAdminOpen.value = false
         _isNotificationsOpen.value = false
+        _isClinicalToolsOpen.value = false
         _highlightedDoubtId.value = highlightDoubtId?.takeIf { it.isNotBlank() }
         _isDoubtBoxOpen.value = true
     }
@@ -3983,9 +4129,17 @@ class MainViewModel(
         when (target) {
             ClinEdgeNotificationManager.TARGET_NOTIFICATIONS -> openNotifications()
             ClinEdgeNotificationManager.TARGET_DOUBTS -> openDoubtBox(doubtId.takeIf { it.isNotBlank() })
+            ClinEdgeNotificationManager.TARGET_APP_UPDATE -> {
+                if (_appUpdateState.value.status == AppUpdateStatus.UPDATE_AVAILABLE) {
+                    openUpdateDialog()
+                } else {
+                    checkForAppUpdates(userInitiated = true)
+                }
+            }
             ClinEdgeNotificationManager.TARGET_DAILY_DRILL -> {
                 closeNotifications()
                 closeDoubtBox()
+                closeClinicalTools()
                 selectTab(MainTab.DASHBOARD)
             }
         }

@@ -120,9 +120,12 @@ import com.example.ui.components.TimedPracticeConfigDialog
 import com.example.ui.screens.AdminConsoleScreen
 import com.example.ui.screens.AskDoubtModalSheet
 import com.example.ui.screens.AuthScreen
+import com.example.data.model.ExamCountdownLogic
+import com.example.data.model.SpacedRepetitionLogic
 import com.example.ui.screens.BookmarksScreen
 import com.example.ui.screens.CbtExamScreen
 import com.example.ui.screens.CbtHubScreen
+import com.example.ui.screens.ClinicalToolsScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.DeviceLockSupportDialog
 import com.example.ui.screens.DoubtBoxScreen
@@ -326,6 +329,23 @@ fun RrbNursingApp(vm: MainViewModel) {
         val aiDraftingDoubtId by vm.aiDraftingDoubtId.collectAsStateWithLifecycle()
         val flagQuestionTarget by vm.flagQuestionTarget.collectAsStateWithLifecycle()
         val isFlagBusy by vm.isFlagBusy.collectAsStateWithLifecycle()
+        val isClinicalToolsOpen by vm.isClinicalToolsOpen.collectAsStateWithLifecycle()
+        val targetExamDateIso by vm.targetExamDateIso.collectAsStateWithLifecycle()
+        val srsCards by vm.srsCards.collectAsStateWithLifecycle()
+        val srsNotebookSummary = remember(state.questions, srsCards) {
+            SpacedRepetitionLogic.buildSummary(
+                questions = state.questions,
+                storedCards = srsCards
+            )
+        }
+        val examRoadmap = remember(targetExamDateIso, state.questions.size, state.overall.attemptedUnique, studyGoal.dailyGoalQuestions) {
+            ExamCountdownLogic.computeRoadmap(
+                targetDateIso = targetExamDateIso,
+                totalBankCount = state.questions.size,
+                attemptedCount = state.overall.attemptedUnique,
+                currentDailyGoal = studyGoal.dailyGoalQuestions
+            )
+        }
         val signedInAccount = vm.signedInAccount
 
         val snackbarHostState = remember { SnackbarHostState() }
@@ -455,7 +475,7 @@ fun RrbNursingApp(vm: MainViewModel) {
 
         val inActiveSession = practiceSession != null || cbtSession != null
         val inSubScreen = isSettingsOpen || isProfileOpen || isPlansOpen || isAdminOpen ||
-            isNotificationsOpen || isDoubtBoxOpen || subjectChaptersNav != null
+            isNotificationsOpen || isDoubtBoxOpen || isClinicalToolsOpen || subjectChaptersNav != null
         val shouldKeepScreenOn = keepScreenOn && inActiveSession
 
         DisposableEffect(context, shouldKeepScreenOn) {
@@ -548,6 +568,12 @@ fun RrbNursingApp(vm: MainViewModel) {
                         scope.launch {
                             drawerState.close()
                             vm.openDoubtBox()
+                        }
+                    },
+                    onOpenClinicalTools = {
+                        scope.launch {
+                            drawerState.close()
+                            vm.openClinicalTools()
                         }
                     },
                     onOpenExamPicker = {
@@ -864,6 +890,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onUpdateContentDraft = vm::adminUpdateContentDraft,
                                         onPreviewContentPack = vm::adminPreviewContentPack,
                                         onRemovePreviewQuestion = vm::adminRemovePreviewQuestion,
+                                        onOverridePreviewSubject = vm::adminOverridePreviewQuestionSubject,
                                         onPublishContentPack = vm::adminPublishContentPack,
                                         onDeleteQuestionPack = vm::adminDeleteQuestionPack,
                                         announcements = announcements,
@@ -917,6 +944,12 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onCloseDoubt = vm::closeStudentDoubt,
                                         onDeleteDoubt = vm::deleteStudentDoubt,
                                         onBack = vm::closeDoubtBox
+                                    )
+                                }
+
+                                isClinicalToolsOpen -> {
+                                    ClinicalToolsScreen(
+                                        onBack = vm::closeClinicalTools
                                     )
                                 }
 
@@ -1118,7 +1151,12 @@ fun RrbNursingApp(vm: MainViewModel) {
                                                     examId = activeExamId,
                                                     subject = focusSubject.ifBlank { "MSN" }
                                                 )
-                                            }
+                                            },
+                                            examRoadmap = examRoadmap,
+                                            srsDueCount = srsNotebookSummary.dueEntries.size,
+                                            onSetTargetExamDate = vm::setTargetExamDate,
+                                            onOpenClinicalTools = vm::openClinicalTools,
+                                            onStartSrsDueDrill = vm::startSrsDueDrill
                                         )
 
                                         MainTab.SUBJECTS -> SubjectsHubScreen(
@@ -1171,9 +1209,12 @@ fun RrbNursingApp(vm: MainViewModel) {
 
                                         MainTab.DECK -> BookmarksScreen(
                                             state = state,
+                                            srsSummary = srsNotebookSummary,
                                             onPracticeDeck = { list, title -> vm.startPractice(list, title) },
                                             onOpenPdfExport = { sourceKey -> vm.openPdfExport(defaultSource = sourceKey, defaultLimit = 0) },
-                                            onToggleBookmark = vm::toggleBookmark
+                                            onToggleBookmark = vm::toggleBookmark,
+                                            onResetSrsCard = vm::resetSrsCard,
+                                            onRemoveSrsCard = vm::removeSrsCard
                                         )
                                     }
                                 }

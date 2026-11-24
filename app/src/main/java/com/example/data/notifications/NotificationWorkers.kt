@@ -5,9 +5,12 @@ import android.content.Context
 import android.content.Intent
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.example.BuildConfig
 import com.example.data.local.SettingsPreferences
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.StudyGoalLogic
+import com.example.data.update.AppUpdateChecker
+import com.example.data.update.AppUpdateStatus
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 
@@ -93,6 +96,25 @@ class CloudNotificationSyncWorker(
         }
         freshDirect.maxOfOrNull { it.createdAtMs }?.let {
             settings.setLastNotifiedDirectMs(it)
+        }
+
+        // 3. Check GitHub Releases for a newer ClinEdge APK version and notify once per release
+        runCatching {
+            val update = AppUpdateChecker.checkLatestRelease(BuildConfig.VERSION_NAME)
+            if (update.status == AppUpdateStatus.UPDATE_AVAILABLE &&
+                update.latestVersion.isNotBlank() &&
+                update.latestVersion != settings.getLastNotifiedAppUpdateVersion()
+            ) {
+                val posted = ClinEdgeNotificationManager.postAppUpdateNotification(
+                    context = applicationContext,
+                    latestVersion = update.latestVersion,
+                    releaseTitle = update.releaseTitle,
+                    releaseNotes = update.releaseNotes
+                )
+                if (posted) {
+                    settings.setLastNotifiedAppUpdateVersion(update.latestVersion)
+                }
+            }
         }
 
         return Result.success()

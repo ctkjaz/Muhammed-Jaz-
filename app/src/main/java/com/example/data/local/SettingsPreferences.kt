@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import com.example.data.model.AccountSessionLogic
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.PlatformCatalogDefaults
+import com.example.data.model.SpacedRepetitionLogic
+import com.example.data.model.SrsCardState
 import com.example.data.model.StudyGoalLogic
 import kotlin.math.ceil
 
@@ -131,6 +133,16 @@ class SettingsPreferences(context: Context) {
         prefs.getString(KEY_DISMISSED_BANNER_ANNOUNCEMENT_ID, "") ?: ""
     )
     val dismissedBannerAnnouncementId: StateFlow<String> = _dismissedBannerAnnouncementId.asStateFlow()
+
+    private val _srsCards = MutableStateFlow(
+        SpacedRepetitionLogic.deserializeMap(prefs.getString(KEY_SRS_CARDS_JSON, null))
+    )
+    val srsCards: StateFlow<Map<String, SrsCardState>> = _srsCards.asStateFlow()
+
+    private val _targetExamDateIso = MutableStateFlow(
+        prefs.getString(KEY_TARGET_EXAM_DATE_ISO, "") ?: ""
+    )
+    val targetExamDateIso: StateFlow<String> = _targetExamDateIso.asStateFlow()
 
     private fun readDailyFreeQuotaUsed(): Int {
         val today = StudyGoalLogic.todayDateKey()
@@ -377,6 +389,25 @@ class SettingsPreferences(context: Context) {
         _dismissedBannerAnnouncementId.value = clean
     }
 
+    fun setSrsCards(cards: Map<String, SrsCardState>) {
+        val serialized = SpacedRepetitionLogic.serializeMap(cards)
+        prefs.edit().putString(KEY_SRS_CARDS_JSON, serialized).apply()
+        _srsCards.value = cards
+    }
+
+    fun setTargetExamDateIso(isoDate: String) {
+        val clean = isoDate.trim().take(10)
+        prefs.edit().putString(KEY_TARGET_EXAM_DATE_ISO, clean).apply()
+        _targetExamDateIso.value = clean
+    }
+
+    fun getLastNotifiedAppUpdateVersion(): String =
+        prefs.getString(KEY_LAST_NOTIFIED_APP_UPDATE_VERSION, "") ?: ""
+
+    fun setLastNotifiedAppUpdateVersion(version: String) {
+        prefs.edit().putString(KEY_LAST_NOTIFIED_APP_UPDATE_VERSION, version.trim().take(32)).apply()
+    }
+
     fun getLastSignedInUid(): String = prefs.getString(KEY_LAST_SIGNED_IN_UID, "") ?: ""
 
     fun setLastSignedInUid(uid: String) {
@@ -552,6 +583,9 @@ class SettingsPreferences(context: Context) {
         private const val KEY_LAST_NOTIFIED_ANNOUNCEMENT_MS = "last_notified_announcement_ms"
         private const val KEY_LAST_NOTIFIED_DIRECT_MS = "last_notified_direct_ms"
         private const val KEY_DISMISSED_BANNER_ANNOUNCEMENT_ID = "dismissed_banner_announcement_id"
+        private const val KEY_SRS_CARDS_JSON = "srs_mistake_cards_json"
+        private const val KEY_TARGET_EXAM_DATE_ISO = "target_exam_date_iso"
+        private const val KEY_LAST_NOTIFIED_APP_UPDATE_VERSION = "last_notified_app_update_version"
 
         const val DEFAULT_REMINDER_HOUR = 20
         const val DEFAULT_REMINDER_MINUTE = 0

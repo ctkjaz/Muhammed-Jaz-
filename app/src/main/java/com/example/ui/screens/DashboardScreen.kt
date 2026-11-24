@@ -58,8 +58,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.MedicalServices
+import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.DifficultyFilter
+import com.example.data.model.ExamCountdownLogic
+import com.example.data.model.ExamRoadmapSummary
 import com.example.data.model.ExamStage
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.QuestionItem
@@ -108,8 +118,14 @@ fun DashboardScreen(
     onOpenNotifications: () -> Unit = {},
     onOpenDoubtBox: () -> Unit = {},
     onAskQuickDoubt: () -> Unit = {},
+    examRoadmap: ExamRoadmapSummary = ExamRoadmapSummary(),
+    srsDueCount: Int = 0,
+    onSetTargetExamDate: (String) -> Unit = {},
+    onOpenClinicalTools: () -> Unit = {},
+    onStartSrsDueDrill: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    var showExamDateDialog by remember { mutableStateOf(false) }
     val editorial = MaterialTheme.editorialColors
     val stagePool = state.stageQuestions.ifEmpty { state.questions }
     val diffFiltered = remember(stagePool, difficultyFilter) {
@@ -508,6 +524,182 @@ fun DashboardScreen(
                                 Text(
                                     text = "Edit goal",
                                     style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2a. Target Exam Countdown & Study Roadmap + Clinical Utility Strip
+            item(key = "dashboard_countdown_and_tools") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Card(
+                        onClick = { showExamDateDialog = true },
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                        border = BorderStroke(
+                            1.dp,
+                            if (examRoadmap.isConfigured && examRoadmap.daysRemaining <= 14) editorial.acidLime else editorial.borderSubtle
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("dashboard_exam_countdown_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.CalendarMonth,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = if (examRoadmap.isConfigured) {
+                                                "$examShortName Countdown · ${examRoadmap.formattedDate}"
+                                            } else {
+                                                "Target Exam Countdown & Roadmap"
+                                            },
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = examRoadmap.phaseTitle,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = if (examRoadmap.isConfigured) editorial.acidLime else editorial.elevatedSurface,
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (examRoadmap.isConfigured) editorial.acidLime else editorial.borderSubtle
+                                    )
+                                ) {
+                                    Text(
+                                        text = if (examRoadmap.isConfigured) {
+                                            if (examRoadmap.isExamDayOrPassed) "EXAM DAY" else "${examRoadmap.daysRemaining}d LEFT"
+                                        } else {
+                                            "SET DATE"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (examRoadmap.isConfigured) editorial.onAcidLime else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = examRoadmap.phaseGuidance,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (examRoadmap.isConfigured) {
+                                Text(
+                                    text = "Suggested pace: ${examRoadmap.recommendedDailyQs} MCQs/day · ${examRoadmap.unattemptedCount} unseen in bank",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Card(
+                            onClick = onOpenClinicalTools,
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                            border = BorderStroke(1.dp, editorial.borderSubtle),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("dashboard_clinical_tools_card")
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.MedicalServices,
+                                    contentDescription = null,
+                                    tint = editorial.acidLime,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Clinical Tools",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "6 Calcs · 36 Labs",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Card(
+                            onClick = {
+                                if (srsDueCount > 0) onStartSrsDueDrill() else onSelectTab(MainTab.DECK)
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (srsDueCount > 0) editorial.acidLime.copy(alpha = 0.14f) else editorial.cardSurface
+                            ),
+                            border = BorderStroke(
+                                1.dp,
+                                if (srsDueCount > 0) editorial.acidLime.copy(alpha = 0.65f) else editorial.borderSubtle
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("dashboard_srs_due_card")
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Psychology,
+                                    contentDescription = null,
+                                    tint = if (srsDueCount > 0) editorial.acidLime else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = if (srsDueCount > 0) "SRS Due ($srsDueCount)" else "SRS Notebook",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = if (srsDueCount > 0) "Tap to drill now" else "1d · 3d · 7d · 14d",
+                                    style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -1016,6 +1208,109 @@ fun DashboardScreen(
                 }
             }
         }
+    }
+
+    if (showExamDateDialog) {
+        var dateInput by remember(examRoadmap.targetDateIso) {
+            mutableStateOf(examRoadmap.targetDateIso.ifBlank { ExamCountdownLogic.isoDateAfterDays(60) })
+        }
+        var dateError by remember { mutableStateOf<String?>(null) }
+        AlertDialog(
+            onDismissRequest = { showExamDateDialog = false },
+            title = {
+                Text(
+                    text = "Set Target Exam Date",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Choose a quick countdown preset or enter your exact exam date (YYYY-MM-DD) to personalize your study roadmap.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(30 to "In 30d", 60 to "In 60d", 90 to "In 90d", 120 to "In 120d").forEach { (days, label) ->
+                            val presetIso = ExamCountdownLogic.isoDateAfterDays(days)
+                            OutlinedButton(
+                                onClick = {
+                                    dateInput = presetIso
+                                    dateError = null
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier.heightIn(min = 40.dp)
+                            ) {
+                                Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = dateInput,
+                        onValueChange = {
+                            dateInput = it.take(10)
+                            dateError = null
+                        },
+                        label = { Text("Exam Date (YYYY-MM-DD)") },
+                        placeholder = { Text("2026-09-15") },
+                        singleLine = true,
+                        isError = dateError != null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("exam_countdown_date_input")
+                    )
+                    if (dateError != null) {
+                        Text(
+                            text = dateError!!,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = editorial.wrongText
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val trimmed = dateInput.trim()
+                        if (ExamCountdownLogic.daysUntil(trimmed) == null) {
+                            dateError = "Use valid YYYY-MM-DD format (e.g., ${ExamCountdownLogic.isoDateAfterDays(45)})"
+                        } else {
+                            onSetTargetExamDate(trimmed)
+                            showExamDateDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = editorial.acidLime,
+                        contentColor = editorial.onAcidLime
+                    ),
+                    modifier = Modifier.testTag("exam_countdown_save_btn")
+                ) {
+                    Text("Save Date", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (examRoadmap.isConfigured) {
+                        TextButton(
+                            onClick = {
+                                onSetTargetExamDate("")
+                                showExamDateDialog = false
+                            }
+                        ) {
+                            Text("Clear", color = editorial.wrongText)
+                        }
+                    }
+                    TextButton(onClick = { showExamDateDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            }
+        )
     }
 }
 

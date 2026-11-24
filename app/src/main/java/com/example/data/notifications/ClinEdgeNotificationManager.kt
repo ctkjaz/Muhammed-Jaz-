@@ -26,6 +26,7 @@ object ClinEdgeNotificationManager {
     const val CHANNEL_DAILY_REMINDER = "clinedge_daily_reminders"
     const val CHANNEL_EXAM_ALERTS = "clinedge_exam_alerts"
     const val CHANNEL_PERSONAL_DOUBTS = "clinedge_personal_doubts"
+    const val CHANNEL_APP_UPDATES = "clinedge_app_updates"
 
     const val WORK_DAILY_REMINDER = "clinedge_daily_study_reminder_work"
     const val WORK_CLOUD_SYNC = "clinedge_cloud_alert_sync_work"
@@ -35,10 +36,12 @@ object ClinEdgeNotificationManager {
     const val TARGET_DAILY_DRILL = "daily_drill"
     const val TARGET_NOTIFICATIONS = "notifications"
     const val TARGET_DOUBTS = "doubts"
+    const val TARGET_APP_UPDATE = "app_update"
 
     private const val NOTIF_ID_DAILY_REMINDER = 41001
     private const val NOTIF_ID_ANNOUNCEMENT_BASE = 42000
     private const val NOTIF_ID_DIRECT_BASE = 43000
+    private const val NOTIF_ID_APP_UPDATE = 44001
 
     fun ensureChannelsCreated(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -64,6 +67,13 @@ object ClinEdgeNotificationManager {
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Direct faculty replies to your Doubt Box questions and personal notices."
+            },
+            NotificationChannel(
+                CHANNEL_APP_UPDATES,
+                "App Updates",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Alerts whenever a new version of ClinEdge is released with new features or question banks."
             }
         )
         manager.createNotificationChannels(channels)
@@ -134,22 +144,46 @@ object ClinEdgeNotificationManager {
         context: Context,
         announcement: CloudAnnouncement
     ): Boolean {
-        val prefix = if (announcement.priorityEnum == AnnouncementPriority.URGENT) "URGENT • " else ""
+        val isAppUpdate = announcement.categoryEnum == AnnouncementCategory.APP_UPDATE
+        val prefix = if (announcement.priorityEnum == AnnouncementPriority.URGENT && !isAppUpdate) "URGENT • " else ""
         val categoryTag = announcement.categoryEnum.label
         val notifId = NOTIF_ID_ANNOUNCEMENT_BASE + (announcement.announcementId.hashCode() and 0x0FFF)
         return postTrayNotification(
             context = context,
-            channelId = CHANNEL_EXAM_ALERTS,
+            channelId = if (isAppUpdate) CHANNEL_APP_UPDATES else CHANNEL_EXAM_ALERTS,
             notificationId = notifId,
             title = "$prefix${announcement.title}",
             body = announcement.body,
             subText = categoryTag,
-            priority = if (announcement.priorityEnum == AnnouncementPriority.URGENT) {
+            priority = if (announcement.priorityEnum == AnnouncementPriority.URGENT || isAppUpdate) {
                 NotificationCompat.PRIORITY_HIGH
             } else {
                 NotificationCompat.PRIORITY_DEFAULT
             },
-            openTarget = TARGET_NOTIFICATIONS
+            openTarget = if (isAppUpdate) TARGET_APP_UPDATE else TARGET_NOTIFICATIONS
+        )
+    }
+
+    fun postAppUpdateNotification(
+        context: Context,
+        latestVersion: String,
+        releaseTitle: String,
+        releaseNotes: String
+    ): Boolean {
+        val cleanVer = latestVersion.removePrefix("v").removePrefix("V").trim()
+        val title = releaseTitle.ifBlank { "ClinEdge v$cleanVer Available" }
+        val body = releaseNotes.ifBlank {
+            "A new version of ClinEdge (v$cleanVer) is ready to download. Tap to update now."
+        }
+        return postTrayNotification(
+            context = context,
+            channelId = CHANNEL_APP_UPDATES,
+            notificationId = NOTIF_ID_APP_UPDATE,
+            title = title,
+            body = body,
+            subText = "App Update",
+            priority = NotificationCompat.PRIORITY_HIGH,
+            openTarget = TARGET_APP_UPDATE
         )
     }
 

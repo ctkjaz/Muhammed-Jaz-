@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -51,6 +52,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.BuildConfig
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.notifications.AnnouncementCategory
 import com.example.data.notifications.AnnouncementPriority
@@ -59,6 +61,7 @@ import com.example.data.notifications.CloudDoubt
 import com.example.data.notifications.DoubtStatus
 import com.example.data.notifications.EngagementLogic
 import com.example.data.subscription.AdminUserDirectoryRow
+import com.example.data.update.AppUpdateVersionLogic
 import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.components.SegmentedPillBar
 import com.example.ui.theme.AcidLime
@@ -159,6 +162,94 @@ internal fun AdminAlertsTabContent(
         }
 
         if (modeIndex == 0) {
+            item(key = "app_update_quick_push_card") {
+                val appVer = BuildConfig.VERSION_NAME
+                val defaultTitle = "ClinEdge v$appVer Update Available"
+                val defaultBody = "A new version of ClinEdge (v$appVer) is live with new clinical study tools, fixes, and performance upgrades. Tap to download the latest APK."
+                val defaultUrl = AppUpdateVersionLogic.GITHUB_RELEASES_WEB_URL
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = editorial.acidLime.copy(alpha = 0.12f)),
+                    border = BorderStroke(1.dp, editorial.acidLime.copy(alpha = 0.55f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.SystemUpdate,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Push App Update Alert to All Users",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "Notifies every student's Android tray and top banner with the direct GitHub Releases update link (v$appVer).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    broadcastTitle = defaultTitle
+                                    broadcastBody = defaultBody
+                                    broadcastCategory = AnnouncementCategory.APP_UPDATE
+                                    broadcastTargetExam = "all"
+                                    broadcastPriority = AnnouncementPriority.URGENT
+                                    broadcastUrl = defaultUrl
+                                    broadcastError = null
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, editorial.borderSubtle),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 44.dp)
+                                    .testTag("admin_fill_app_update_btn")
+                            ) {
+                                Text("Pre-fill v$appVer", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Button(
+                                onClick = {
+                                    onPublishAnnouncement(
+                                        defaultTitle,
+                                        defaultBody,
+                                        AnnouncementCategory.APP_UPDATE,
+                                        "all",
+                                        AnnouncementPriority.URGENT,
+                                        defaultUrl
+                                    ) { }
+                                },
+                                enabled = !isMutating,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = editorial.acidLime,
+                                    contentColor = editorial.onAcidLime
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 44.dp)
+                                    .testTag("admin_push_app_update_now_btn")
+                            ) {
+                                Text("Push to All", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+
             item(key = "broadcast_composer") {
                 Card(
                     shape = RoundedCornerShape(18.dp),

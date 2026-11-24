@@ -806,12 +806,15 @@ class SubscriptionRepository(
                 "pack"
             )
             val safeStage = if (stage in listOf("all", "prelims", "mains")) stage else "all"
+            val isAutoSubject = subject.equals(com.example.data.parser.QuestionSubjectClassifier.AUTO_SUBJECT_CODE, ignoreCase = true)
+            val packSubjectLabel = if (isAutoSubject) "Mixed" else subject.trim().ifBlank { "MSN" }
+            val fallbackQuestionSubject = if (isAutoSubject) "MSN" else subject.trim().ifBlank { "MSN" }
             val packMetaPayload = mapOf<String, Any>(
                 "packId" to packId,
                 "title" to title.trim().ifBlank { "ClinEdge Question Pack" }.take(120),
                 "examId" to examId.trim().ifBlank { "aiims_norcet" }.take(64),
                 "stage" to safeStage,
-                "subject" to subject.trim().take(40),
+                "subject" to packSubjectLabel.take(40),
                 "questionCount" to questions.size,
                 "isPremiumOnly" to isPremiumOnly,
                 "status" to "published",
@@ -846,7 +849,7 @@ class SubscriptionRepository(
                         "examId" to examId.trim().ifBlank { "aiims_norcet" }.take(64),
                         "category" to q.category.ifBlank { "nur" }.take(32),
                         "shiftYear" to shiftYearLabel.take(40),
-                        "subject" to (q.subject.ifBlank { subject.ifBlank { "MSN" } }).take(40),
+                        "subject" to (q.subject.ifBlank { fallbackQuestionSubject }).take(40),
                         "difficulty" to q.difficulty.label,
                         "questionText" to q.questionText.trim().ifBlank { "Untitled question" }.take(2000),
                         "options" to safeOptions,

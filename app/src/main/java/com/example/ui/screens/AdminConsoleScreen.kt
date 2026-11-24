@@ -56,9 +56,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.draw.clip
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.SubjectCatalog
+import com.example.data.parser.QuestionSubjectClassifier
 import com.example.data.notifications.AnnouncementCategory
 import com.example.data.notifications.AnnouncementPriority
 import com.example.data.notifications.CloudAnnouncement
@@ -111,6 +116,7 @@ fun AdminConsoleScreen(
     onUpdateContentDraft: ((AdminContentDraftState) -> AdminContentDraftState) -> Unit,
     onPreviewContentPack: () -> Unit,
     onRemovePreviewQuestion: (Int) -> Unit,
+    onOverridePreviewSubject: (Int, String) -> Unit = { _, _ -> },
     onPublishContentPack: () -> Unit,
     onDeleteQuestionPack: (packId: String, title: String) -> Unit,
     announcements: List<CloudAnnouncement> = emptyList(),
@@ -287,6 +293,7 @@ fun AdminConsoleScreen(
                     onUpdateDraft = onUpdateContentDraft,
                     onPreview = onPreviewContentPack,
                     onRemovePreview = onRemovePreviewQuestion,
+                    onOverridePreviewSubject = onOverridePreviewSubject,
                     onPublish = onPublishContentPack,
                     onDeletePack = onDeleteQuestionPack
                 )
@@ -853,6 +860,7 @@ private fun AdminDeviceLocksTab(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AdminContentPushTab(
     draft: AdminContentDraftState,
@@ -861,10 +869,15 @@ private fun AdminContentPushTab(
     onUpdateDraft: ((AdminContentDraftState) -> AdminContentDraftState) -> Unit,
     onPreview: () -> Unit,
     onRemovePreview: (Int) -> Unit,
+    onOverridePreviewSubject: (Int, String) -> Unit,
     onPublish: () -> Unit,
     onDeletePack: (String, String) -> Unit
 ) {
     val editorial = MaterialTheme.editorialColors
+    var editingSubjectQuestionIdx by remember { mutableStateOf<Int?>(null) }
+    val distributionSummary = remember(draft.previewQuestions) {
+        QuestionSubjectClassifier.summarizeSubjectDistribution(draft.previewQuestions)
+    }
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -959,11 +972,36 @@ private fun AdminContentPushTab(
                         modifier = Modifier.horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        MonochromeFilterPill(
+                            label = "All / Auto-PYQ",
+                            selected = draft.subject == QuestionSubjectClassifier.AUTO_SUBJECT_CODE,
+                            onClick = {
+                                onUpdateDraft {
+                                    it.copy(subject = QuestionSubjectClassifier.AUTO_SUBJECT_CODE)
+                                }
+                            },
+                            modifier = Modifier.testTag("admin_subject_auto_pyq_pill")
+                        )
                         SubjectCatalog.ALL_SUBJS.forEach { subj ->
                             MonochromeFilterPill(
                                 label = subj.code,
                                 selected = draft.subject == subj.code,
                                 onClick = { onUpdateDraft { it.copy(subject = subj.code) } }
+                            )
+                        }
+                    }
+                    if (draft.subject == QuestionSubjectClassifier.AUTO_SUBJECT_CODE) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = editorial.acidLime.copy(alpha = 0.14f),
+                            border = BorderStroke(1.dp, editorial.acidLime.copy(alpha = 0.45f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Auto-PYQ Scanner enabled: tapping Parse & Preview scans every question and automatically distributes it across MSN, OBG, Pharm, Peds, CHN, Psych, FON, Anat, Admin & Non-Tech subjects.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
                             )
                         }
                     }
@@ -1074,14 +1112,48 @@ private fun AdminContentPushTab(
 
         if (draft.previewQuestions.isNotEmpty()) {
             item(key = "preview_title") {
-                Text(
-                    text = "Preview Parsed Questions (${draft.previewQuestions.size})",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Preview Parsed Questions (${draft.previewQuestions.size})",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (distributionSummary.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "Subject Distribution (${distributionSummary.size} ${if (distributionSummary.size == 1) "subject" else "subjects"} — tap any Q badge to adjust)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState())
+                                    .testTag("admin_subject_distribution_bar"),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                distributionSummary.forEach { (code, count) ->
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = editorial.acidLime.copy(alpha = 0.16f),
+                                        border = BorderStroke(1.dp, editorial.acidLime.copy(alpha = 0.5f))
+                                    ) {
+                                        Text(
+                                            text = "$code: $count",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             itemsIndexed(
-                items = draft.previewQuestions.take(25),
+                items = draft.previewQuestions.take(30),
                 key = { idx, q -> "${q.id}_$idx" }
             ) { idx, q ->
                 Card(
@@ -1097,8 +1169,40 @@ private fun AdminContentPushTab(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.Top
                     ) {
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text("Q${idx + 1}. ${q.questionText}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = editorial.acidLime,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable { editingSubjectQuestionIdx = idx }
+                                        .testTag("admin_preview_subject_badge_$idx")
+                                ) {
+                                    Text(
+                                        text = "${q.subject.ifBlank { "MSN" }} ▾",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                        fontWeight = FontWeight.Bold,
+                                        color = editorial.onAcidLime,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                    )
+                                }
+                                Text(
+                                    text = "Q${idx + 1}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = q.questionText,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             Text(
                                 "Ans: ${'A' + q.correctIndex}. ${q.options.getOrElse(q.correctIndex) { "" }}",
                                 style = MaterialTheme.typography.labelSmall,
@@ -1147,6 +1251,53 @@ private fun AdminContentPushTab(
                     }
                 }
             }
+        }
+    }
+
+    editingSubjectQuestionIdx?.let { qIdx ->
+        val currentQ = draft.previewQuestions.getOrNull(qIdx)
+        if (currentQ != null) {
+            AlertDialog(
+                onDismissRequest = { editingSubjectQuestionIdx = null },
+                title = {
+                    Text(
+                        text = "Change Subject for Q${qIdx + 1}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = currentQ.questionText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            SubjectCatalog.ALL_SUBJS.forEach { subj ->
+                                MonochromeFilterPill(
+                                    label = subj.code,
+                                    selected = currentQ.subject == subj.code,
+                                    onClick = {
+                                        onOverridePreviewSubject(qIdx, subj.code)
+                                        editingSubjectQuestionIdx = null
+                                    }
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { editingSubjectQuestionIdx = null }) {
+                        Text("Close")
+                    }
+                }
+            )
         }
     }
 }
