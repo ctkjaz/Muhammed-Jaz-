@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -123,6 +124,8 @@ fun SettingsScreen(
     keepScreenOn: Boolean,
     dailyGoalQuestions: Int,
     dailyReminder: DailyReminderSettingsState = DailyReminderSettingsState(),
+    backgroundPushEnabled: Boolean = true,
+    lastBackgroundSyncMs: Long = 0L,
     backupFolderSummary: BackupFolderSummary = BackupFolderSummary(),
     isBackupBusy: Boolean = false,
     appUpdateState: AppUpdateUiState = AppUpdateUiState(),
@@ -140,6 +143,8 @@ fun SettingsScreen(
     onDailyReminderTimeChange: (Int, Int) -> Unit = { _, _ -> },
     onDailyReminderSmartNudgeChange: (Boolean) -> Unit = {},
     onSendTestReminder: () -> Unit = {},
+    onBackgroundPushEnabledChange: (Boolean) -> Unit = {},
+    onTriggerBackgroundSyncNow: () -> Unit = {},
     onReopenOnboarding: () -> Unit,
     onOpenPlans: () -> Unit = {},
     onOpenAdminConsole: () -> Unit = {},
@@ -166,22 +171,27 @@ fun SettingsScreen(
     var showResetStatsDialog by remember { mutableStateOf(false) }
     var showRestoreOptionsDialog by remember { mutableStateOf(false) }
     var showReminderTimePicker by remember { mutableStateOf(false) }
+    var notifPermissionGranted by remember {
+        mutableStateOf(ClinEdgeNotificationManager.hasNotificationPermission(context))
+    }
     var notifPermissionDenied by remember { mutableStateOf(false) }
-    var pendingTestAfterPermission by remember { mutableStateOf(false) }
+    var pendingActionAfterPermission by remember { mutableStateOf<String?>(null) }
 
     val notifPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
+        notifPermissionGranted = granted
+        val action = pendingActionAfterPermission
+        pendingActionAfterPermission = null
         if (granted) {
             notifPermissionDenied = false
-            if (pendingTestAfterPermission) {
-                pendingTestAfterPermission = false
-                onSendTestReminder()
-            } else {
-                onDailyReminderEnabledChange(true)
+            when (action) {
+                "test_reminder" -> onSendTestReminder()
+                "enable_bg_push" -> onBackgroundPushEnabledChange(true)
+                "test_bg_push" -> onTriggerBackgroundSyncNow()
+                else -> onDailyReminderEnabledChange(true)
             }
         } else {
-            pendingTestAfterPermission = false
             notifPermissionDenied = true
         }
     }
@@ -190,9 +200,10 @@ fun SettingsScreen(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             !ClinEdgeNotificationManager.hasNotificationPermission(context)
         ) {
-            pendingTestAfterPermission = false
+            pendingActionAfterPermission = "enable_reminder"
             notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
+            notifPermissionGranted = true
             notifPermissionDenied = false
             onDailyReminderEnabledChange(true)
         }
@@ -202,11 +213,38 @@ fun SettingsScreen(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             !ClinEdgeNotificationManager.hasNotificationPermission(context)
         ) {
-            pendingTestAfterPermission = true
+            pendingActionAfterPermission = "test_reminder"
             notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
+            notifPermissionGranted = true
             notifPermissionDenied = false
             onSendTestReminder()
+        }
+    }
+
+    fun requestOrEnableBackgroundPush() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !ClinEdgeNotificationManager.hasNotificationPermission(context)
+        ) {
+            pendingActionAfterPermission = "enable_bg_push"
+            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            notifPermissionGranted = true
+            notifPermissionDenied = false
+            onBackgroundPushEnabledChange(true)
+        }
+    }
+
+    fun requestOrTestBackgroundPush() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !ClinEdgeNotificationManager.hasNotificationPermission(context)
+        ) {
+            pendingActionAfterPermission = "test_bg_push"
+            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            notifPermissionGranted = true
+            notifPermissionDenied = false
+            onTriggerBackgroundSyncNow()
         }
     }
 
@@ -687,6 +725,182 @@ fun SettingsScreen(
             }
 
             // 5b. Daily Study Reminders & Notifications
+            // 5a. Background Push Alerts & App Updates (works even when app is closed)
+            item {
+                val batteryUnrestricted = remember(context, backgroundPushEnabled, lastBackgroundSyncMs) {
+                    ClinEdgeNotificationManager.isIgnoringBatteryOptimizations(context)
+                }
+                val syncLabel = remember(lastBackgroundSyncMs) {
+                    if (lastBackgroundSyncMs <= 0L) {
+                        "Scheduled every 15–20 min"
+                    } else {
+                        val diffMins = ((System.currentTimeMillis() - lastBackgroundSyncMs) / 60_000L).coerceAtLeast(0L)
+                        when {
+                            diffMins < 1L -> "Last synced just now"
+                            diffMins < 60L -> "Last synced ${diffMins}m ago"
+                            else -> "Last synced ${diffMins / 60L}h ago"
+                        }
+                    }
+                }
+                SettingsSectionCard(
+                    title = "Background Push & Update Alerts",
+                    icon = Icons.Filled.SystemUpdate,
+                    cardTag = "settings_card_background_push"
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 12.dp)
+                        ) {
+                            Text(
+                                text = "Background push notifications",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = if (backgroundPushEnabled) {
+                                    "Delivers exam alerts, doubt replies, renewal notices & app updates even when ClinEdge is closed ($syncLabel)."
+                                } else {
+                                    "Paused — alerts will only appear when you open ClinEdge."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = backgroundPushEnabled,
+                            onCheckedChange = { checked ->
+                                if (checked) requestOrEnableBackgroundPush()
+                                else onBackgroundPushEnabledChange(false)
+                            },
+                            colors = limeSwitchColors,
+                            modifier = Modifier.testTag("settings_bg_push_switch")
+                        )
+                    }
+
+                    if (!notifPermissionGranted) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = editorial.wrongBg,
+                            border = BorderStroke(1.dp, editorial.wrongText.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Android notification permission is OFF — allow it to receive closed-app alerts.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = editorial.wrongText,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(
+                                    onClick = {
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notifPermissionDenied) {
+                                            requestOrEnableBackgroundPush()
+                                        } else {
+                                            runCatching {
+                                                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                                }
+                                                context.startActivity(intent)
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("settings_allow_notif_perm_btn")
+                                ) {
+                                    Text("Allow", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    if (!batteryUnrestricted && backgroundPushEnabled) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = editorial.elevatedSurface,
+                            border = BorderStroke(1.dp, AcidLime.copy(alpha = 0.45f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(end = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = "Battery saver may delay alerts",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Set ClinEdge to Unrestricted in Android battery settings for instant closed-app push on ColorOS / MIUI / OneUI.",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        runCatching {
+                                            context.startActivity(
+                                                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                            )
+                                        }.onFailure {
+                                            runCatching {
+                                                context.startActivity(
+                                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                                        data = Uri.fromParts("package", context.packageName, null)
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("settings_battery_unrestricted_btn")
+                                ) {
+                                    Text("Fix", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { requestOrTestBackgroundPush() },
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, AcidLime.copy(alpha = 0.7f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("settings_test_bg_push_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.NotificationsActive,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Sync & Test Background Push Now", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
             item {
                 val formattedTime = EngagementLogic.formatReminderTime(dailyReminder.hour, dailyReminder.minute)
                 SettingsSectionCard(

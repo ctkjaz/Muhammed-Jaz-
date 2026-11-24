@@ -75,6 +75,7 @@ import com.example.data.model.ExamRoadmapSummary
 import com.example.data.model.ExamStage
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.QuestionItem
+import com.example.data.model.SmartStudyPlanSummary
 import com.example.data.notifications.CloudAnnouncement
 import com.example.data.notifications.DailyReminderSettingsState
 import com.example.data.notifications.EngagementLogic
@@ -84,6 +85,7 @@ import com.example.data.subscription.SubscriptionUiState
 import com.example.ui.components.AcidLimeProgressBar
 import com.example.ui.components.DifficultyFilterBar
 import com.example.ui.components.SegmentedPillBar
+import com.example.ui.components.SmartWeakTopicDashboardCard
 import com.example.ui.theme.MonoFontFamily
 import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.DashboardDerivedState
@@ -129,6 +131,9 @@ fun DashboardScreen(
     grandTestEnabled: Boolean = false,
     liveGrandTest: CloudGrandTest? = null,
     onOpenGrandTestHub: () -> Unit = {},
+    smartStudyPlan: SmartStudyPlanSummary? = null,
+    onStartSmartWeakDrill: () -> Unit = {},
+    onStartRecoveryDayDrill: (String, Int) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var showExamDateDialog by remember { mutableStateOf(false) }
@@ -1127,6 +1132,17 @@ fun DashboardScreen(
                                 .testTag("pathway_by_subject_card")
                         )
                     }
+                }
+            }
+
+            // 5b. Smart Weak-Topic Auto-Drill & 7-Day Recovery Plan
+            if (smartStudyPlan != null && smartStudyPlan.diagnostics.isNotEmpty()) {
+                item {
+                    SmartWeakTopicDashboardCard(
+                        plan = smartStudyPlan,
+                        onStartSmartAutoDrill = onStartSmartWeakDrill,
+                        onStartSubjectRecoveryDrill = onStartRecoveryDayDrill
+                    )
                 }
             }
 

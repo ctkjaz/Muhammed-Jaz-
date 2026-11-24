@@ -12,6 +12,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.Source
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -169,15 +170,18 @@ class CloudEngagementRepository(
     suspend fun fetchRecentAnnouncementsOnce(limit: Long = 20): List<CloudAnnouncement> {
         if (auth.currentUser == null) return emptyList()
         return try {
-            announcementsCol()
+            val query = announcementsCol()
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(limit)
-                .get()
-                .await()
-                .toObjects(
-                    CloudAnnouncement::class.java,
-                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                )
+            val snap = try {
+                query.get(Source.SERVER).await()
+            } catch (_: Exception) {
+                query.get().await()
+            }
+            snap.toObjects(
+                CloudAnnouncement::class.java,
+                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -190,15 +194,18 @@ class CloudEngagementRepository(
         if (auth.currentUser?.uid != userId) return emptyList()
         val path = "users/$userId/notifications"
         return try {
-            directNotificationsCol(userId)
+            val query = directNotificationsCol(userId)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(limit)
-                .get()
-                .await()
-                .toObjects(
-                    CloudDirectNotification::class.java,
-                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                )
+            val snap = try {
+                query.get(Source.SERVER).await()
+            } catch (_: Exception) {
+                query.get().await()
+            }
+            snap.toObjects(
+                CloudDirectNotification::class.java,
+                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+            )
                 .filter { !it.read }
         } catch (e: CancellationException) {
             throw e

@@ -1,10 +1,12 @@
 package com.example.ui
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.OpenableColumns
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -102,6 +104,8 @@ import com.example.data.local.ThemePreference
 import com.example.data.model.ExamStage
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.PracticePathway
+import com.example.data.model.SmartWeakTopicPlanner
+import com.example.data.notifications.ClinEdgeNotificationManager
 import com.example.data.notifications.CloudEngagementRepository
 import com.example.data.repository.NursingPrepRepository
 import com.example.data.subscription.DeviceLockManager
@@ -319,6 +323,8 @@ fun RrbNursingApp(vm: MainViewModel) {
         val studentDoubts by vm.studentDoubts.collectAsStateWithLifecycle()
         val adminDoubts by vm.adminDoubts.collectAsStateWithLifecycle()
         val dailyReminder by vm.dailyReminderState.collectAsStateWithLifecycle()
+        val backgroundPushEnabled by vm.backgroundPushEnabled.collectAsStateWithLifecycle()
+        val lastBackgroundSyncMs by vm.lastBackgroundSyncMs.collectAsStateWithLifecycle()
         val unreadSummary by vm.unreadSummary.collectAsStateWithLifecycle()
         val activeUrgentBanner by vm.activeUrgentBanner.collectAsStateWithLifecycle()
         val isNotificationsOpen by vm.isNotificationsOpen.collectAsStateWithLifecycle()
@@ -352,6 +358,13 @@ fun RrbNursingApp(vm: MainViewModel) {
                 storedCards = srsCards
             )
         }
+        val smartStudyPlan = remember(state.stageQuestions, state.questions, srsCards, studyGoal.dailyGoalQuestions) {
+            SmartWeakTopicPlanner.buildPlan(
+                questions = state.stageQuestions.ifEmpty { state.questions },
+                srsCards = srsCards,
+                dailyGoalQuestions = studyGoal.dailyGoalQuestions
+            )
+        }
         val examRoadmap = remember(targetExamDateIso, state.questions.size, state.overall.attemptedUnique, studyGoal.dailyGoalQuestions) {
             ExamCountdownLogic.computeRoadmap(
                 targetDateIso = targetExamDateIso,
@@ -368,6 +381,29 @@ fun RrbNursingApp(vm: MainViewModel) {
         val context = LocalContext.current
         val lifecycleOwner = LocalLifecycleOwner.current
         val credentialManager = remember(context) { CredentialManager.create(context) }
+
+        val startupNotifPermissionLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { granted ->
+            if (granted) {
+                ClinEdgeNotificationManager.scheduleCloudAlertSync(
+                    context = context,
+                    triggerImmediateCheck = true
+                )
+            }
+        }
+
+        LaunchedEffect(signedInAccount.uid) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val prefs = SettingsPreferences(context)
+                if (!ClinEdgeNotificationManager.hasNotificationPermission(context) &&
+                    !prefs.hasPromptedNotificationPermission()
+                ) {
+                    prefs.markNotificationPermissionPrompted()
+                    startupNotifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+        }
 
         val performSignOut: () -> Unit = {
             signOut(
@@ -389,8 +425,10 @@ fun RrbNursingApp(vm: MainViewModel) {
 
         DisposableEffect(lifecycleOwner, vm) {
             val observer = LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_RESUME) {
-                    vm.verifyActiveSessionOnResume()
+                when (event) {
+                    Lifecycle.Event.ON_RESUME -> vm.verifyActiveSessionOnResume()
+                    Lifecycle.Event.ON_STOP -> vm.onAppEnteredBackground()
+                    else -> Unit
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
@@ -1014,6 +1052,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         keepScreenOn = keepScreenOn,
                                         dailyGoalQuestions = studyGoal.dailyGoalQuestions,
                                         dailyReminder = dailyReminder,
+                                        backgroundPushEnabled = backgroundPushEnabled,
+                                        lastBackgroundSyncMs = lastBackgroundSyncMs,
                                         backupFolderSummary = backupFolderSummary,
                                         isBackupBusy = isBackupBusy,
                                         appUpdateState = appUpdateState,
@@ -1031,6 +1071,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onDailyReminderTimeChange = vm::setDailyReminderTime,
                                         onDailyReminderSmartNudgeChange = vm::setDailyReminderSmartNudge,
                                         onSendTestReminder = vm::sendTestDailyReminder,
+                                        onBackgroundPushEnabledChange = vm::setBackgroundPushEnabled,
+                                        onTriggerBackgroundSyncNow = vm::triggerBackgroundPushSyncNow,
                                         onReopenOnboarding = vm::reopenOnboarding,
                                         onOpenPlans = vm::openPlans,
                                         onOpenAdminConsole = vm::openAdminConsole,
@@ -1192,7 +1234,12 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onStartSrsDueDrill = vm::startSrsDueDrill,
                                             grandTestEnabled = grandTestEnabled,
                                             liveGrandTest = liveGrandTest,
-                                            onOpenGrandTestHub = vm::openGrandTestHub
+                                            onOpenGrandTestHub = vm::openGrandTestHub,
+                                            smartStudyPlan = smartStudyPlan,
+                                            onStartSmartWeakDrill = { vm.startSmartWeakTopicDrill() },
+                                            onStartRecoveryDayDrill = { subjCode, count ->
+                                                vm.startSmartWeakTopicDrill(subjectCode = subjCode, targetCount = count)
+                                            }
                                         )
 
                                         MainTab.SUBJECTS -> SubjectsHubScreen(

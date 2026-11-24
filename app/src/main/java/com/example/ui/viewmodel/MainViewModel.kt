@@ -68,6 +68,7 @@ import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
 import com.example.data.model.QuestionSourceType
 import com.example.data.model.SessionCheckResult
+import com.example.data.model.SmartWeakTopicPlanner
 import com.example.data.model.SpacedRepetitionLogic
 import com.example.data.model.SrsCardState
 import com.example.data.model.SrsNotebookSummary
@@ -559,6 +560,8 @@ class MainViewModel(
     val srsCards: StateFlow<Map<String, SrsCardState>> = settings.srsCards
 
     val lastSeenAnnouncementMs: StateFlow<Long> = settings.lastSeenAnnouncementMs
+    val backgroundPushEnabled: StateFlow<Boolean> = settings.backgroundPushEnabled
+    val lastBackgroundSyncMs: StateFlow<Long> = settings.lastBackgroundSyncMs
 
     val dailyReminderState: StateFlow<DailyReminderSettingsState> = combine(
         settings.dailyReminderEnabled,
@@ -1297,11 +1300,18 @@ class MainViewModel(
                                     !it.createdByEmail.equals(signedInAccount.email, ignoreCase = true)
                             }.sortedBy { it.createdAtMs }
                             appContext?.let { ctx ->
+                                var highestPostedMs = lastNotified
                                 fresh.takeLast(2).forEach { ann ->
-                                    ClinEdgeNotificationManager.postAnnouncementNotification(ctx, ann)
+                                    if (ClinEdgeNotificationManager.postAnnouncementNotification(ctx, ann)) {
+                                        highestPostedMs = maxOf(highestPostedMs, ann.createdAtMs)
+                                    }
+                                }
+                                if (highestPostedMs > lastNotified) {
+                                    settings.setLastNotifiedAnnouncementMs(highestPostedMs)
+                                } else if (fresh.isEmpty() && ClinEdgeNotificationManager.hasNotificationPermission(ctx)) {
+                                    settings.setLastNotifiedAnnouncementMs(newestMs)
                                 }
                             }
-                            settings.setLastNotifiedAnnouncementMs(newestMs)
                         }
                     }
             }
@@ -1322,11 +1332,16 @@ class MainViewModel(
                             .sortedBy { it.createdAtMs }
                         if (fresh.isNotEmpty()) {
                             appContext?.let { ctx ->
+                                var highestPostedMs = lastNotified
                                 fresh.takeLast(2).forEach { notif ->
-                                    ClinEdgeNotificationManager.postDirectNotification(ctx, notif)
+                                    if (ClinEdgeNotificationManager.postDirectNotification(ctx, notif)) {
+                                        highestPostedMs = maxOf(highestPostedMs, notif.createdAtMs)
+                                    }
+                                }
+                                if (highestPostedMs > lastNotified) {
+                                    settings.setLastNotifiedDirectMs(highestPostedMs)
                                 }
                             }
-                            settings.setLastNotifiedDirectMs(fresh.maxOf { it.createdAtMs })
                         }
                     }
             }
@@ -1807,6 +1822,26 @@ class MainViewModel(
         startPractice(pool, title)
     }
 
+    fun startSmartWeakTopicDrill(subjectCode: String? = null, targetCount: Int = 20) {
+        val pool = mainState.value.stageQuestions.ifEmpty { mainState.value.questions }
+        val selected = SmartWeakTopicPlanner.selectWeightedAutoDrill(
+            questions = pool,
+            srsCards = settings.srsCards.value,
+            targetCount = targetCount.coerceIn(10, 50),
+            targetSubjectCode = subjectCode
+        )
+        if (selected.isEmpty()) {
+            showMessage("No questions available yet for your weak-topic drill.")
+            return
+        }
+        val title = if (!subjectCode.isNullOrBlank()) {
+            "Recovery Plan • $subjectCode (${selected.size}Q)"
+        } else {
+            "Smart Weak-Topic Drill (${selected.size}Q)"
+        }
+        startPractice(selected, title)
+    }
+
     fun openSubjectChapters(
         subjectCode: String,
         isCrossExam: Boolean = false,
@@ -2083,13 +2118,15 @@ class MainViewModel(
             if (result.status == AppUpdateStatus.UPDATE_AVAILABLE && result.latestVersion.isNotBlank()) {
                 val ctx = appContext
                 if (ctx != null && result.latestVersion != settings.getLastNotifiedAppUpdateVersion()) {
-                    ClinEdgeNotificationManager.postAppUpdateNotification(
+                    val posted = ClinEdgeNotificationManager.postAppUpdateNotification(
                         context = ctx,
                         latestVersion = result.latestVersion,
                         releaseTitle = result.releaseTitle,
                         releaseNotes = result.releaseNotes
                     )
-                    settings.setLastNotifiedAppUpdateVersion(result.latestVersion)
+                    if (posted) {
+                        settings.setLastNotifiedAppUpdateVersion(result.latestVersion)
+                    }
                 }
             }
             if (userInitiated) {
@@ -4192,6 +4229,45 @@ class MainViewModel(
             if (posted) "Test study reminder sent to your notification tray!"
             else "Enable notification permission in Android settings to receive tray alerts."
         )
+    }
+
+    fun setBackgroundPushEnabled(enabled: Boolean) {
+        settings.setBackgroundPushEnabled(enabled)
+        appContext?.let { ctx ->
+            if (enabled) {
+                ClinEdgeNotificationManager.scheduleCloudAlertSync(
+                    context = ctx,
+                    triggerImmediateCheck = true
+                )
+                showMessage("Background push alerts & app-update checks enabled.")
+            } else {
+                ClinEdgeNotificationManager.cancelCloudAlertSync(ctx)
+                showMessage("Background push sync paused.")
+            }
+        }
+    }
+
+    fun triggerBackgroundPushSyncNow() {
+        val ctx = appContext ?: return
+        if (!ClinEdgeNotificationManager.hasNotificationPermission(ctx)) {
+            showMessage("Allow Android notifications first so background alerts can appear in your tray.")
+            return
+        }
+        ClinEdgeNotificationManager.triggerImmediateCloudSync(
+            context = ctx,
+            notifyIfUpToDate = true
+        )
+        showMessage("Background sync started — checking alerts & app updates now...")
+    }
+
+    fun onAppEnteredBackground() {
+        val ctx = appContext ?: return
+        if (settings.backgroundPushEnabled.value) {
+            ClinEdgeNotificationManager.scheduleCloudAlertSync(
+                context = ctx,
+                triggerImmediateCheck = false
+            )
+        }
     }
 
     fun handleNotificationDeepLink(target: String, doubtId: String) {

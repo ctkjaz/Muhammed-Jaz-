@@ -119,6 +119,16 @@ class SettingsPreferences(context: Context) {
     )
     val dailyReminderMinute: StateFlow<Int> = _dailyReminderMinute.asStateFlow()
 
+    private val _backgroundPushEnabled = MutableStateFlow(
+        prefs.getBoolean(KEY_BACKGROUND_PUSH_ENABLED, true)
+    )
+    val backgroundPushEnabled: StateFlow<Boolean> = _backgroundPushEnabled.asStateFlow()
+
+    private val _lastBackgroundSyncMs = MutableStateFlow(
+        prefs.getLong(KEY_LAST_BACKGROUND_SYNC_MS, 0L)
+    )
+    val lastBackgroundSyncMs: StateFlow<Long> = _lastBackgroundSyncMs.asStateFlow()
+
     private val _dailyReminderSmartNudge = MutableStateFlow(
         prefs.getBoolean(KEY_DAILY_REMINDER_SMART_NUDGE, true)
     )
@@ -408,6 +418,27 @@ class SettingsPreferences(context: Context) {
         prefs.edit().putString(KEY_LAST_NOTIFIED_APP_UPDATE_VERSION, version.trim().take(32)).apply()
     }
 
+    fun setBackgroundPushEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_BACKGROUND_PUSH_ENABLED, enabled).apply()
+        _backgroundPushEnabled.value = enabled
+    }
+
+    fun getLastBackgroundSyncMs(): Long =
+        prefs.getLong(KEY_LAST_BACKGROUND_SYNC_MS, 0L)
+
+    fun setLastBackgroundSyncMs(timestampMs: Long) {
+        val next = maxOf(getLastBackgroundSyncMs(), timestampMs)
+        prefs.edit().putLong(KEY_LAST_BACKGROUND_SYNC_MS, next).apply()
+        _lastBackgroundSyncMs.value = next
+    }
+
+    fun hasPromptedNotificationPermission(): Boolean =
+        prefs.getBoolean(KEY_NOTIF_PERMISSION_PROMPTED, false)
+
+    fun markNotificationPermissionPrompted() {
+        prefs.edit().putBoolean(KEY_NOTIF_PERMISSION_PROMPTED, true).apply()
+    }
+
     fun getLastSignedInUid(): String = prefs.getString(KEY_LAST_SIGNED_IN_UID, "") ?: ""
 
     fun setLastSignedInUid(uid: String) {
@@ -586,6 +617,9 @@ class SettingsPreferences(context: Context) {
         private const val KEY_SRS_CARDS_JSON = "srs_mistake_cards_json"
         private const val KEY_TARGET_EXAM_DATE_ISO = "target_exam_date_iso"
         private const val KEY_LAST_NOTIFIED_APP_UPDATE_VERSION = "last_notified_app_update_version"
+        private const val KEY_BACKGROUND_PUSH_ENABLED = "background_push_enabled"
+        private const val KEY_LAST_BACKGROUND_SYNC_MS = "last_background_sync_ms"
+        private const val KEY_NOTIF_PERMISSION_PROMPTED = "notif_permission_prompted"
 
         const val DEFAULT_REMINDER_HOUR = 20
         const val DEFAULT_REMINDER_MINUTE = 0

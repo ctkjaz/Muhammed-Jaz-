@@ -1,6 +1,7 @@
 package com.example.data.notifications
 
 import android.Manifest
+import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -8,18 +9,24 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
+import androidx.work.Data
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.example.MainActivity
 import com.example.R
+import com.example.data.local.SettingsPreferences
 import java.util.concurrent.TimeUnit
 
 object ClinEdgeNotificationManager {
@@ -30,6 +37,8 @@ object ClinEdgeNotificationManager {
 
     const val WORK_DAILY_REMINDER = "clinedge_daily_study_reminder_work"
     const val WORK_CLOUD_SYNC = "clinedge_cloud_alert_sync_work"
+    const val WORK_CLOUD_SYNC_NOW = "clinedge_cloud_alert_sync_now_work"
+    const val KEY_NOTIFY_IF_UP_TO_DATE = "notify_if_up_to_date"
 
     const val EXTRA_OPEN_TARGET = "clinedge_open_target"
     const val EXTRA_DOUBT_ID = "clinedge_doubt_id"
@@ -38,10 +47,14 @@ object ClinEdgeNotificationManager {
     const val TARGET_DOUBTS = "doubts"
     const val TARGET_APP_UPDATE = "app_update"
 
+    private const val PULSE_ALARM_REQUEST_CODE = 45001
+    private const val PULSE_INTERVAL_MS = 20L * 60L * 1000L // 20 min inexact Doze-safe pulse
+
     private const val NOTIF_ID_DAILY_REMINDER = 41001
     private const val NOTIF_ID_ANNOUNCEMENT_BASE = 42000
     private const val NOTIF_ID_DIRECT_BASE = 43000
     private const val NOTIF_ID_APP_UPDATE = 44001
+    private const val NOTIF_ID_SYNC_STATUS = 44099
 
     fun ensureChannelsCreated(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -87,6 +100,14 @@ object ClinEdgeNotificationManager {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
+    fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+        val pm = context.applicationContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+            ?: return true
+        return runCatching {
+            pm.isIgnoringBatteryOptimizations(context.applicationContext.packageName)
+        }.getOrDefault(false)
+    }
+
     fun scheduleDailyReminder(context: Context, hour: Int, minute: Int) {
         val delayMs = EngagementLogic.calculateNextDailyTriggerDelayMs(
             nowMs = System.currentTimeMillis(),
@@ -107,20 +128,123 @@ object ClinEdgeNotificationManager {
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork(WORK_DAILY_REMINDER)
     }
 
-    fun scheduleCloudAlertSync(context: Context) {
+    /**
+     * Enables dual-layer Play-Policy-compliant background alert & app-update sync:
+     * 1. Periodic WorkManager sync every 15 minutes (with 5-min flex & exponential backoff)
+     * 2. Inexact Doze-resilient AlarmManager pulse (`setAndAllowWhileIdle` — no restricted exact-alarm
+     *    permission required) that wakes up WorkManager even when the app is swiped closed.
+     */
+    fun scheduleCloudAlertSync(
+        context: Context,
+        triggerImmediateCheck: Boolean = false
+    ) {
+        val appContext = context.applicationContext
+        ensureChannelsCreated(appContext)
+        val settings = SettingsPreferences(appContext)
+        if (!settings.backgroundPushEnabled.value) {
+            cancelCloudAlertSync(appContext)
+            return
+        }
+
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
         val request = PeriodicWorkRequestBuilder<CloudNotificationSyncWorker>(
             15,
+            TimeUnit.MINUTES,
+            5,
             TimeUnit.MINUTES
         )
             .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
-        WorkManager.getInstance(context.applicationContext).enqueueUniquePeriodicWork(
+        WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
             WORK_CLOUD_SYNC,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.UPDATE,
             request
+        )
+
+        scheduleBackgroundAlertPulse(appContext)
+
+        if (triggerImmediateCheck) {
+            triggerImmediateCloudSync(appContext, notifyIfUpToDate = false)
+        }
+    }
+
+    fun triggerImmediateCloudSync(
+        context: Context,
+        notifyIfUpToDate: Boolean = false
+    ) {
+        val appContext = context.applicationContext
+        ensureChannelsCreated(appContext)
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val input = Data.Builder()
+            .putBoolean(KEY_NOTIFY_IF_UP_TO_DATE, notifyIfUpToDate)
+            .build()
+        val request = OneTimeWorkRequestBuilder<CloudNotificationSyncWorker>()
+            .setConstraints(constraints)
+            .setInputData(input)
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .build()
+        WorkManager.getInstance(appContext).enqueueUniqueWork(
+            WORK_CLOUD_SYNC_NOW,
+            ExistingWorkPolicy.REPLACE,
+            request
+        )
+    }
+
+    fun scheduleBackgroundAlertPulse(context: Context, delayMs: Long = PULSE_INTERVAL_MS) {
+        val appContext = context.applicationContext
+        if (!SettingsPreferences(appContext).backgroundPushEnabled.value) return
+        val alarmManager = appContext.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        val pendingIntent = buildPulsePendingIntent(appContext)
+        val triggerAtElapsed = SystemClock.elapsedRealtime() + delayMs.coerceAtLeast(15L * 60L * 1000L)
+        runCatching {
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                triggerAtElapsed,
+                pendingIntent
+            )
+        }
+    }
+
+    fun cancelCloudAlertSync(context: Context) {
+        val appContext = context.applicationContext
+        val wm = WorkManager.getInstance(appContext)
+        wm.cancelUniqueWork(WORK_CLOUD_SYNC)
+        wm.cancelUniqueWork(WORK_CLOUD_SYNC_NOW)
+        val alarmManager = appContext.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        runCatching {
+            alarmManager.cancel(buildPulsePendingIntent(appContext))
+        }
+    }
+
+    private fun buildPulsePendingIntent(context: Context): PendingIntent {
+        val intent = Intent(context, BackgroundAlertPulseReceiver::class.java)
+        return PendingIntent.getBroadcast(
+            context,
+            PULSE_ALARM_REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    fun postBackgroundSyncConfirmedNotification(
+        context: Context,
+        title: String = "Background Push Active",
+        body: String = "ClinEdge checked for new exam alerts, doubt replies, and app updates in the background."
+    ): Boolean {
+        return postTrayNotification(
+            context = context,
+            channelId = CHANNEL_EXAM_ALERTS,
+            notificationId = NOTIF_ID_SYNC_STATUS,
+            title = title,
+            body = body,
+            subText = "Background Sync",
+            priority = NotificationCompat.PRIORITY_HIGH,
+            openTarget = TARGET_NOTIFICATIONS
         )
     }
 
