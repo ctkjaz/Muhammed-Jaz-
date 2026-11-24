@@ -749,6 +749,8 @@ class SubscriptionRepository(
                 "trialDays" to config.trialDays.coerceIn(1L, 30L),
                 "supportWhatsAppNumber" to config.supportWhatsAppNumber.trim().take(24),
                 "supportEmail" to config.supportEmail.trim().take(120),
+                "upiId" to config.upiId.trim().take(80),
+                "upiPayeeName" to config.upiPayeeName.trim().ifBlank { "ClinEdge Nursing Prep" }.take(80),
                 "catalogVersion" to config.catalogVersion.coerceIn(0L, 1000000L),
                 "updatedAt" to FieldValue.serverTimestamp()
             )

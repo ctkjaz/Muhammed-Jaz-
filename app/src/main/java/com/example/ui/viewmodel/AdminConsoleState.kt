@@ -7,10 +7,15 @@ import com.example.data.model.QuestionSourceType
 import com.example.data.subscription.AdminUserDirectoryRow
 import com.example.data.subscription.CloudAccessCode
 import com.example.data.subscription.CloudDeviceTrialLock
+import com.example.data.subscription.CloudPaymentRequest
 import com.example.data.subscription.CloudQuestionPack
+import com.example.data.subscription.CloudQuestionReport
+import com.example.data.subscription.OtaQuestionEditDraft
 
 enum class AdminConsoleTab(val label: String) {
     USERS("Users"),
+    PAYMENTS("Payments"),
+    REPORTS("Reports"),
     ALERTS("Alerts"),
     DOUBTS("Doubts"),
     CODES("Codes"),
@@ -44,6 +49,9 @@ data class AdminConsoleUiState(
     val accessCodes: List<CloudAccessCode> = emptyList(),
     val deviceLocks: List<CloudDeviceTrialLock> = emptyList(),
     val questionPacks: List<CloudQuestionPack> = emptyList(),
+    val paymentRequests: List<CloudPaymentRequest> = emptyList(),
+    val questionReports: List<CloudQuestionReport> = emptyList(),
+    val otaEditDraft: OtaQuestionEditDraft? = null,
     val lastGeneratedCode: CloudAccessCode? = null,
     val contentDraft: AdminContentDraftState = AdminContentDraftState()
 )

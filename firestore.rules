@@ -145,7 +145,7 @@ service cloud.firestore {
                'singleExam1M', 'singleExam3M', 'singleExam6M', 'singleExam1Y',
                'allExam1M', 'allExam3M', 'allExam6M', 'allExam1Y',
                'freeDailyQuestionLimit', 'trialDays', 'supportWhatsAppNumber',
-               'supportEmail', 'catalogVersion', 'updatedAt'
+               'supportEmail', 'upiId', 'upiPayeeName', 'catalogVersion', 'updatedAt'
              ]) &&
              data.singleExam1M is int && data.singleExam1M >= 0 && data.singleExam1M <= 100000 &&
              data.singleExam3M is int && data.singleExam3M >= 0 && data.singleExam3M <= 100000 &&
@@ -159,6 +159,8 @@ service cloud.firestore {
              data.trialDays is int && data.trialDays >= 1 && data.trialDays <= 30 &&
              data.supportWhatsAppNumber is string && data.supportWhatsAppNumber.size() <= 24 &&
              data.supportEmail is string && data.supportEmail.size() <= 120 &&
+             (!('upiId' in data) || (data.upiId is string && data.upiId.size() <= 80)) &&
+             (!('upiPayeeName' in data) || (data.upiPayeeName is string && data.upiPayeeName.size() <= 80)) &&
              data.catalogVersion is int && data.catalogVersion >= 0 && data.catalogVersion <= 1000000 &&
              isValidTimestamp(data.updatedAt);
     }
@@ -439,6 +441,64 @@ service cloud.firestore {
              data.read is bool &&
              data.createdByEmail is string && data.createdByEmail.size() <= 120 &&
              isValidTimestamp(data.createdAt);
+    }
+
+    // 14. PaymentRequest
+    function isValidPaymentRequest(data, requestId) {
+      return data.keys().hasAll([
+               'requestId', 'userId', 'studentName', 'studentEmail', 'planTier',
+               'unlockedExamIds', 'tenureDays', 'amountInr', 'utrNumber', 'payerName',
+               'status', 'adminNote', 'reviewedByEmail', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'requestId', 'userId', 'studentName', 'studentEmail', 'planTier',
+               'unlockedExamIds', 'tenureDays', 'amountInr', 'utrNumber', 'payerName',
+               'status', 'adminNote', 'reviewedByEmail', 'createdAt', 'updatedAt'
+             ]) &&
+             data.requestId is string && data.requestId == requestId &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.studentName is string && data.studentName.size() <= 60 &&
+             data.studentEmail is string && data.studentEmail.size() <= 120 &&
+             data.planTier is string && data.planTier in ['single_exam', 'all_exam'] &&
+             data.unlockedExamIds is list && data.unlockedExamIds.size() >= 1 && data.unlockedExamIds.size() <= 5 &&
+             data.unlockedExamIds[0] is string &&
+             data.tenureDays is int && data.tenureDays >= 1 && data.tenureDays <= 365 &&
+             data.amountInr is int && data.amountInr >= 0 && data.amountInr <= 100000 &&
+             data.utrNumber is string && data.utrNumber.size() >= 6 && data.utrNumber.size() <= 32 &&
+             data.payerName is string && data.payerName.size() <= 80 &&
+             data.status is string && data.status in ['pending', 'approved', 'rejected'] &&
+             data.adminNote is string && data.adminNote.size() <= 300 &&
+             data.reviewedByEmail is string && data.reviewedByEmail.size() <= 120 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // 15. QuestionReport
+    function isValidQuestionReport(data, reportId) {
+      return data.keys().hasAll([
+               'reportId', 'userId', 'studentName', 'studentEmail', 'examId',
+               'subject', 'questionId', 'questionPreview', 'reason', 'note',
+               'status', 'adminResolutionNote', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'reportId', 'userId', 'studentName', 'studentEmail', 'examId',
+               'subject', 'questionId', 'questionPreview', 'reason', 'note',
+               'status', 'adminResolutionNote', 'createdAt', 'updatedAt'
+             ]) &&
+             data.reportId is string && data.reportId == reportId &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.studentName is string && data.studentName.size() <= 60 &&
+             data.studentEmail is string && data.studentEmail.size() <= 120 &&
+             data.examId is string && data.examId.size() <= 64 &&
+             data.subject is string && data.subject.size() <= 40 &&
+             data.questionId is string && data.questionId.size() >= 1 && data.questionId.size() <= 128 &&
+             data.questionPreview is string && data.questionPreview.size() <= 300 &&
+             data.reason is string && data.reason in ['wrong_key', 'typo', 'outdated', 'wrong_mapping', 'other'] &&
+             data.note is string && data.note.size() <= 1000 &&
+             data.status is string && data.status in ['open', 'resolved', 'dismissed'] &&
+             data.adminResolutionNote is string && data.adminResolutionNote.size() <= 500 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
     }
 
     // ------------------------------------------------------------------------
@@ -857,6 +917,64 @@ service cloud.firestore {
                        incoming().createdAt == existing().createdAt;
 
       allow delete: if isAdmin() && isValidId(announcementId);
+    }
+
+    // ------------------------------------------------------------------------
+    // /paymentRequests/{requestId} — Student UPI UTR payment requests
+    // ------------------------------------------------------------------------
+    match /paymentRequests/{requestId} {
+      allow get: if isSignedIn() && isValidId(requestId) &&
+                    (isAdmin() || existing().userId == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidId(requestId) &&
+                       isValidPaymentRequest(incoming(), requestId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'pending' &&
+                       incoming().adminNote == '' &&
+                       incoming().reviewedByEmail == '';
+
+      allow update: if isAdmin() &&
+                       isValidId(requestId) &&
+                       isValidPaymentRequest(incoming(), requestId) &&
+                       incoming().requestId == existing().requestId &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'status', 'adminNote', 'reviewedByEmail', 'updatedAt'
+                       ]);
+
+      allow delete: if isAdmin() && isValidId(requestId);
+    }
+
+    // ------------------------------------------------------------------------
+    // /questionReports/{reportId} — Student-flagged MCQ error reports
+    // ------------------------------------------------------------------------
+    match /questionReports/{reportId} {
+      allow get: if isSignedIn() && isValidId(reportId) &&
+                    (isAdmin() || existing().userId == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidId(reportId) &&
+                       isValidQuestionReport(incoming(), reportId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'open' &&
+                       incoming().adminResolutionNote == '';
+
+      allow update: if isAdmin() &&
+                       isValidId(reportId) &&
+                       isValidQuestionReport(incoming(), reportId) &&
+                       incoming().reportId == existing().reportId &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'status', 'adminResolutionNote', 'updatedAt'
+                       ]);
+
+      allow delete: if isValidId(reportId) &&
+                       (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
     }
   }
 }

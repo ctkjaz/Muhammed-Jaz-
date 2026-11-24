@@ -68,6 +68,8 @@ data class CloudSubscriptionConfig(
     val trialDays: Long = 3L,
     val supportWhatsAppNumber: String = "+919876543210",
     val supportEmail: String = OWNER_ADMIN_EMAIL,
+    val upiId: String = "",
+    val upiPayeeName: String = "ClinEdge Nursing Prep",
     val catalogVersion: Long = 0L,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {

@@ -67,11 +67,16 @@ import com.example.data.notifications.DoubtStatus
 import com.example.data.subscription.AdminUserDirectoryRow
 import com.example.data.subscription.CloudAccessCode
 import com.example.data.subscription.CloudDeviceTrialLock
+import com.example.data.subscription.CloudPaymentRequest
 import com.example.data.subscription.CloudQuestionPack
+import com.example.data.subscription.CloudQuestionReport
 import com.example.data.subscription.CloudSubscriptionConfig
 import com.example.data.subscription.EntitlementEvaluator
+import com.example.data.subscription.OtaQuestionEditDraft
+import com.example.data.subscription.PaymentRequestStatus
 import com.example.data.subscription.PlanTenure
 import com.example.data.subscription.PlanTier
+import com.example.data.subscription.QuestionReportStatus
 import com.example.data.subscription.SubscriptionStatus
 import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.theme.AcidLime
@@ -131,6 +136,14 @@ fun AdminConsoleScreen(
     onReplyToDoubt: (CloudDoubt, String, () -> Unit) -> Unit = { _, _, _ -> },
     onCloseDoubt: (String) -> Unit = {},
     onDeleteDoubt: (String) -> Unit = {},
+    aiDraftingDoubtId: String? = null,
+    onAiDraftDoubtReply: (CloudDoubt, (String) -> Unit) -> Unit = { _, _ -> },
+    onApprovePaymentRequest: (CloudPaymentRequest) -> Unit = {},
+    onRejectPaymentRequest: (CloudPaymentRequest, String) -> Unit = { _, _ -> },
+    onResolveQuestionReport: (CloudQuestionReport, QuestionReportStatus, String, Boolean) -> Unit = { _, _, _, _ -> },
+    onOpenOtaQuestionEditor: (questionId: String, reportId: String) -> Unit = { _, _ -> },
+    onSaveOtaQuestionEdit: (OtaQuestionEditDraft) -> Unit = {},
+    onDismissOtaQuestionEditor: () -> Unit = {},
     onShowMessage: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
@@ -141,6 +154,12 @@ fun AdminConsoleScreen(
     var editingUser by remember { mutableStateOf<AdminUserDirectoryRow?>(null) }
     var preselectedNotifyUser by remember { mutableStateOf<AdminUserDirectoryRow?>(null) }
     val openDoubtCount = remember(adminDoubts) { adminDoubts.count { it.statusEnum == DoubtStatus.OPEN } }
+    val pendingPaymentCount = remember(state.paymentRequests) {
+        state.paymentRequests.count { it.parsedStatus == PaymentRequestStatus.PENDING }
+    }
+    val openReportCount = remember(state.questionReports) {
+        state.questionReports.count { it.parsedStatus == QuestionReportStatus.OPEN }
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
@@ -206,10 +225,11 @@ fun AdminConsoleScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 AdminConsoleTab.entries.forEach { tab ->
-                    val pillLabel = if (tab == AdminConsoleTab.DOUBTS && openDoubtCount > 0) {
-                        "${tab.label} ($openDoubtCount)"
-                    } else {
-                        tab.label
+                    val pillLabel = when {
+                        tab == AdminConsoleTab.PAYMENTS && pendingPaymentCount > 0 -> "${tab.label} ($pendingPaymentCount)"
+                        tab == AdminConsoleTab.REPORTS && openReportCount > 0 -> "${tab.label} ($openReportCount)"
+                        tab == AdminConsoleTab.DOUBTS && openDoubtCount > 0 -> "${tab.label} ($openDoubtCount)"
+                        else -> tab.label
                     }
                     MonochromeFilterPill(
                         label = pillLabel,
@@ -230,6 +250,22 @@ fun AdminConsoleScreen(
                         preselectedNotifyUser = targetUser
                         onSelectTab(AdminConsoleTab.ALERTS)
                     }
+                )
+                AdminConsoleTab.PAYMENTS -> AdminPaymentsTabContent(
+                    requests = state.paymentRequests,
+                    isMutating = state.isMutating,
+                    onApprove = onApprovePaymentRequest,
+                    onReject = onRejectPaymentRequest,
+                    onShowMessage = onShowMessage
+                )
+                AdminConsoleTab.REPORTS -> AdminReportsTabContent(
+                    reports = state.questionReports,
+                    isMutating = state.isMutating,
+                    otaEditDraft = state.otaEditDraft,
+                    onResolveReport = onResolveQuestionReport,
+                    onOpenOtaEditor = onOpenOtaQuestionEditor,
+                    onSaveOtaEdit = onSaveOtaQuestionEdit,
+                    onDismissOtaEditor = onDismissOtaQuestionEditor
                 )
                 AdminConsoleTab.CODES -> AdminCodesTab(
                     codes = state.accessCodes,
@@ -267,6 +303,8 @@ fun AdminConsoleScreen(
                 AdminConsoleTab.DOUBTS -> AdminDoubtsTabContent(
                     doubts = adminDoubts,
                     isMutating = state.isMutating,
+                    aiDraftingDoubtId = aiDraftingDoubtId,
+                    onAiDraftReply = onAiDraftDoubtReply,
                     onReplyToDoubt = onReplyToDoubt,
                     onCloseDoubt = onCloseDoubt,
                     onDeleteDoubt = onDeleteDoubt
@@ -1132,6 +1170,8 @@ private fun AdminPricingSupportTab(
     var trialDays by remember(config) { mutableStateOf(config.trialDays.toString()) }
     var whatsapp by remember(config) { mutableStateOf(config.supportWhatsAppNumber) }
     var email by remember(config) { mutableStateOf(config.supportEmail) }
+    var upiId by remember(config) { mutableStateOf(config.upiId) }
+    var upiPayeeName by remember(config) { mutableStateOf(config.upiPayeeName) }
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -1191,6 +1231,27 @@ private fun AdminPricingSupportTab(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    HorizontalDivider(color = editorial.borderSubtle)
+                    Text("Direct UPI Collection (In-App UTR Flow)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = upiId,
+                        onValueChange = { upiId = it.take(80) },
+                        label = { Text("Merchant / Owner UPI ID (e.g., name@okaxis)") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("admin_upi_id_input")
+                    )
+                    OutlinedTextField(
+                        value = upiPayeeName,
+                        onValueChange = { upiPayeeName = it.take(80) },
+                        label = { Text("UPI Payee Display Name") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("admin_upi_payee_input")
+                    )
+
                     Button(
                         onClick = {
                             onSave(
@@ -1206,7 +1267,9 @@ private fun AdminPricingSupportTab(
                                     freeDailyQuestionLimit = (freeLimit.toLongOrNull() ?: 15L).coerceIn(1L, 200L),
                                     trialDays = (trialDays.toLongOrNull() ?: 3L).coerceIn(1L, 3L),
                                     supportWhatsAppNumber = whatsapp.trim(),
-                                    supportEmail = email.trim()
+                                    supportEmail = email.trim(),
+                                    upiId = upiId.trim(),
+                                    upiPayeeName = upiPayeeName.trim().ifBlank { "ClinEdge Nursing Prep" }
                                 )
                             )
                         },

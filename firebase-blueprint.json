@@ -253,6 +253,8 @@
         "trialDays": { "type": "integer" },
         "supportWhatsAppNumber": { "type": "string" },
         "supportEmail": { "type": "string" },
+        "upiId": { "type": "string", "description": "Optional merchant/owner UPI VPA for direct student payments (max 80 chars)." },
+        "upiPayeeName": { "type": "string", "description": "Optional UPI payee display name (max 80 chars)." },
         "catalogVersion": { "type": "integer" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -538,6 +540,82 @@
         "createdByEmail",
         "createdAt"
       ]
+    },
+    "PaymentRequest": {
+      "title": "PaymentRequest",
+      "description": "Student-submitted UPI UTR payment verification request reviewed and approved/rejected by the Owner Admin.",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string" },
+        "userId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentEmail": { "type": "string" },
+        "planTier": { "type": "string", "enum": ["single_exam", "all_exam"] },
+        "unlockedExamIds": { "type": "array" },
+        "tenureDays": { "type": "integer" },
+        "amountInr": { "type": "integer" },
+        "utrNumber": { "type": "string" },
+        "payerName": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "adminNote": { "type": "string" },
+        "reviewedByEmail": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "requestId",
+        "userId",
+        "studentName",
+        "studentEmail",
+        "planTier",
+        "unlockedExamIds",
+        "tenureDays",
+        "amountInr",
+        "utrNumber",
+        "payerName",
+        "status",
+        "adminNote",
+        "reviewedByEmail",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "QuestionReport": {
+      "title": "QuestionReport",
+      "description": "Student-flagged MCQ error report (wrong key, typo, outdated guideline, wrong mapping) queued for Owner Admin review.",
+      "type": "object",
+      "properties": {
+        "reportId": { "type": "string" },
+        "userId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentEmail": { "type": "string" },
+        "examId": { "type": "string" },
+        "subject": { "type": "string" },
+        "questionId": { "type": "string" },
+        "questionPreview": { "type": "string" },
+        "reason": { "type": "string", "enum": ["wrong_key", "typo", "outdated", "wrong_mapping", "other"] },
+        "note": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "resolved", "dismissed"] },
+        "adminResolutionNote": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "reportId",
+        "userId",
+        "studentName",
+        "studentEmail",
+        "examId",
+        "subject",
+        "questionId",
+        "questionPreview",
+        "reason",
+        "note",
+        "status",
+        "adminResolutionNote",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -596,6 +674,14 @@
     "/announcements/{announcementId}": {
       "schema": { "$ref": "#/entities/ExamAnnouncement" },
       "description": "Owner-admin broadcast feed for nursing exam news, vacancies, dates, and live push alerts."
+    },
+    "/paymentRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/PaymentRequest" },
+      "description": "Student UPI UTR payment verification requests reviewed and approved by the Owner Admin."
+    },
+    "/questionReports/{reportId}": {
+      "schema": { "$ref": "#/entities/QuestionReport" },
+      "description": "Student-flagged MCQ error reports reviewed and resolved by the Owner Admin."
     }
   }
 }

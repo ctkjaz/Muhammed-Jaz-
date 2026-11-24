@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -27,6 +28,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -608,6 +610,8 @@ internal fun AdminAlertsTabContent(
 internal fun AdminDoubtsTabContent(
     doubts: List<CloudDoubt>,
     isMutating: Boolean,
+    aiDraftingDoubtId: String? = null,
+    onAiDraftReply: (CloudDoubt, (String) -> Unit) -> Unit = { _, _ -> },
     onReplyToDoubt: (CloudDoubt, String, () -> Unit) -> Unit,
     onCloseDoubt: (String) -> Unit,
     onDeleteDoubt: (String) -> Unit
@@ -686,6 +690,8 @@ internal fun AdminDoubtsTabContent(
                 AdminDoubtCard(
                     doubt = doubt,
                     isMutating = isMutating,
+                    isAiDrafting = aiDraftingDoubtId == doubt.doubtId,
+                    onAiDraftReply = onAiDraftReply,
                     onReply = onReplyToDoubt,
                     onClose = { onCloseDoubt(doubt.doubtId) },
                     onDelete = { onDeleteDoubt(doubt.doubtId) }
@@ -699,6 +705,8 @@ internal fun AdminDoubtsTabContent(
 private fun AdminDoubtCard(
     doubt: CloudDoubt,
     isMutating: Boolean,
+    isAiDrafting: Boolean,
+    onAiDraftReply: (CloudDoubt, (String) -> Unit) -> Unit,
     onReply: (CloudDoubt, String, () -> Unit) -> Unit,
     onClose: () -> Unit,
     onDelete: () -> Unit
@@ -823,6 +831,31 @@ private fun AdminDoubtCard(
 
             if (isReplying) {
                 HorizontalDivider(color = editorial.borderSubtle)
+                OutlinedButton(
+                    onClick = {
+                        replyError = null
+                        onAiDraftReply(doubt) { streamedDraft ->
+                            replyDraft = streamedDraft.take(EngagementLogic.MAX_REPLY_LENGTH)
+                        }
+                    },
+                    enabled = !isMutating && !isAiDrafting,
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, AcidLime),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .testTag("admin_ai_draft_doubt_btn")
+                ) {
+                    if (isAiDrafting) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.size(8.dp))
+                        Text("Drafting textbook reply...", fontWeight = FontWeight.SemiBold)
+                    } else {
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text("AI Draft Faculty Reply (Review Before Sending)", fontWeight = FontWeight.Bold)
+                    }
+                }
                 OutlinedTextField(
                     value = replyDraft,
                     onValueChange = {

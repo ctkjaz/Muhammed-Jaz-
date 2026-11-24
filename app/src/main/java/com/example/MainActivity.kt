@@ -4,9 +4,11 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.Display
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.example.data.ai.configureAppCheck
 import com.example.data.notifications.ClinEdgeNotificationManager
 import com.example.ui.ClinEdgeRootApp
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +24,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureAppCheck(this, intent)
         enableHighRefreshRateDisplay()
         enableEdgeToEdge()
         captureDeepLink(intent)
@@ -30,6 +33,14 @@ class MainActivity : ComponentActivity() {
                 pendingDeepLink = pendingDeepLink,
                 onConsumeDeepLink = { pendingDeepLink.value = null }
             )
+        }
+    }
+
+    fun setScreenCaptureProtected(protected: Boolean) {
+        if (protected) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
     }
 

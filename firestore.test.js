@@ -1000,5 +1000,195 @@ test("DirectNotifications: admin pushes individual alerts; only owner reads/mark
   await assertSucceeds(aliceNotifs(aliceDb).doc("notif_1").delete());
 });
 
+test("SubscriptionConfig UPI fields: admin can store upiId & upiPayeeName; oversized values rejected", async () => {
+  const adminDb = adminContext().firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const now = new Date(Date.now() - 2000);
+
+  await assertSucceeds(
+    adminDb.collection("appConfig").doc("subscriptionConfig").set({
+      ...validSubscriptionConfigPayload(now),
+      upiId: "clinedge@okhdfcbank",
+      upiPayeeName: "ClinEdge Nursing Prep",
+    })
+  );
+  await assertSucceeds(aliceDb.collection("appConfig").doc("subscriptionConfig").get());
+
+  // Oversized upiId (> 80 chars) fails
+  await assertFails(
+    adminDb.collection("appConfig").doc("subscriptionConfig").update({
+      upiId: "x".repeat(90),
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+});
+
+test("PaymentRequests: student submits pending UTR, cannot self-approve or read others; admin approves & activates atomically", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, { email: "alice@example.com", email_verified: true }).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID, { email: "bob@example.com", email_verified: true }).firestore();
+  const adminDb = adminContext().firestore();
+  const now = new Date(Date.now() - 2000);
+
+  const validRequest = {
+    requestId: "pay_req_1",
+    userId: ALICE_UID,
+    studentName: "Alice Nurse",
+    studentEmail: "alice@example.com",
+    planTier: "single_exam",
+    unlockedExamIds: ["aiims_norcet"],
+    tenureDays: 90,
+    amountInr: 249,
+    utrNumber: "432198765432",
+    payerName: "Alice K",
+    status: "pending",
+    adminNote: "",
+    reviewedByEmail: "",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  // Unauthenticated denied
+  await assertFails(unauthDb.collection("paymentRequests").doc("pay_req_1").set(validRequest));
+  await assertFails(unauthDb.collection("paymentRequests").get());
+
+  // Student submits pending UPI UTR request
+  await assertSucceeds(aliceDb.collection("paymentRequests").doc("pay_req_1").set(validRequest));
+
+  // Student CANNOT forge pre-approved request or too-short UTR
+  await assertFails(
+    aliceDb.collection("paymentRequests").doc("pay_forged").set({
+      ...validRequest,
+      requestId: "pay_forged",
+      status: "approved",
+    })
+  );
+  await assertFails(
+    aliceDb.collection("paymentRequests").doc("pay_short_utr").set({
+      ...validRequest,
+      requestId: "pay_short_utr",
+      utrNumber: "123",
+    })
+  );
+
+  // Student reads own via filtered list; cannot list all or read Bob's; cannot self-update
+  await assertSucceeds(aliceDb.collection("paymentRequests").where("userId", "==", ALICE_UID).get());
+  await assertFails(aliceDb.collection("paymentRequests").get());
+  await assertFails(bobDb.collection("paymentRequests").doc("pay_req_1").get());
+  await assertFails(
+    aliceDb.collection("paymentRequests").doc("pay_req_1").update({
+      status: "approved",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+  await assertFails(aliceDb.collection("paymentRequests").doc("pay_req_1").delete());
+
+  // Admin lists all payment requests and approves atomically with entitlement + notification
+  await assertSucceeds(adminDb.collection("paymentRequests").get());
+  await assertSucceeds(
+    aliceDb.collection("entitlements").doc(ALICE_UID).set(validFreeEntitlement(ALICE_UID, now))
+  );
+  const approveBatch = adminDb.batch();
+  approveBatch.update(adminDb.collection("paymentRequests").doc("pay_req_1"), {
+    status: "approved",
+    adminNote: "UTR verified in HDFC statement",
+    reviewedByEmail: ADMIN_EMAIL,
+    updatedAt: new Date(Date.now() - 1000),
+  });
+  approveBatch.update(adminDb.collection("entitlements").doc(ALICE_UID), {
+    planTier: "single_exam",
+    unlockedExamIds: ["aiims_norcet"],
+    status: "active",
+    startsAt: new Date(Date.now() - 1000),
+    expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+    lastCodeId: "UPI_432198765432",
+    updatedAt: new Date(Date.now() - 1000),
+  });
+  approveBatch.set(
+    adminDb.collection("users").doc(ALICE_UID).collection("notifications").doc("pay_approved_1"),
+    {
+      notificationId: "pay_approved_1",
+      userId: ALICE_UID,
+      title: "Plan Activated via UPI",
+      body: "Your AIIMS NORCET Pro plan (3 Months) is now active!",
+      type: "account_notice",
+      referenceId: "pay_req_1",
+      actionUrl: "",
+      read: false,
+      createdByEmail: ADMIN_EMAIL,
+      createdAt: new Date(Date.now() - 1000),
+    }
+  );
+  await assertSucceeds(approveBatch.commit());
+});
+
+test("QuestionReports: student flags MCQ issue, cannot self-resolve or read others; admin resolves", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const adminDb = adminContext().firestore();
+  const now = new Date(Date.now() - 2000);
+
+  const validReport = {
+    reportId: "qrep_1",
+    userId: ALICE_UID,
+    studentName: "Alice Nurse",
+    studentEmail: "alice@example.com",
+    examId: "aiims_norcet",
+    subject: "MSN",
+    questionId: "OTA_pack_norcet_10_Q_1",
+    questionPreview: "First-line antidote for magnesium sulfate toxicity?",
+    reason: "wrong_key",
+    note: "Option A should be marked correct per Brunner & Suddarth.",
+    status: "open",
+    adminResolutionNote: "",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  // Unauthenticated denied
+  await assertFails(unauthDb.collection("questionReports").doc("qrep_1").set(validReport));
+
+  // Student submits open report
+  await assertSucceeds(aliceDb.collection("questionReports").doc("qrep_1").set(validReport));
+
+  // Student cannot forge resolved status or invalid reason
+  await assertFails(
+    aliceDb.collection("questionReports").doc("qrep_forged").set({
+      ...validReport,
+      reportId: "qrep_forged",
+      status: "resolved",
+    })
+  );
+  await assertFails(
+    aliceDb.collection("questionReports").doc("qrep_bad_reason").set({
+      ...validReport,
+      reportId: "qrep_bad_reason",
+      reason: "spam_reason",
+    })
+  );
+
+  // Student reads own via filtered list; Bob denied; student cannot update
+  await assertSucceeds(aliceDb.collection("questionReports").where("userId", "==", ALICE_UID).get());
+  await assertFails(aliceDb.collection("questionReports").get());
+  await assertFails(bobDb.collection("questionReports").doc("qrep_1").get());
+  await assertFails(
+    aliceDb.collection("questionReports").doc("qrep_1").update({
+      status: "resolved",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Admin lists all reports and resolves
+  await assertSucceeds(adminDb.collection("questionReports").get());
+  await assertSucceeds(
+    adminDb.collection("questionReports").doc("qrep_1").update({
+      status: "resolved",
+      adminResolutionNote: "Fixed key in OTA pack v3.",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+});
+
 
 

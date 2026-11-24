@@ -36,7 +36,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.QuestionAnswer
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -108,6 +110,9 @@ fun PracticeScreen(
     onConfirmSubmit: () -> Unit,
     onChangeReviewFilter: (CbtReviewFilter) -> Unit,
     onAskDoubt: (QuestionItem) -> Unit = {},
+    canUseAiTutor: Boolean = false,
+    onExplainWithAi: (QuestionItem, Int?) -> Unit = { _, _ -> },
+    onFlagQuestion: (QuestionItem) -> Unit = {},
     onExit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -355,6 +360,17 @@ fun PracticeScreen(
 
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 IconButton(
+                                    onClick = { onFlagQuestion(currentItem) },
+                                    modifier = Modifier.testTag("practice_flag_icon_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Flag,
+                                        contentDescription = "Flag an error in this question",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                                IconButton(
                                     onClick = { onAskDoubt(currentItem) },
                                     modifier = Modifier.testTag("practice_ask_doubt_icon_btn")
                                 ) {
@@ -557,16 +573,53 @@ fun PracticeScreen(
                                 )
                             }
                             HorizontalDivider(color = editorial.borderSubtle)
+                            Button(
+                                onClick = { onExplainWithAi(currentItem, chosen) },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = editorial.acidLime,
+                                    contentColor = editorial.onAcidLime
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .testTag("practice_ai_tutor_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.AutoAwesome,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(17.dp)
+                                )
+                                Text(
+                                    text = if (canUseAiTutor) {
+                                        "  Explain with AI Clinical Tutor"
+                                    } else {
+                                        "  Explain with AI Tutor · PRO"
+                                    },
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = "Still unsure about this rationale?",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                TextButton(
+                                    onClick = { onFlagQuestion(currentItem) },
+                                    modifier = Modifier
+                                        .heightIn(min = 44.dp)
+                                        .testTag("practice_rationale_flag_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Flag,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = " Flag Error",
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                                 TextButton(
                                     onClick = { onAskDoubt(currentItem) },
                                     modifier = Modifier

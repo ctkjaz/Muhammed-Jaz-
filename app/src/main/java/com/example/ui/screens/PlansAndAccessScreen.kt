@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PhonelinkLock
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.WorkspacePremium
@@ -66,13 +67,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.cloud.SignedInAccountInfo
 import com.example.data.model.PlatformCatalogDefaults
+import com.example.data.subscription.CloudPaymentRequest
 import com.example.data.subscription.DeviceLockConflictState
 import com.example.data.subscription.EntitlementEvaluator
 import com.example.data.subscription.ExamLockUpgradeContext
+import com.example.data.subscription.PaymentRequestStatus
 import com.example.data.subscription.PaywallPromptState
 import com.example.data.subscription.PlanTenure
 import com.example.data.subscription.PlanTier
 import com.example.data.subscription.SubscriptionUiState
+import com.example.data.subscription.UpiPaymentLogic
 import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.theme.AcidLime
 import com.example.ui.theme.EditorialBannerKpiAccent
@@ -94,7 +98,18 @@ fun PlansAndAccessScreen(
     onShowMessage: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    examLockContext: ExamLockUpgradeContext? = null
+    examLockContext: ExamLockUpgradeContext? = null,
+    paymentRequests: List<CloudPaymentRequest> = emptyList(),
+    isPaymentBusy: Boolean = false,
+    onSubmitUpiPayment: (
+        tier: PlanTier,
+        examIds: List<String>,
+        tenureDays: Int,
+        amountInr: Int,
+        utrNumber: String,
+        payerName: String,
+        onSuccess: () -> Unit
+    ) -> Unit = { _, _, _, _, _, _, _ -> }
 ) {
     BackHandler(onBack = onBack)
 
@@ -107,6 +122,9 @@ fun PlansAndAccessScreen(
     }
     var selectedTenure by remember { mutableStateOf(PlanTenure.THREE_MONTHS) }
     var codeInput by remember { mutableStateOf("") }
+    var showUpiSection by remember { mutableStateOf(true) }
+    var utrInput by remember { mutableStateOf("") }
+    var payerNameInput by remember { mutableStateOf(account.displayName) }
 
     LaunchedEffect(examLockContext) {
         if (examLockContext != null) {
@@ -686,6 +704,260 @@ fun PlansAndAccessScreen(
                                 text = "Get Code on WhatsApp • ₹$activePrice (${selectedTenure.label})",
                                 fontWeight = FontWeight.Bold
                             )
+                        }
+
+                        HorizontalDivider(color = editorial.borderSubtle)
+
+                        // In-App UPI Payment & UTR Submission (Fastest)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showUpiSection = !showUpiSection },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Filled.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Text(
+                                    text = "Pay via UPI & Submit UTR",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = if (showUpiSection) "Hide" else "Expand",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        if (showUpiSection) {
+                            val upiId = subscription.config.upiId.trim()
+                            val payeeName = subscription.config.upiPayeeName.trim()
+                                .ifBlank { "ClinEdge Nursing Prep" }
+                            val hasValidUpi = UpiPaymentLogic.isValidUpiId(upiId)
+
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = editorial.elevatedSurface,
+                                border = BorderStroke(1.dp, editorial.borderSubtle),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (hasValidUpi) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = payeeName,
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    text = upiId,
+                                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = MonoFontFamily),
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            IconButton(
+                                                onClick = {
+                                                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                                    cm?.setPrimaryClip(ClipData.newPlainText("ClinEdge UPI ID", upiId))
+                                                    onShowMessage("UPI ID copied: $upiId")
+                                                },
+                                                modifier = Modifier.testTag("copy_upi_id_btn")
+                                            ) {
+                                                Icon(Icons.Filled.ContentCopy, contentDescription = "Copy UPI ID", modifier = Modifier.size(18.dp))
+                                            }
+                                        }
+                                        OutlinedButton(
+                                            onClick = {
+                                                val uri = UpiPaymentLogic.buildUpiPayUri(
+                                                    upiId = upiId,
+                                                    payeeName = payeeName,
+                                                    amountInr = activePrice,
+                                                    transactionNote = "ClinEdge ${selectedTenure.shortCode} ${account.uid.take(6)}"
+                                                )
+                                                openExternalUrl(
+                                                    context = context,
+                                                    url = uri,
+                                                    fallbackMsg = "No UPI app found. Copy UPI ID ($upiId) and pay ₹$activePrice, then enter UTR below.",
+                                                    onError = onShowMessage
+                                                )
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, editorial.acidLime),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(min = 48.dp)
+                                                .testTag("pay_with_upi_app_btn")
+                                        ) {
+                                            Text(
+                                                text = "Pay ₹$activePrice with UPI App",
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    } else {
+                                        Text(
+                                            text = "Pay ₹$activePrice using the UPI ID shared by ClinEdge Support, then submit your 12-digit UTR below for fast 1-tap activation.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    OutlinedTextField(
+                                        value = utrInput,
+                                        onValueChange = { utrInput = UpiPaymentLogic.sanitizeUtr(it) },
+                                        label = { Text("UPI UTR / Reference Number (12 digits)") },
+                                        placeholder = { Text("e.g., 432198765432") },
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("upi_utr_input")
+                                    )
+                                    OutlinedTextField(
+                                        value = payerNameInput,
+                                        onValueChange = { payerNameInput = it.take(80) },
+                                        label = { Text("Payer Name (optional)") },
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("upi_payer_name_input")
+                                    )
+                                    Button(
+                                        onClick = {
+                                            val examIds = if (selectedPlanGroup == PlanTier.ALL_EXAM) {
+                                                listOf("all")
+                                            } else {
+                                                listOf(selectedExamId)
+                                            }
+                                            onSubmitUpiPayment(
+                                                selectedPlanGroup,
+                                                examIds,
+                                                selectedTenure.days,
+                                                activePrice,
+                                                utrInput,
+                                                payerNameInput
+                                            ) {
+                                                utrInput = ""
+                                            }
+                                        },
+                                        enabled = UpiPaymentLogic.isValidUtr(utrInput) && !isPaymentBusy,
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(min = 48.dp)
+                                            .testTag("submit_upi_utr_btn")
+                                    ) {
+                                        if (isPaymentBusy) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(18.dp),
+                                                strokeWidth = 2.dp,
+                                                color = MaterialTheme.colorScheme.onPrimary
+                                            )
+                                        } else {
+                                            Text("Submit UTR for Approval", fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (paymentRequests.isNotEmpty()) {
+                item(key = "recent_payment_requests_card") {
+                    Card(
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                        border = BorderStroke(1.dp, editorial.borderSubtle),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                text = "Your Recent Payment Requests",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            paymentRequests.take(5).forEach { req ->
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = editorial.elevatedSurface,
+                                    border = BorderStroke(1.dp, editorial.borderSubtle),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "${req.planSummaryLabel} · ₹${req.amountInr}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = when (req.parsedStatus) {
+                                                    PaymentRequestStatus.PENDING -> AcidLime
+                                                    PaymentRequestStatus.APPROVED -> editorial.correctBg
+                                                    PaymentRequestStatus.REJECTED -> editorial.wrongBg
+                                                }
+                                            ) {
+                                                Text(
+                                                    text = req.parsedStatus.label,
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                                    color = when (req.parsedStatus) {
+                                                        PaymentRequestStatus.PENDING -> PureBlack
+                                                        PaymentRequestStatus.APPROVED -> editorial.correctText
+                                                        PaymentRequestStatus.REJECTED -> editorial.wrongText
+                                                    },
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                        Text(
+                                            text = "UTR: ${req.utrNumber}",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        if (req.adminNote.isNotBlank()) {
+                                            Text(
+                                                text = "Note: ${req.adminNote}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (req.parsedStatus == PaymentRequestStatus.REJECTED) {
+                                                    editorial.wrongText
+                                                } else {
+                                                    editorial.correctText
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

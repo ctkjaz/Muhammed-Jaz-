@@ -6,6 +6,8 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
+import com.example.data.ai.AiTutorUiState
+import com.example.data.ai.ClinEdgeAiTutorService
 import com.example.data.backup.BackupFolderSummary
 import com.example.data.backup.BackupStorageManager
 import com.example.data.notifications.AnnouncementCategory
@@ -67,6 +69,8 @@ import com.example.data.parser.BulkQuestionParser
 import com.example.data.parser.PdfTextExtractor
 import com.example.data.repository.NursingPrepRepository
 import com.example.data.subscription.CloudAccessCode
+import com.example.data.subscription.CloudPaymentRequest
+import com.example.data.subscription.CloudQuestionReport
 import com.example.data.subscription.CloudSubscriptionConfig
 import com.example.data.subscription.CloudUserEntitlement
 import com.example.data.subscription.CodeRedeemResult
@@ -75,9 +79,13 @@ import com.example.data.subscription.DeviceLockConflictState
 import com.example.data.subscription.DeviceLockManager
 import com.example.data.subscription.EntitlementEvaluator
 import com.example.data.subscription.ExamLockUpgradeContext
+import com.example.data.subscription.OtaQuestionEditDraft
+import com.example.data.subscription.PaymentAndReportRepository
 import com.example.data.subscription.PaywallPromptState
 import com.example.data.subscription.PlanTenure
 import com.example.data.subscription.PlanTier
+import com.example.data.subscription.QuestionReportReason
+import com.example.data.subscription.QuestionReportStatus
 import com.example.data.subscription.SubscriptionRepository
 import com.example.data.subscription.SubscriptionStatus
 import com.example.data.subscription.SubscriptionUiState
@@ -320,7 +328,9 @@ class MainViewModel(
     private val subscriptionRepo: SubscriptionRepository? = null,
     private val deviceLockManager: DeviceLockManager? = null,
     private val engagementRepo: CloudEngagementRepository? = null,
-    private val appContext: Context? = null
+    private val appContext: Context? = null,
+    private val paymentReportRepo: PaymentAndReportRepository? = null,
+    private val aiTutorService: ClinEdgeAiTutorService = ClinEdgeAiTutorService()
 ) : ViewModel() {
 
     val signedInAccount: SignedInAccountInfo = SignedInAccountInfo(
@@ -474,6 +484,35 @@ class MainViewModel(
 
     private val _isEngagementBusy = MutableStateFlow(false)
     val isEngagementBusy: StateFlow<Boolean> = _isEngagementBusy.asStateFlow()
+
+    // ------------------------------------------------------------------------
+    // v2.3: AI CLINICAL TUTOR, ADMIN AI DRAFT, UPI PAYMENTS & QUESTION FLAGS
+    // ------------------------------------------------------------------------
+    private val _studentPaymentRequests = MutableStateFlow<List<CloudPaymentRequest>>(emptyList())
+    val studentPaymentRequests: StateFlow<List<CloudPaymentRequest>> = _studentPaymentRequests.asStateFlow()
+
+    private val _isPaymentSubmitBusy = MutableStateFlow(false)
+    val isPaymentSubmitBusy: StateFlow<Boolean> = _isPaymentSubmitBusy.asStateFlow()
+
+    private val _aiTutorQuestion = MutableStateFlow<Question?>(null)
+    val aiTutorQuestion: StateFlow<Question?> = _aiTutorQuestion.asStateFlow()
+    private var aiTutorSelectedOptionIndex: Int? = null
+    private var aiTutorLastFollowUp: String? = null
+    private var aiTutorLastExplanation: String? = null
+    private var aiTutorJob: Job? = null
+
+    private val _aiTutorState = MutableStateFlow<AiTutorUiState>(AiTutorUiState.Idle)
+    val aiTutorState: StateFlow<AiTutorUiState> = _aiTutorState.asStateFlow()
+
+    private val _aiDraftingDoubtId = MutableStateFlow<String?>(null)
+    val aiDraftingDoubtId: StateFlow<String?> = _aiDraftingDoubtId.asStateFlow()
+    private var aiDraftJob: Job? = null
+
+    private val _flagQuestionTarget = MutableStateFlow<Question?>(null)
+    val flagQuestionTarget: StateFlow<Question?> = _flagQuestionTarget.asStateFlow()
+
+    private val _isFlagBusy = MutableStateFlow(false)
+    val isFlagBusy: StateFlow<Boolean> = _isFlagBusy.asStateFlow()
 
     val lastSeenAnnouncementMs: StateFlow<Long> = settings.lastSeenAnnouncementMs
 
@@ -1044,6 +1083,10 @@ class MainViewModel(
         profilePushJob = null
         practiceCloudSyncJob?.cancel()
         practiceCloudSyncJob = null
+        aiTutorJob?.cancel()
+        aiTutorJob = null
+        aiDraftJob?.cancel()
+        aiDraftJob = null
         syncListenerJobs.forEach { it.cancel() }
         syncListenerJobs = emptyList()
         settings.clearLocalSession()
@@ -1277,7 +1320,58 @@ class MainViewModel(
             emptyList()
         }
 
-        syncListenerJobs = listOf(profileJob, progressJob, mockJob, customJob) + subJobs + engagementJobs
+        val payReportJobs = if (paymentReportRepo != null) {
+            val studentPayJob = viewModelScope.launch {
+                paymentReportRepo.observeStudentPaymentRequests(currentUserId)
+                    .catch { error ->
+                        val firestoreError = generateSequence(error) { it.cause }
+                            .filterIsInstance<FirebaseFirestoreException>()
+                            .firstOrNull()
+                        if (firestoreError == null && error is CancellationException) throw error
+                        Log.w(TAG, "Student payment requests stream interrupted", firestoreError ?: error)
+                    }
+                    .collect { list ->
+                        if (!isSigningOut) _studentPaymentRequests.value = list
+                    }
+            }
+            val adminPayAndReportJobs = if (isOwnerAdmin) {
+                listOf(
+                    viewModelScope.launch {
+                        paymentReportRepo.observeAdminPaymentRequests()
+                            .catch { error ->
+                                val firestoreError = generateSequence(error) { it.cause }
+                                    .filterIsInstance<FirebaseFirestoreException>()
+                                    .firstOrNull()
+                                if (firestoreError == null && error is CancellationException) throw error
+                                Log.w(TAG, "Admin payment requests stream interrupted", firestoreError ?: error)
+                            }
+                            .collect { list ->
+                                if (!isSigningOut) _adminState.update { it.copy(paymentRequests = list) }
+                            }
+                    },
+                    viewModelScope.launch {
+                        paymentReportRepo.observeAdminQuestionReports()
+                            .catch { error ->
+                                val firestoreError = generateSequence(error) { it.cause }
+                                    .filterIsInstance<FirebaseFirestoreException>()
+                                    .firstOrNull()
+                                if (firestoreError == null && error is CancellationException) throw error
+                                Log.w(TAG, "Admin question reports stream interrupted", firestoreError ?: error)
+                            }
+                            .collect { list ->
+                                if (!isSigningOut) _adminState.update { it.copy(questionReports = list) }
+                            }
+                    }
+                )
+            } else {
+                emptyList()
+            }
+            listOf(studentPayJob) + adminPayAndReportJobs
+        } else {
+            emptyList()
+        }
+
+        syncListenerJobs = listOf(profileJob, progressJob, mockJob, customJob) + subJobs + engagementJobs + payReportJobs
     }
 
     private suspend fun performBidirectionalSync(showFeedbackToast: Boolean) {
@@ -4019,6 +4113,306 @@ class MainViewModel(
         }
     }
 
+    // ------------------------------------------------------------------------
+    // v2.3: AI CLINICAL TUTOR (PRO) & ADMIN AI DOUBT DRAFT HELPER
+    // ------------------------------------------------------------------------
+
+    fun openAiTutorForQuestion(item: QuestionItem, selectedOptionIndex: Int?) {
+        val sub = subscriptionState.value
+        if (!sub.hasAnyActivePaidOrTrial && !sub.isAdmin) {
+            showMessage("AI Clinical Tutor is included with Free Trial & Pro plans.")
+            openPlans()
+            return
+        }
+        aiTutorSelectedOptionIndex = selectedOptionIndex
+        aiTutorLastFollowUp = null
+        aiTutorLastExplanation = null
+        _aiTutorQuestion.value = item.question
+        runAiTutorStream(followUpPrompt = null)
+    }
+
+    fun askAiTutorFollowUp(prompt: String) {
+        val clean = prompt.trim()
+        if (clean.length < 3 || _aiTutorQuestion.value == null) return
+        aiTutorLastFollowUp = clean
+        runAiTutorStream(followUpPrompt = clean)
+    }
+
+    fun retryAiTutor() {
+        if (_aiTutorQuestion.value == null) return
+        runAiTutorStream(followUpPrompt = aiTutorLastFollowUp)
+    }
+
+    fun closeAiTutor() {
+        aiTutorJob?.cancel()
+        aiTutorJob = null
+        _aiTutorQuestion.value = null
+        _aiTutorState.value = AiTutorUiState.Idle
+        aiTutorSelectedOptionIndex = null
+        aiTutorLastFollowUp = null
+        aiTutorLastExplanation = null
+    }
+
+    private fun runAiTutorStream(followUpPrompt: String?) {
+        val question = _aiTutorQuestion.value ?: return
+        aiTutorJob?.cancel()
+        val label = if (followUpPrompt.isNullOrBlank()) {
+            "Clinical Concept & Option Elimination"
+        } else {
+            followUpPrompt.take(70)
+        }
+        _aiTutorState.value = AiTutorUiState.Loading(
+            promptLabel = if (followUpPrompt.isNullOrBlank()) {
+                "Analyzing clinical priority & distractors..."
+            } else {
+                "Answering follow-up..."
+            }
+        )
+        val examName = PlatformCatalogDefaults.examById(activeExamId.value)?.shortName ?: "Nursing Officer"
+        aiTutorJob = viewModelScope.launch {
+            try {
+                var latestText = ""
+                aiTutorService.explainMcqStream(
+                    question = question,
+                    selectedOptionIndex = aiTutorSelectedOptionIndex,
+                    activeExamName = examName,
+                    followUpPrompt = followUpPrompt,
+                    previousExplanation = aiTutorLastExplanation
+                ).collect { accumulated ->
+                    latestText = accumulated
+                    _aiTutorState.value = AiTutorUiState.Streaming(text = accumulated, promptLabel = label)
+                }
+                if (latestText.isNotBlank()) {
+                    if (followUpPrompt.isNullOrBlank()) {
+                        aiTutorLastExplanation = latestText
+                    }
+                    _aiTutorState.value = AiTutorUiState.Success(text = latestText, promptLabel = label)
+                } else {
+                    _aiTutorState.value = AiTutorUiState.Error("AI Tutor returned an empty response. Please retry.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "AI Tutor stream failed", e)
+                _aiTutorState.value = AiTutorUiState.Error(
+                    e.message?.takeIf { it.isNotBlank() }
+                        ?: "AI Clinical Tutor is temporarily unavailable. Check your internet connection and retry."
+                )
+            }
+        }
+    }
+
+    fun adminGenerateAiDoubtDraft(
+        doubt: CloudDoubt,
+        onStreamText: (String) -> Unit
+    ) {
+        if (!isOwnerAdmin) return
+        val dId = doubt.doubtId
+        aiDraftJob?.cancel()
+        _aiDraftingDoubtId.value = dId
+        aiDraftJob = viewModelScope.launch {
+            try {
+                var latest = ""
+                aiTutorService.draftAdminDoubtReplyStream(doubt).collect { accumulated ->
+                    latest = accumulated
+                    onStreamText(accumulated)
+                }
+                if (latest.isNotBlank()) {
+                    showMessage("AI draft ready — review & edit before posting.")
+                } else {
+                    showMessage("AI draft returned empty text. Please retry.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Admin AI doubt draft failed", e)
+                showMessage("AI draft failed: ${e.message ?: "Check connection & retry"}")
+            } finally {
+                if (_aiDraftingDoubtId.value == dId) {
+                    _aiDraftingDoubtId.value = null
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // v2.3: IN-APP UPI UTR PAYMENT SUBMISSION & 1-TAP ADMIN APPROVAL
+    // ------------------------------------------------------------------------
+
+    fun submitUpiPaymentRequest(
+        tier: PlanTier,
+        examIds: List<String>,
+        tenureDays: Int,
+        amountInr: Int,
+        utrNumber: String,
+        payerName: String,
+        onSuccess: () -> Unit = {}
+    ) {
+        val repo = paymentReportRepo ?: return
+        if (currentUserId.isBlank()) return
+        viewModelScope.launch {
+            _isPaymentSubmitBusy.value = true
+            val res = repo.submitPaymentRequest(
+                uid = currentUserId,
+                studentName = profileName.value.ifBlank { signedInAccount.displayName },
+                studentEmail = signedInAccount.email,
+                planTier = tier,
+                unlockedExamIds = examIds,
+                tenureDays = tenureDays,
+                amountInr = amountInr,
+                utrNumber = utrNumber,
+                payerName = payerName
+            )
+            _isPaymentSubmitBusy.value = false
+            res.onSuccess {
+                showMessage("UTR submitted! Admin will verify & activate your plan shortly.")
+                onSuccess()
+            }.onFailure { err ->
+                showMessage(err.message ?: "Could not submit UPI UTR. Please check and retry.")
+            }
+        }
+    }
+
+    fun adminApprovePaymentRequest(request: CloudPaymentRequest) {
+        val repo = paymentReportRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.adminApprovePaymentRequest(request)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                showMessage("Approved UTR ${request.utrNumber}! Plan activated & student notified.")
+                refreshAdminDashboard()
+            }.onFailure { err ->
+                showMessage("Approval failed: ${err.message}")
+            }
+        }
+    }
+
+    fun adminRejectPaymentRequest(request: CloudPaymentRequest, reason: String) {
+        val repo = paymentReportRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.adminRejectPaymentRequest(request, reason)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                showMessage("Payment request rejected & student notified.")
+            }.onFailure { err ->
+                showMessage("Rejection failed: ${err.message}")
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // v2.3: QUESTION ERROR FLAGGING & ADMIN REPORTS / LIVE OTA QUESTION EDITOR
+    // ------------------------------------------------------------------------
+
+    fun openFlagQuestionSheet(item: QuestionItem) {
+        _flagQuestionTarget.value = item.question
+    }
+
+    fun closeFlagQuestionSheet() {
+        _flagQuestionTarget.value = null
+    }
+
+    fun submitQuestionReport(
+        question: Question,
+        reason: QuestionReportReason,
+        note: String
+    ) {
+        val repo = paymentReportRepo ?: return
+        if (currentUserId.isBlank()) return
+        viewModelScope.launch {
+            _isFlagBusy.value = true
+            val res = repo.submitQuestionReport(
+                uid = currentUserId,
+                studentName = profileName.value.ifBlank { signedInAccount.displayName },
+                studentEmail = signedInAccount.email,
+                examId = activeExamId.value,
+                question = question,
+                reason = reason,
+                note = note
+            )
+            _isFlagBusy.value = false
+            res.onSuccess {
+                _flagQuestionTarget.value = null
+                showMessage("Issue flagged to ClinEdge Faculty. Thank you for improving the bank!")
+            }.onFailure { err ->
+                showMessage("Could not submit flag: ${err.message}")
+            }
+        }
+    }
+
+    fun adminResolveQuestionReport(
+        report: CloudQuestionReport,
+        newStatus: QuestionReportStatus,
+        resolutionNote: String,
+        notifyStudent: Boolean
+    ) {
+        val repo = paymentReportRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.adminUpdateQuestionReportStatus(
+                report = report,
+                newStatus = newStatus,
+                resolutionNote = resolutionNote,
+                notifyStudent = notifyStudent
+            )
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                val msg = if (newStatus == QuestionReportStatus.RESOLVED) "Report marked resolved" else "Report dismissed"
+                showMessage(if (notifyStudent) "$msg & student notified." else "$msg.")
+            }.onFailure { err ->
+                showMessage("Report update failed: ${err.message}")
+            }
+        }
+    }
+
+    fun adminOpenOtaQuestionEditor(questionId: String, reportId: String) {
+        val repo = paymentReportRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val packIds = _adminState.value.questionPacks.map { it.packId.ifBlank { it.id } }
+            val res = repo.adminLoadOtaQuestionForEdit(
+                localQuestionId = questionId,
+                knownPackIds = packIds,
+                reportId = reportId
+            )
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess { draft ->
+                _adminState.update { it.copy(otaEditDraft = draft) }
+            }.onFailure { err ->
+                showMessage(err.message ?: "Could not load OTA question for editing.")
+            }
+        }
+    }
+
+    fun adminSaveOtaQuestionEdit(draft: OtaQuestionEditDraft) {
+        val repo = paymentReportRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val currentCfg = _subscriptionConfig.value
+            val res = repo.adminSaveOtaQuestionEdit(draft = draft, currentConfig = currentCfg)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                _adminState.update { it.copy(otaEditDraft = null) }
+                val bumped = (currentCfg.catalogVersion + 1L).coerceAtLeast(1L)
+                triggerOtaPackSyncIfNeeded(bumped)
+                showMessage("Live OTA question updated! Catalog bumped to v$bumped for all students.")
+            }.onFailure { err ->
+                showMessage("Could not save OTA edit: ${err.message}")
+            }
+        }
+    }
+
+    fun adminDismissOtaQuestionEditor() {
+        _adminState.update { it.copy(otaEditDraft = null) }
+    }
+
     private fun stopActiveTimer() {
         timerJob?.cancel()
         timerJob = null
@@ -4027,6 +4421,8 @@ class MainViewModel(
     override fun onCleared() {
         super.onCleared()
         stopActiveTimer()
+        aiTutorJob?.cancel()
+        aiDraftJob?.cancel()
         detachCloudSyncForSignOut()
     }
 

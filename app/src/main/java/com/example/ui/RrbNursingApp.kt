@@ -99,16 +99,20 @@ import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.data.model.ExamStage
 import com.example.data.model.PlatformCatalogDefaults
+import com.example.data.model.PracticePathway
 import com.example.data.notifications.CloudEngagementRepository
 import com.example.data.repository.NursingPrepRepository
 import com.example.data.subscription.DeviceLockManager
+import com.example.data.subscription.PaymentAndReportRepository
 import com.example.data.subscription.SubscriptionRepository
 import com.example.data.update.AppUpdateVersionLogic
 import com.example.ui.auth.authStateFlow
 import com.example.ui.auth.signOut
+import com.example.ui.components.AiClinicalTutorSheet
 import com.example.ui.components.AppUpdateAvailableDialog
 import com.example.ui.components.ClinEdgeLogoMark
 import com.example.ui.components.ExamPickerModalSheet
+import com.example.ui.components.FlagQuestionModalSheet
 import com.example.ui.components.ImporterModalSheet
 import com.example.ui.components.PdfExportModalSheet
 import com.example.ui.components.ProfileAvatarCircle
@@ -137,6 +141,7 @@ import com.example.ui.theme.RrbNursingTheme
 import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.MainTab
 import com.example.ui.viewmodel.MainViewModel
+import com.example.ui.viewmodel.SubjectHubSection
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -213,6 +218,7 @@ private fun AuthenticatedClinEdgeApp(
                 val subscriptionRepo = SubscriptionRepository(firestore)
                 val deviceLockManager = DeviceLockManager(app)
                 val engagementRepo = CloudEngagementRepository(firestore)
+                val paymentReportRepo = PaymentAndReportRepository(app, subscriptionRepo)
                 MainViewModel(
                     repository = repository,
                     settings = settings,
@@ -225,7 +231,8 @@ private fun AuthenticatedClinEdgeApp(
                     subscriptionRepo = subscriptionRepo,
                     deviceLockManager = deviceLockManager,
                     engagementRepo = engagementRepo,
-                    appContext = app
+                    appContext = app,
+                    paymentReportRepo = paymentReportRepo
                 )
             }
         }
@@ -312,6 +319,13 @@ fun RrbNursingApp(vm: MainViewModel) {
         val doubtAskContext by vm.doubtAskContext.collectAsStateWithLifecycle()
         val isEngagementBusy by vm.isEngagementBusy.collectAsStateWithLifecycle()
         val lastSeenAnnouncementMs by vm.lastSeenAnnouncementMs.collectAsStateWithLifecycle()
+        val studentPaymentRequests by vm.studentPaymentRequests.collectAsStateWithLifecycle()
+        val isPaymentSubmitBusy by vm.isPaymentSubmitBusy.collectAsStateWithLifecycle()
+        val aiTutorQuestion by vm.aiTutorQuestion.collectAsStateWithLifecycle()
+        val aiTutorState by vm.aiTutorState.collectAsStateWithLifecycle()
+        val aiDraftingDoubtId by vm.aiDraftingDoubtId.collectAsStateWithLifecycle()
+        val flagQuestionTarget by vm.flagQuestionTarget.collectAsStateWithLifecycle()
+        val isFlagBusy by vm.isFlagBusy.collectAsStateWithLifecycle()
         val signedInAccount = vm.signedInAccount
 
         val snackbarHostState = remember { SnackbarHostState() }
@@ -453,6 +467,28 @@ fun RrbNursingApp(vm: MainViewModel) {
             }
             onDispose {
                 window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+
+        // Dynamic Anti-Piracy Screen Protection (FLAG_SECURE):
+        // Active ONLY for non-admin students during Practice, CBT, PYQ browsing, or PDF export.
+        val shouldSecureScreen = !subscriptionState.isAdmin && (
+            practiceSession != null ||
+                cbtSession != null ||
+                pdfExportConfig.isVisible ||
+                (!inSubScreen && selectedTab == MainTab.SUBJECTS &&
+                    practicePathway == PracticePathway.BY_EXAM &&
+                    subjectSection == SubjectHubSection.PYQ)
+        )
+        DisposableEffect(context, shouldSecureScreen) {
+            val window = context.findActivity()?.window
+            if (shouldSecureScreen) {
+                window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
+            onDispose {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
             }
         }
 
@@ -800,6 +836,9 @@ fun RrbNursingApp(vm: MainViewModel) {
                                                 questionPreview = item.question.questionText
                                             )
                                         },
+                                        canUseAiTutor = subscriptionState.hasAnyActivePaidOrTrial || subscriptionState.isAdmin,
+                                        onExplainWithAi = vm::openAiTutorForQuestion,
+                                        onFlagQuestion = vm::openFlagQuestionSheet,
                                         onExit = vm::exitPracticeOrCbt
                                     )
                                 }
@@ -835,6 +874,14 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onReplyToDoubt = vm::adminReplyToDoubt,
                                         onCloseDoubt = vm::adminCloseDoubt,
                                         onDeleteDoubt = vm::adminDeleteDoubt,
+                                        aiDraftingDoubtId = aiDraftingDoubtId,
+                                        onAiDraftDoubtReply = vm::adminGenerateAiDoubtDraft,
+                                        onApprovePaymentRequest = vm::adminApprovePaymentRequest,
+                                        onRejectPaymentRequest = vm::adminRejectPaymentRequest,
+                                        onResolveQuestionReport = vm::adminResolveQuestionReport,
+                                        onOpenOtaQuestionEditor = vm::adminOpenOtaQuestionEditor,
+                                        onSaveOtaQuestionEdit = vm::adminSaveOtaQuestionEdit,
+                                        onDismissOtaQuestionEditor = vm::adminDismissOtaQuestionEditor,
                                         onShowMessage = vm::showMessage,
                                         onBack = vm::closeAdminConsole
                                     )
@@ -884,7 +931,10 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onRedeemCode = vm::redeemAccessCode,
                                         onShowMessage = vm::showMessage,
                                         onBack = vm::closePlans,
-                                        examLockContext = plansExamLockContext
+                                        examLockContext = plansExamLockContext,
+                                        paymentRequests = studentPaymentRequests,
+                                        isPaymentBusy = isPaymentSubmitBusy,
+                                        onSubmitUpiPayment = vm::submitUpiPaymentRequest
                                     )
                                 }
 
@@ -1263,6 +1313,21 @@ fun RrbNursingApp(vm: MainViewModel) {
                         )
                     },
                     onDismiss = vm::dismissAskDoubtSheet
+                )
+
+                AiClinicalTutorSheet(
+                    question = aiTutorQuestion,
+                    uiState = aiTutorState,
+                    onAskFollowUp = vm::askAiTutorFollowUp,
+                    onRetry = vm::retryAiTutor,
+                    onDismiss = vm::closeAiTutor
+                )
+
+                FlagQuestionModalSheet(
+                    question = flagQuestionTarget,
+                    isBusy = isFlagBusy,
+                    onSubmit = vm::submitQuestionReport,
+                    onDismiss = vm::closeFlagQuestionSheet
                 )
             }
         }
