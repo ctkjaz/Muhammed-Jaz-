@@ -16,6 +16,7 @@ import com.example.data.local.QuestionProgressEntity
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.data.model.AccountSessionLogic
+import com.example.data.model.ClinicalSpotterCatalog
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.PlatformCatalogDefaults
@@ -486,7 +487,12 @@ class RrbNursingLogicTest {
         v2Helper.writableDatabase.close()
 
         val migratedDb = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(
+                AppDatabase.MIGRATION_1_2,
+                AppDatabase.MIGRATION_2_3,
+                AppDatabase.MIGRATION_3_4,
+                AppDatabase.MIGRATION_4_5
+            )
             .allowMainThreadQueries()
             .build()
         try {
@@ -501,6 +507,7 @@ class RrbNursingLogicTest {
             assertEquals("2025", row.question.examYear)
             assertEquals("S1", row.question.examShift)
             assertEquals("msn_general", row.question.topicId)
+            assertEquals("", row.question.imageUrl)
             assertEquals(true, row.progress?.isBookmarked)
             assertEquals(5, row.progress?.attemptsCount)
             assertEquals(4, row.progress?.correctCount)
@@ -675,7 +682,12 @@ class RrbNursingLogicTest {
         v3Helper.writableDatabase.close()
 
         val migratedDb = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(
+                AppDatabase.MIGRATION_1_2,
+                AppDatabase.MIGRATION_2_3,
+                AppDatabase.MIGRATION_3_4,
+                AppDatabase.MIGRATION_4_5
+            )
             .allowMainThreadQueries()
             .build()
         try {
@@ -911,8 +923,10 @@ class RrbNursingLogicTest {
             val rrbQuestions = repo.observeQuestionsForExam(PlatformCatalogDefaults.EXAM_RRB_NURSING).first()
             val norcetQuestions = repo.observeQuestionsForExam(PlatformCatalogDefaults.EXAM_AIIMS_NORCET).first()
 
-            // All 1,223 baseline RRB questions remain intact + 8,000 subject practice + 500 predicted mocks = 9,723
-            assertEquals(1223 + 8000 + 500, rrbQuestions.size)
+            // All 1,223 baseline RRB questions + 8,000 subject practice + 500 predicted mocks + 15 clinical image spotters
+            val spotterCount = ClinicalSpotterCatalog.builtinSpotterQuestions().size
+            assertEquals(1223 + 8000 + 500 + spotterCount, rrbQuestions.size)
+            assertEquals(spotterCount, rrbQuestions.count { it.question.isImageBased })
             assertTrue(rrbQuestions.count { it.question.isPredictedMock } == 500)
 
             // NORCET contains all 320 dedicated N_* questions + shared Nursing & GK/Aptitude (excluding Railways)

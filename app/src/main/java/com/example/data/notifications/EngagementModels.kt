@@ -3,6 +3,7 @@ package com.example.data.notifications
 import androidx.annotation.Keep
 import com.example.data.model.DailyStudyGoalState
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.IgnoreExtraProperties
 import java.util.Calendar
 import java.util.Locale
@@ -56,6 +57,7 @@ enum class DoubtStatus(val dbValue: String, val label: String) {
 @Keep
 @IgnoreExtraProperties
 data class CloudAnnouncement(
+    @DocumentId val docId: String = "",
     val announcementId: String = "",
     val title: String = "",
     val body: String = "",
@@ -69,6 +71,15 @@ data class CloudAnnouncement(
     val categoryEnum: AnnouncementCategory get() = AnnouncementCategory.fromRaw(category)
     val priorityEnum: AnnouncementPriority get() = AnnouncementPriority.fromRaw(priority)
     val createdAtMs: Long get() = createdAt?.toDate()?.time ?: 0L
+
+    /**
+     * Stable non-empty identifier used for dismissing urgent home banners and Compose list keys,
+     * even if a legacy Firestore announcement document omitted the `announcementId` field.
+     */
+    val effectiveBannerKey: String
+        get() = announcementId.trim()
+            .ifBlank { docId.trim() }
+            .ifBlank { "${title.trim()}|$createdAtMs" }
 }
 
 @Keep
@@ -232,6 +243,67 @@ object EngagementLogic {
     fun announcementMatchesExam(announcement: CloudAnnouncement, activeExamId: String): Boolean {
         val target = announcement.targetExamId.trim()
         return target.isBlank() || target.equals("all", ignoreCase = true) || target == activeExamId
+    }
+
+    private val SEMVER_REGEX = Regex("""(?i)\bv?(\d+)\.(\d+)(?:\.(\d+))?\b""")
+
+    /**
+     * Returns true if an APP_UPDATE announcement refers to a version already installed on this device
+     * (e.g., announcement says "ClinEdge v2.5.1 Update Available" while installed version is "2.8.0").
+     */
+    fun isAppUpdateAnnouncementAlreadyInstalled(
+        announcement: CloudAnnouncement,
+        installedVersionName: String
+    ): Boolean {
+        if (announcement.categoryEnum != AnnouncementCategory.APP_UPDATE) return false
+        val installed = parseSemverTuple(installedVersionName) ?: return false
+        val mentioned = parseSemverTuple(announcement.title)
+            ?: parseSemverTuple(announcement.body)
+            ?: return false
+        return compareSemver(installed, mentioned) >= 0
+    }
+
+    private fun parseSemverTuple(text: String): Triple<Int, Int, Int>? {
+        val m = SEMVER_REGEX.find(text) ?: return null
+        val major = m.groupValues[1].toIntOrNull() ?: return null
+        val minor = m.groupValues[2].toIntOrNull() ?: return null
+        val patch = m.groupValues[3].toIntOrNull() ?: 0
+        return Triple(major, minor, patch)
+    }
+
+    private fun compareSemver(a: Triple<Int, Int, Int>, b: Triple<Int, Int, Int>): Int {
+        if (a.first != b.first) return a.first.compareTo(b.first)
+        if (a.second != b.second) return a.second.compareTo(b.second)
+        return a.third.compareTo(b.third)
+    }
+
+    /**
+     * Selects the top active URGENT banner for the dashboard, respecting:
+     * 1. All permanently dismissed banner keys (Set<String> — prevents ping-pong when 2+ urgent alerts exist).
+     * 2. Active exam targeting.
+     * 3. Auto-suppressing stale APP_UPDATE banners once the user is already on an equal/newer app version.
+     */
+    fun selectActiveUrgentBanner(
+        announcements: List<CloudAnnouncement>,
+        activeExamId: String,
+        dismissedBannerKeys: Set<String>,
+        installedVersionName: String = ""
+    ): CloudAnnouncement? {
+        return announcements.firstOrNull { ann ->
+            if (ann.priorityEnum != AnnouncementPriority.URGENT) return@firstOrNull false
+            if (!announcementMatchesExam(ann, activeExamId)) return@firstOrNull false
+            val key = ann.effectiveBannerKey
+            if (key in dismissedBannerKeys) return@firstOrNull false
+            if (ann.announcementId.isNotBlank() && ann.announcementId.trim() in dismissedBannerKeys) {
+                return@firstOrNull false
+            }
+            if (installedVersionName.isNotBlank() &&
+                isAppUpdateAnnouncementAlreadyInstalled(ann, installedVersionName)
+            ) {
+                return@firstOrNull false
+            }
+            true
+        }
     }
 
     fun computeUnreadCounts(
