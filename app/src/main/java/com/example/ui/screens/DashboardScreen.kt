@@ -24,14 +24,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.QuestionAnswer
 import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -58,6 +63,9 @@ import com.example.data.model.DifficultyFilter
 import com.example.data.model.ExamStage
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.QuestionItem
+import com.example.data.notifications.CloudAnnouncement
+import com.example.data.notifications.DailyReminderSettingsState
+import com.example.data.notifications.EngagementLogic
 import com.example.data.subscription.PlanTier
 import com.example.data.subscription.SubscriptionUiState
 import com.example.ui.components.AcidLimeProgressBar
@@ -93,6 +101,13 @@ fun DashboardScreen(
     onStartDrill: (List<QuestionItem>, String) -> Unit,
     subscription: SubscriptionUiState = SubscriptionUiState(),
     onOpenPlans: () -> Unit = {},
+    urgentBanner: CloudAnnouncement? = null,
+    unreadDoubtReplies: Int = 0,
+    dailyReminder: DailyReminderSettingsState = DailyReminderSettingsState(),
+    onDismissUrgentBanner: (String) -> Unit = {},
+    onOpenNotifications: () -> Unit = {},
+    onOpenDoubtBox: () -> Unit = {},
+    onAskQuickDoubt: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val editorial = MaterialTheme.editorialColors
@@ -337,6 +352,81 @@ fun DashboardScreen(
                 }
             }
 
+            // 1c. Dismissible Urgent Exam Alert Banner (pushed live from Admin Console)
+            if (urgentBanner != null) {
+                item(key = "urgent_alert_banner_${urgentBanner.announcementId}") {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                        border = BorderStroke(1.5.dp, editorial.acidLime),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable(onClick = onOpenNotifications)
+                            .testTag("dashboard_urgent_alert_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = editorial.acidLime
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Campaign,
+                                    contentDescription = "Urgent alert",
+                                    tint = editorial.onAcidLime,
+                                    modifier = Modifier
+                                        .padding(8.dp)
+                                        .size(18.dp)
+                                )
+                            }
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = "${urgentBanner.categoryEnum.label.uppercase(Locale.US)} · URGENT",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                    color = if (editorial.isDark) editorial.acidLime else editorial.wrongText,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = urgentBanner.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = urgentBanner.body,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(
+                                onClick = { onDismissUrgentBanner(urgentBanner.announcementId) },
+                                modifier = Modifier.testTag("dashboard_dismiss_urgent_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = "Dismiss urgent alert",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // 2. Daily Progress Card (Acid Lime Progress Accent)
             item {
                 Card(
@@ -420,6 +510,137 @@ fun DashboardScreen(
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2b. Student Doubt Box & Reminder Status Strip
+            item(key = "dashboard_doubt_box_card") {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                    border = BorderStroke(
+                        width = if (unreadDoubtReplies > 0) 1.5.dp else 1.dp,
+                        color = if (unreadDoubtReplies > 0) editorial.acidLime else editorial.borderSubtle
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("dashboard_doubt_box_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.QuestionAnswer,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Column {
+                                    Text(
+                                        text = "Doubt Box",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = if (unreadDoubtReplies > 0) {
+                                            "$unreadDoubtReplies new faculty ${if (unreadDoubtReplies == 1) "reply" else "replies"} waiting!"
+                                        } else {
+                                            "Ask nursing & clinical doubts directly to faculty"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            if (unreadDoubtReplies > 0) {
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = editorial.acidLime
+                                ) {
+                                    Text(
+                                        text = "$unreadDoubtReplies NEW",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                        color = editorial.onAcidLime,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            } else if (dailyReminder.enabled) {
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = editorial.elevatedSurface,
+                                    border = BorderStroke(1.dp, editorial.borderSubtle),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .clickable(onClick = onAdjustDailyGoal)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.NotificationsActive,
+                                            contentDescription = "Daily reminder active",
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Text(
+                                            text = EngagementLogic.formatReminderTime(dailyReminder.hour, dailyReminder.minute),
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = onAskQuickDoubt,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = editorial.acidLime,
+                                    contentColor = editorial.onAcidLime
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 44.dp)
+                                    .testTag("dashboard_ask_doubt_btn")
+                            ) {
+                                Text("Ask a Doubt", fontWeight = FontWeight.Bold)
+                            }
+                            OutlinedButton(
+                                onClick = onOpenDoubtBox,
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, editorial.borderSubtle),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 44.dp)
+                                    .testTag("dashboard_open_doubt_box_btn")
+                            ) {
+                                Text("My Doubts", fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }

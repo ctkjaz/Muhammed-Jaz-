@@ -509,6 +509,35 @@
         "createdByEmail",
         "createdAt"
       ]
+    },
+    "DirectNotification": {
+      "title": "DirectNotification",
+      "description": "Owner-admin pushed individual or custom notification or automatic doubt-reply alert stored privately under a specific student's notifications subcollection.",
+      "type": "object",
+      "properties": {
+        "notificationId": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "type": { "type": "string", "enum": ["custom_admin", "doubt_reply", "account_notice"] },
+        "referenceId": { "type": "string" },
+        "actionUrl": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdByEmail": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "notificationId",
+        "userId",
+        "title",
+        "body",
+        "type",
+        "referenceId",
+        "actionUrl",
+        "read",
+        "createdByEmail",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -527,6 +556,10 @@
     "/users/{userId}/customQuestions/{questionId}": {
       "schema": { "$ref": "#/entities/CustomQuestionRecord" },
       "description": "Owner-isolated user-imported custom MCQs."
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/DirectNotification" },
+      "description": "Owner-isolated individual admin push notifications and doubt-reply alerts."
     },
     "/appConfig/{configId}": {
       "schema": { "$ref": "#/entities/SubscriptionConfig" },

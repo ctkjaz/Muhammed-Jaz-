@@ -419,6 +419,28 @@ service cloud.firestore {
              isValidTimestamp(data.createdAt);
     }
 
+    // 13. DirectNotification
+    function isValidDirectNotification(data, userId, notificationId) {
+      return data.keys().hasAll([
+               'notificationId', 'userId', 'title', 'body', 'type',
+               'referenceId', 'actionUrl', 'read', 'createdByEmail', 'createdAt'
+             ]) &&
+             data.keys().hasOnly([
+               'notificationId', 'userId', 'title', 'body', 'type',
+               'referenceId', 'actionUrl', 'read', 'createdByEmail', 'createdAt'
+             ]) &&
+             data.notificationId is string && data.notificationId == notificationId &&
+             data.userId is string && data.userId == userId &&
+             data.title is string && data.title.size() >= 2 && data.title.size() <= 120 &&
+             data.body is string && data.body.size() >= 2 && data.body.size() <= 2000 &&
+             data.type is string && data.type in ['custom_admin', 'doubt_reply', 'account_notice'] &&
+             data.referenceId is string && data.referenceId.size() <= 128 &&
+             data.actionUrl is string && data.actionUrl.size() <= 300 &&
+             data.read is bool &&
+             data.createdByEmail is string && data.createdByEmail.size() <= 120 &&
+             isValidTimestamp(data.createdAt);
+    }
+
     // ------------------------------------------------------------------------
     // /users/{userId} — Owner-isolated profile; Owner Admin may inspect directory
     // ------------------------------------------------------------------------
@@ -572,6 +594,27 @@ service cloud.firestore {
                          ]);
 
         allow delete: if isOwner(userId) && isValidId(userId) && isValidId(questionId);
+      }
+
+      match /notifications/{notificationId} {
+        allow get: if (isOwner(userId) || isAdmin()) && isValidId(userId) && isValidId(notificationId);
+        allow list: if isOwner(userId) || isAdmin();
+
+        allow create: if isAdmin() &&
+                         isValidId(userId) &&
+                         isValidId(notificationId) &&
+                         isValidDirectNotification(incoming(), userId, notificationId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(notificationId) &&
+                         isValidDirectNotification(incoming(), userId, notificationId) &&
+                         incoming().notificationId == existing().notificationId &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+
+        allow delete: if (isOwner(userId) || isAdmin()) && isValidId(userId) && isValidId(notificationId);
       }
     }
 

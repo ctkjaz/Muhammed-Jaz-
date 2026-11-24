@@ -1,5 +1,6 @@
 package com.example.ui.viewmodel
 
+import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
@@ -7,6 +8,18 @@ import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
 import com.example.data.backup.BackupFolderSummary
 import com.example.data.backup.BackupStorageManager
+import com.example.data.notifications.AnnouncementCategory
+import com.example.data.notifications.AnnouncementPriority
+import com.example.data.notifications.ClinEdgeNotificationManager
+import com.example.data.notifications.CloudAnnouncement
+import com.example.data.notifications.CloudDirectNotification
+import com.example.data.notifications.CloudDoubt
+import com.example.data.notifications.CloudEngagementRepository
+import com.example.data.notifications.DailyReminderSettingsState
+import com.example.data.notifications.DirectNotificationType
+import com.example.data.notifications.DoubtAskContext
+import com.example.data.notifications.EngagementLogic
+import com.example.data.notifications.EngagementUnreadSummary
 import com.example.data.cloud.CloudAccountSnapshot
 import com.example.data.cloud.CloudCustomQuestion
 import com.example.data.cloud.CloudMergeLogic
@@ -304,7 +317,9 @@ class MainViewModel(
     accountPhotoUrl: String? = null,
     private val backupStorage: BackupStorageManager? = null,
     private val subscriptionRepo: SubscriptionRepository? = null,
-    private val deviceLockManager: DeviceLockManager? = null
+    private val deviceLockManager: DeviceLockManager? = null,
+    private val engagementRepo: CloudEngagementRepository? = null,
+    private val appContext: Context? = null
 ) : ViewModel() {
 
     val signedInAccount: SignedInAccountInfo = SignedInAccountInfo(
@@ -425,6 +440,97 @@ class MainViewModel(
 
     private val _adminState = MutableStateFlow(AdminConsoleUiState())
     val adminState: StateFlow<AdminConsoleUiState> = _adminState.asStateFlow()
+
+    // ------------------------------------------------------------------------
+    // NOTIFICATIONS, DAILY STUDY REMINDERS & STUDENT DOUBT BOX STATE
+    // ------------------------------------------------------------------------
+    private val _announcements = MutableStateFlow<List<CloudAnnouncement>>(emptyList())
+    val announcements: StateFlow<List<CloudAnnouncement>> = _announcements.asStateFlow()
+
+    private val _directNotifications = MutableStateFlow<List<CloudDirectNotification>>(emptyList())
+    val directNotifications: StateFlow<List<CloudDirectNotification>> = _directNotifications.asStateFlow()
+
+    private val _studentDoubts = MutableStateFlow<List<CloudDoubt>>(emptyList())
+    val studentDoubts: StateFlow<List<CloudDoubt>> = _studentDoubts.asStateFlow()
+
+    private val _adminDoubts = MutableStateFlow<List<CloudDoubt>>(emptyList())
+    val adminDoubts: StateFlow<List<CloudDoubt>> = _adminDoubts.asStateFlow()
+
+    private val _isNotificationsOpen = MutableStateFlow(false)
+    val isNotificationsOpen: StateFlow<Boolean> = _isNotificationsOpen.asStateFlow()
+
+    private val _isDoubtBoxOpen = MutableStateFlow(false)
+    val isDoubtBoxOpen: StateFlow<Boolean> = _isDoubtBoxOpen.asStateFlow()
+
+    private val _highlightedDoubtId = MutableStateFlow<String?>(null)
+    val highlightedDoubtId: StateFlow<String?> = _highlightedDoubtId.asStateFlow()
+
+    private val _doubtAskContext = MutableStateFlow<DoubtAskContext?>(null)
+    val doubtAskContext: StateFlow<DoubtAskContext?> = _doubtAskContext.asStateFlow()
+
+    private val _isEngagementBusy = MutableStateFlow(false)
+    val isEngagementBusy: StateFlow<Boolean> = _isEngagementBusy.asStateFlow()
+
+    val lastSeenAnnouncementMs: StateFlow<Long> = settings.lastSeenAnnouncementMs
+
+    val dailyReminderState: StateFlow<DailyReminderSettingsState> = combine(
+        settings.dailyReminderEnabled,
+        settings.dailyReminderHour,
+        settings.dailyReminderMinute,
+        settings.dailyReminderSmartNudge
+    ) { enabled, hour, minute, smartNudge ->
+        DailyReminderSettingsState(
+            enabled = enabled,
+            hour = hour,
+            minute = minute,
+            smartNudge = smartNudge
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = DailyReminderSettingsState(
+            enabled = settings.dailyReminderEnabled.value,
+            hour = settings.dailyReminderHour.value,
+            minute = settings.dailyReminderMinute.value,
+            smartNudge = settings.dailyReminderSmartNudge.value
+        )
+    )
+
+    val unreadSummary: StateFlow<EngagementUnreadSummary> = combine(
+        _announcements,
+        _directNotifications,
+        _studentDoubts,
+        activeExamId,
+        settings.lastSeenAnnouncementMs
+    ) { anns, direct, doubts, examId, lastSeenMs ->
+        EngagementLogic.computeUnreadCounts(
+            announcements = anns,
+            directNotifications = direct,
+            doubts = doubts,
+            activeExamId = examId,
+            lastSeenAnnouncementMs = lastSeenMs
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = EngagementUnreadSummary()
+    )
+
+    val activeUrgentBanner: StateFlow<CloudAnnouncement?> = combine(
+        _announcements,
+        activeExamId,
+        settings.dismissedBannerAnnouncementId
+    ) { anns, examId, dismissedId ->
+        anns.firstOrNull { ann ->
+            ann.priorityEnum == AnnouncementPriority.URGENT &&
+                EngagementLogic.announcementMatchesExam(ann, examId) &&
+                ann.announcementId != dismissedId
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = null
+    )
 
     private val allPlatformQuestions: StateFlow<List<QuestionItem>> = repository.allQuestions.stateIn(
         scope = viewModelScope,
@@ -714,6 +820,17 @@ class MainViewModel(
             }
             refreshBackupFolderSummary()
             checkForAppUpdates(userInitiated = false)
+            appContext?.let { ctx ->
+                ClinEdgeNotificationManager.ensureChannelsCreated(ctx)
+                ClinEdgeNotificationManager.scheduleCloudAlertSync(ctx)
+                if (settings.dailyReminderEnabled.value) {
+                    ClinEdgeNotificationManager.scheduleDailyReminder(
+                        context = ctx,
+                        hour = settings.dailyReminderHour.value,
+                        minute = settings.dailyReminderMinute.value
+                    )
+                }
+            }
         }
     }
 
@@ -1048,7 +1165,102 @@ class MainViewModel(
             emptyList()
         }
 
-        syncListenerJobs = listOf(profileJob, progressJob, mockJob, customJob) + subJobs
+        val engagementJobs = if (engagementRepo != null) {
+            val annJob = viewModelScope.launch {
+                engagementRepo.observeAnnouncements()
+                    .catch { error ->
+                        val firestoreError = generateSequence(error) { it.cause }
+                            .filterIsInstance<FirebaseFirestoreException>()
+                            .firstOrNull()
+                        if (firestoreError == null && error is CancellationException) throw error
+                        Log.w(TAG, "Announcements stream interrupted", firestoreError ?: error)
+                    }
+                    .collect { list ->
+                        if (isSigningOut) return@collect
+                        _announcements.value = list
+                        val lastNotified = settings.getLastNotifiedAnnouncementMs()
+                        val newestMs = list.maxOfOrNull { it.createdAtMs } ?: 0L
+                        if (lastNotified == 0L) {
+                            if (newestMs > 0L) settings.setLastNotifiedAnnouncementMs(newestMs)
+                        } else if (newestMs > lastNotified) {
+                            val activeExam = settings.activeExamId.value
+                            val fresh = list.filter {
+                                it.createdAtMs > lastNotified &&
+                                    EngagementLogic.announcementMatchesExam(it, activeExam) &&
+                                    !it.createdByEmail.equals(signedInAccount.email, ignoreCase = true)
+                            }.sortedBy { it.createdAtMs }
+                            appContext?.let { ctx ->
+                                fresh.takeLast(2).forEach { ann ->
+                                    ClinEdgeNotificationManager.postAnnouncementNotification(ctx, ann)
+                                }
+                            }
+                            settings.setLastNotifiedAnnouncementMs(newestMs)
+                        }
+                    }
+            }
+            val directJob = viewModelScope.launch {
+                engagementRepo.observeDirectNotifications(currentUserId)
+                    .catch { error ->
+                        val firestoreError = generateSequence(error) { it.cause }
+                            .filterIsInstance<FirebaseFirestoreException>()
+                            .firstOrNull()
+                        if (firestoreError == null && error is CancellationException) throw error
+                        Log.w(TAG, "Direct notifications stream interrupted", firestoreError ?: error)
+                    }
+                    .collect { list ->
+                        if (isSigningOut) return@collect
+                        _directNotifications.value = list
+                        val lastNotified = settings.getLastNotifiedDirectMs()
+                        val fresh = list.filter { !it.read && it.createdAtMs > lastNotified }
+                            .sortedBy { it.createdAtMs }
+                        if (fresh.isNotEmpty()) {
+                            appContext?.let { ctx ->
+                                fresh.takeLast(2).forEach { notif ->
+                                    ClinEdgeNotificationManager.postDirectNotification(ctx, notif)
+                                }
+                            }
+                            settings.setLastNotifiedDirectMs(fresh.maxOf { it.createdAtMs })
+                        }
+                    }
+            }
+            val studentDoubtsJob = viewModelScope.launch {
+                engagementRepo.observeStudentDoubts(currentUserId)
+                    .catch { error ->
+                        val firestoreError = generateSequence(error) { it.cause }
+                            .filterIsInstance<FirebaseFirestoreException>()
+                            .firstOrNull()
+                        if (firestoreError == null && error is CancellationException) throw error
+                        Log.w(TAG, "Student doubts stream interrupted", firestoreError ?: error)
+                    }
+                    .collect { list ->
+                        if (!isSigningOut) _studentDoubts.value = list
+                    }
+            }
+            val adminDoubtsJob = if (isOwnerAdmin) {
+                listOf(
+                    viewModelScope.launch {
+                        engagementRepo.observeAllDoubtsForAdmin()
+                            .catch { error ->
+                                val firestoreError = generateSequence(error) { it.cause }
+                                    .filterIsInstance<FirebaseFirestoreException>()
+                                    .firstOrNull()
+                                if (firestoreError == null && error is CancellationException) throw error
+                                Log.w(TAG, "Admin doubts stream interrupted", firestoreError ?: error)
+                            }
+                            .collect { list ->
+                                if (!isSigningOut) _adminDoubts.value = list
+                            }
+                    }
+                )
+            } else {
+                emptyList()
+            }
+            listOf(annJob, directJob, studentDoubtsJob) + adminDoubtsJob
+        } else {
+            emptyList()
+        }
+
+        syncListenerJobs = listOf(profileJob, progressJob, mockJob, customJob) + subJobs + engagementJobs
     }
 
     private suspend fun performBidirectionalSync(showFeedbackToast: Boolean) {
@@ -1277,6 +1489,8 @@ class MainViewModel(
         _isProfileOpen.value = false
         _isPlansOpen.value = false
         _isAdminOpen.value = false
+        _isNotificationsOpen.value = false
+        _isDoubtBoxOpen.value = false
         _selectedTab.value = tab
     }
 
@@ -1285,6 +1499,8 @@ class MainViewModel(
         _isProfileOpen.value = false
         _isPlansOpen.value = false
         _isAdminOpen.value = false
+        _isNotificationsOpen.value = false
+        _isDoubtBoxOpen.value = false
         _isSettingsOpen.value = true
     }
 
@@ -1297,6 +1513,8 @@ class MainViewModel(
         _isSettingsOpen.value = false
         _isPlansOpen.value = false
         _isAdminOpen.value = false
+        _isNotificationsOpen.value = false
+        _isDoubtBoxOpen.value = false
         _isProfileOpen.value = true
     }
 
@@ -1310,6 +1528,8 @@ class MainViewModel(
         _isSettingsOpen.value = false
         _isProfileOpen.value = false
         _isAdminOpen.value = false
+        _isNotificationsOpen.value = false
+        _isDoubtBoxOpen.value = false
         _isPlansOpen.value = true
     }
 
@@ -1326,6 +1546,8 @@ class MainViewModel(
         _isSettingsOpen.value = false
         _isProfileOpen.value = false
         _isPlansOpen.value = false
+        _isNotificationsOpen.value = false
+        _isDoubtBoxOpen.value = false
         _isAdminOpen.value = true
         refreshAdminDashboard()
     }
@@ -3339,6 +3561,363 @@ class MainViewModel(
             }.onFailure { err ->
                 showMessage("Delete failed: ${err.message}")
             }
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // DAILY STUDY REMINDERS, NOTIFICATIONS INBOX & STUDENT DOUBT BOX ACTIONS
+    // ------------------------------------------------------------------------
+
+    fun openNotifications() {
+        _subjectChaptersNav.value = null
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = false
+        _isPlansOpen.value = false
+        _isAdminOpen.value = false
+        _isDoubtBoxOpen.value = false
+        _isNotificationsOpen.value = true
+        val newestAnnMs = _announcements.value.maxOfOrNull { it.createdAtMs } ?: System.currentTimeMillis()
+        settings.markAnnouncementsSeenUpTo(maxOf(newestAnnMs, System.currentTimeMillis()))
+    }
+
+    fun closeNotifications() {
+        _isNotificationsOpen.value = false
+    }
+
+    fun markAllNotificationsRead() {
+        val newestAnnMs = _announcements.value.maxOfOrNull { it.createdAtMs } ?: System.currentTimeMillis()
+        settings.markAnnouncementsSeenUpTo(maxOf(newestAnnMs, System.currentTimeMillis()))
+        val unreadIds = _directNotifications.value.filter { !it.read }.map { it.notificationId }
+        if (unreadIds.isEmpty()) {
+            showMessage("All alerts marked as read.")
+            return
+        }
+        val repo = engagementRepo ?: return
+        viewModelScope.launch {
+            repo.markAllDirectNotificationsRead(currentUserId, unreadIds).onSuccess {
+                showMessage("All notifications marked as read.")
+            }.onFailure { err ->
+                showMessage("Could not update notifications: ${err.message}")
+            }
+        }
+    }
+
+    fun markDirectNotificationRead(notificationId: String) {
+        val repo = engagementRepo ?: return
+        viewModelScope.launch {
+            repo.markDirectNotificationRead(currentUserId, notificationId)
+        }
+    }
+
+    fun deleteDirectNotification(notificationId: String) {
+        val repo = engagementRepo ?: return
+        viewModelScope.launch {
+            repo.deleteDirectNotification(currentUserId, notificationId).onFailure { err ->
+                showMessage("Could not delete alert: ${err.message}")
+            }
+        }
+    }
+
+    fun dismissUrgentBanner(announcementId: String) {
+        settings.dismissUrgentAnnouncementBanner(announcementId)
+    }
+
+    fun openDoubtBox(highlightDoubtId: String? = null) {
+        _subjectChaptersNav.value = null
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = false
+        _isPlansOpen.value = false
+        _isAdminOpen.value = false
+        _isNotificationsOpen.value = false
+        _highlightedDoubtId.value = highlightDoubtId?.takeIf { it.isNotBlank() }
+        _isDoubtBoxOpen.value = true
+    }
+
+    fun closeDoubtBox() {
+        _isDoubtBoxOpen.value = false
+        _highlightedDoubtId.value = null
+    }
+
+    fun openAskDoubtSheet(
+        examId: String = activeExamId.value,
+        subject: String = "MSN",
+        questionId: String = "",
+        questionPreview: String = ""
+    ) {
+        _doubtAskContext.value = DoubtAskContext(
+            examId = examId.ifBlank { activeExamId.value },
+            subject = subject.ifBlank { "MSN" },
+            questionId = questionId,
+            questionPreview = questionPreview.take(EngagementLogic.MAX_PREVIEW_LENGTH)
+        )
+    }
+
+    fun dismissAskDoubtSheet() {
+        _doubtAskContext.value = null
+    }
+
+    fun submitStudentDoubt(
+        examId: String,
+        subject: String,
+        questionId: String,
+        questionPreview: String,
+        doubtText: String,
+        onSuccess: () -> Unit = {}
+    ) {
+        val repo = engagementRepo ?: run {
+            showMessage("Sign in with Google to submit doubts.")
+            return
+        }
+        val validationError = EngagementLogic.validateDoubtText(doubtText)
+        if (validationError != null) {
+            showMessage(validationError)
+            return
+        }
+        viewModelScope.launch {
+            _isEngagementBusy.value = true
+            val res = repo.submitDoubt(
+                userId = currentUserId,
+                studentName = settings.profileName.value.ifBlank { signedInAccount.displayName },
+                studentEmail = signedInAccount.email,
+                examId = examId,
+                subject = subject,
+                questionId = questionId,
+                questionPreview = questionPreview,
+                doubtText = doubtText
+            )
+            _isEngagementBusy.value = false
+            res.onSuccess {
+                _doubtAskContext.value = null
+                showMessage("Doubt submitted! Faculty reply will notify you here.")
+                onSuccess()
+            }.onFailure { err ->
+                showMessage("Could not submit doubt: ${err.message}")
+            }
+        }
+    }
+
+    fun markStudentDoubtRead(doubtId: String) {
+        val repo = engagementRepo ?: return
+        viewModelScope.launch {
+            repo.markDoubtReplyRead(doubtId)
+        }
+    }
+
+    fun closeStudentDoubt(doubtId: String) {
+        val repo = engagementRepo ?: return
+        viewModelScope.launch {
+            repo.closeDoubt(doubtId).onSuccess {
+                showMessage("Doubt marked as resolved.")
+            }.onFailure { err ->
+                showMessage("Could not close doubt: ${err.message}")
+            }
+        }
+    }
+
+    fun deleteStudentDoubt(doubtId: String) {
+        val repo = engagementRepo ?: return
+        viewModelScope.launch {
+            repo.deleteDoubt(doubtId).onSuccess {
+                showMessage("Doubt deleted.")
+            }.onFailure { err ->
+                showMessage("Could not delete doubt: ${err.message}")
+            }
+        }
+    }
+
+    fun setDailyReminderEnabled(enabled: Boolean) {
+        settings.setDailyReminderEnabled(enabled)
+        appContext?.let { ctx ->
+            if (enabled) {
+                ClinEdgeNotificationManager.ensureChannelsCreated(ctx)
+                ClinEdgeNotificationManager.scheduleDailyReminder(
+                    context = ctx,
+                    hour = settings.dailyReminderHour.value,
+                    minute = settings.dailyReminderMinute.value
+                )
+                showMessage(
+                    "Daily study reminder scheduled for ${
+                        EngagementLogic.formatReminderTime(
+                            settings.dailyReminderHour.value,
+                            settings.dailyReminderMinute.value
+                        )
+                    }."
+                )
+            } else {
+                ClinEdgeNotificationManager.cancelDailyReminder(ctx)
+                showMessage("Daily study reminder paused.")
+            }
+        }
+    }
+
+    fun setDailyReminderTime(hour: Int, minute: Int) {
+        settings.setDailyReminderTime(hour, minute)
+        if (settings.dailyReminderEnabled.value) {
+            appContext?.let { ctx ->
+                ClinEdgeNotificationManager.scheduleDailyReminder(ctx, hour, minute)
+            }
+        }
+        showMessage("Daily reminder time set to ${EngagementLogic.formatReminderTime(hour, minute)}.")
+    }
+
+    fun setDailyReminderSmartNudge(enabled: Boolean) {
+        settings.setDailyReminderSmartNudge(enabled)
+        showMessage(
+            if (enabled) "Smart streak & daily-goal nudges enabled."
+            else "Standard daily reminder copy selected."
+        )
+    }
+
+    fun sendTestDailyReminder() {
+        val ctx = appContext ?: return
+        val todayKey = StudyGoalLogic.todayDateKey()
+        val yesterdayKey = StudyGoalLogic.yesterdayDateKey()
+        val examName = PlatformCatalogDefaults.examById(activeExamId.value)?.shortName ?: "Nursing"
+        val (title, body) = EngagementLogic.buildDailyReminderCopy(
+            goalState = settings.studyGoalState.value,
+            todayKey = todayKey,
+            yesterdayKey = yesterdayKey,
+            smartNudge = settings.dailyReminderSmartNudge.value,
+            activeExamShortName = examName
+        )
+        val posted = ClinEdgeNotificationManager.postDailyReminderNotification(ctx, title, body)
+        showMessage(
+            if (posted) "Test study reminder sent to your notification tray!"
+            else "Enable notification permission in Android settings to receive tray alerts."
+        )
+    }
+
+    fun handleNotificationDeepLink(target: String, doubtId: String) {
+        when (target) {
+            ClinEdgeNotificationManager.TARGET_NOTIFICATIONS -> openNotifications()
+            ClinEdgeNotificationManager.TARGET_DOUBTS -> openDoubtBox(doubtId.takeIf { it.isNotBlank() })
+            ClinEdgeNotificationManager.TARGET_DAILY_DRILL -> {
+                closeNotifications()
+                closeDoubtBox()
+                selectTab(MainTab.DASHBOARD)
+            }
+        }
+    }
+
+    // Admin Push Notifications & Doubt Desk Actions
+    fun adminPublishAnnouncement(
+        title: String,
+        body: String,
+        category: AnnouncementCategory,
+        targetExamId: String,
+        priority: AnnouncementPriority,
+        actionUrl: String,
+        onSuccess: () -> Unit = {}
+    ) {
+        val repo = engagementRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.publishAnnouncement(
+                title = title,
+                body = body,
+                category = category,
+                targetExamId = targetExamId,
+                priority = priority,
+                actionUrl = actionUrl
+            )
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                val scopeLabel = if (targetExamId == "all") "all students"
+                else PlatformCatalogDefaults.examById(targetExamId)?.shortName ?: targetExamId
+                showMessage("Broadcast pushed live to $scopeLabel!")
+                onSuccess()
+            }.onFailure { err ->
+                showMessage("Broadcast failed: ${err.message}")
+            }
+        }
+    }
+
+    fun adminDeleteAnnouncement(announcementId: String) {
+        val repo = engagementRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.deleteAnnouncement(announcementId)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                showMessage("Announcement removed.")
+            }.onFailure { err ->
+                showMessage("Delete failed: ${err.message}")
+            }
+        }
+    }
+
+    fun adminSendDirectNotification(
+        targetUserId: String,
+        recipientLabel: String,
+        title: String,
+        body: String,
+        actionUrl: String,
+        onSuccess: () -> Unit = {}
+    ) {
+        val repo = engagementRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.sendDirectNotification(
+                targetUserId = targetUserId,
+                title = title,
+                body = body,
+                type = DirectNotificationType.CUSTOM_ADMIN,
+                actionUrl = actionUrl
+            )
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                showMessage("Personal notification sent to $recipientLabel!")
+                onSuccess()
+            }.onFailure { err ->
+                showMessage("Send failed: ${err.message}")
+            }
+        }
+    }
+
+    fun adminReplyToDoubt(
+        doubt: CloudDoubt,
+        replyText: String,
+        onSuccess: () -> Unit = {}
+    ) {
+        val repo = engagementRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.replyToDoubt(doubt = doubt, replyText = replyText)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                showMessage("Faculty reply posted & ${doubt.studentName.ifBlank { "student" }} notified!")
+                onSuccess()
+            }.onFailure { err ->
+                showMessage("Reply failed: ${err.message}")
+            }
+        }
+    }
+
+    fun adminCloseDoubt(doubtId: String) {
+        val repo = engagementRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.closeDoubt(doubtId)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess { showMessage("Doubt closed.") }
+                .onFailure { err -> showMessage("Close failed: ${err.message}") }
+        }
+    }
+
+    fun adminDeleteDoubt(doubtId: String) {
+        val repo = engagementRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.deleteDoubt(doubtId)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess { showMessage("Doubt removed.") }
+                .onFailure { err -> showMessage("Delete failed: ${err.message}") }
         }
     }
 

@@ -41,9 +41,11 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PhonelinkLock
+import androidx.compose.material.icons.filled.QuestionAnswer
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
@@ -111,8 +113,12 @@ fun ProfileDrawerContent(
     studyGoal: DailyStudyGoalState,
     state: DashboardDerivedState,
     subscription: SubscriptionUiState = SubscriptionUiState(),
+    unreadNotificationsCount: Int = 0,
+    unreadDoubtReplies: Int = 0,
     onOpenFullProfile: () -> Unit,
     onOpenPlans: () -> Unit = {},
+    onOpenNotifications: () -> Unit = {},
+    onOpenDoubtBox: () -> Unit = {},
     onOpenExamPicker: () -> Unit,
     onOpenSubjectSection: (SubjectHubSection) -> Unit,
     onOpenSettings: () -> Unit,
@@ -452,6 +458,18 @@ fun ProfileDrawerContent(
 
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 DrawerActionRow(
+                    icon = Icons.Filled.Notifications,
+                    label = if (unreadNotificationsCount > 0) "Notification Center ($unreadNotificationsCount)" else "Notification Center",
+                    onClick = onOpenNotifications,
+                    testTag = "drawer_notifications_btn"
+                )
+                DrawerActionRow(
+                    icon = Icons.Filled.QuestionAnswer,
+                    label = if (unreadDoubtReplies > 0) "Doubt Box ($unreadDoubtReplies new)" else "Doubt Box",
+                    onClick = onOpenDoubtBox,
+                    testTag = "drawer_doubt_box_btn"
+                )
+                DrawerActionRow(
                     icon = if (cloudSyncState.status == SyncBadgeState.OFFLINE) Icons.Filled.CloudOff else Icons.Filled.CloudSync,
                     label = when (cloudSyncState.status) {
                         SyncBadgeState.SYNCING -> "Syncing to cloud..."
@@ -549,6 +567,8 @@ fun ProfileScreen(
     onDailyGoalChange: (Int) -> Unit,
     onStartDailyGoalDrill: () -> Unit,
     onOpenPlans: () -> Unit = {},
+    onOpenNotifications: () -> Unit = {},
+    onOpenDoubtBox: () -> Unit = {},
     onOpenExamPicker: () -> Unit,
     onPracticeSubject: (List<QuestionItem>, String) -> Unit,
     onOpenSettings: () -> Unit,
@@ -603,6 +623,24 @@ fun ProfileScreen(
                             text = "Details, study goal & account sync",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(
+                        onClick = onOpenDoubtBox,
+                        modifier = Modifier.testTag("profile_open_doubts_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.QuestionAnswer,
+                            contentDescription = "Doubt Box"
+                        )
+                    }
+                    IconButton(
+                        onClick = onOpenNotifications,
+                        modifier = Modifier.testTag("profile_open_notifications_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Notifications,
+                            contentDescription = "Notification Center"
                         )
                     }
                     IconButton(

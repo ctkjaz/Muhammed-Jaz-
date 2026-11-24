@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Analytics
@@ -88,6 +89,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.NotificationDeepLink
 import com.example.R
 import com.example.data.backup.BackupStorageManager
 import com.example.data.cloud.CloudSyncRepository
@@ -97,6 +99,7 @@ import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.data.model.ExamStage
 import com.example.data.model.PlatformCatalogDefaults
+import com.example.data.notifications.CloudEngagementRepository
 import com.example.data.repository.NursingPrepRepository
 import com.example.data.subscription.DeviceLockManager
 import com.example.data.subscription.SubscriptionRepository
@@ -111,12 +114,15 @@ import com.example.ui.components.PdfExportModalSheet
 import com.example.ui.components.ProfileAvatarCircle
 import com.example.ui.components.TimedPracticeConfigDialog
 import com.example.ui.screens.AdminConsoleScreen
+import com.example.ui.screens.AskDoubtModalSheet
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.BookmarksScreen
 import com.example.ui.screens.CbtExamScreen
 import com.example.ui.screens.CbtHubScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.DeviceLockSupportDialog
+import com.example.ui.screens.DoubtBoxScreen
+import com.example.ui.screens.NotificationsInboxScreen
 import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.SubjectChaptersScreen
 import com.example.ui.screens.PaywallPromptDialog
@@ -136,10 +142,16 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 @Composable
-fun ClinEdgeRootApp(auth: FirebaseAuth = Firebase.auth) {
+fun ClinEdgeRootApp(
+    pendingDeepLink: StateFlow<NotificationDeepLink?> = MutableStateFlow(null),
+    onConsumeDeepLink: () -> Unit = {},
+    auth: FirebaseAuth = Firebase.auth
+) {
     val context = LocalContext.current
     val initialTheme = remember(context) { SettingsPreferences(context).themePreference.value }
     val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
@@ -164,13 +176,21 @@ fun ClinEdgeRootApp(auth: FirebaseAuth = Firebase.auth) {
         }
     } else {
         key(user.uid) {
-            AuthenticatedClinEdgeApp(user = user)
+            AuthenticatedClinEdgeApp(
+                user = user,
+                pendingDeepLink = pendingDeepLink,
+                onConsumeDeepLink = onConsumeDeepLink
+            )
         }
     }
 }
 
 @Composable
-private fun AuthenticatedClinEdgeApp(user: FirebaseUser) {
+private fun AuthenticatedClinEdgeApp(
+    user: FirebaseUser,
+    pendingDeepLink: StateFlow<NotificationDeepLink?>,
+    onConsumeDeepLink: () -> Unit
+) {
     val uid = user.uid
     val displayName = user.displayName.orEmpty()
     val email = user.email.orEmpty()
@@ -192,6 +212,7 @@ private fun AuthenticatedClinEdgeApp(user: FirebaseUser) {
                 val backupStorage = BackupStorageManager(app)
                 val subscriptionRepo = SubscriptionRepository(firestore)
                 val deviceLockManager = DeviceLockManager(app)
+                val engagementRepo = CloudEngagementRepository(firestore)
                 MainViewModel(
                     repository = repository,
                     settings = settings,
@@ -202,11 +223,21 @@ private fun AuthenticatedClinEdgeApp(user: FirebaseUser) {
                     accountPhotoUrl = photoUrl,
                     backupStorage = backupStorage,
                     subscriptionRepo = subscriptionRepo,
-                    deviceLockManager = deviceLockManager
+                    deviceLockManager = deviceLockManager,
+                    engagementRepo = engagementRepo,
+                    appContext = app
                 )
             }
         }
     )
+
+    val deepLink by pendingDeepLink.collectAsStateWithLifecycle()
+    LaunchedEffect(deepLink) {
+        deepLink?.let { link ->
+            vm.handleNotificationDeepLink(link.target, link.doubtId)
+            onConsumeDeepLink()
+        }
+    }
 
     RrbNursingApp(vm = vm)
 }
@@ -267,6 +298,19 @@ fun RrbNursingApp(vm: MainViewModel) {
         val isTrialBusy by vm.isTrialBusy.collectAsStateWithLifecycle()
         val isRedeemBusy by vm.isRedeemBusy.collectAsStateWithLifecycle()
         val adminState by vm.adminState.collectAsStateWithLifecycle()
+        val announcements by vm.announcements.collectAsStateWithLifecycle()
+        val directNotifications by vm.directNotifications.collectAsStateWithLifecycle()
+        val studentDoubts by vm.studentDoubts.collectAsStateWithLifecycle()
+        val adminDoubts by vm.adminDoubts.collectAsStateWithLifecycle()
+        val dailyReminder by vm.dailyReminderState.collectAsStateWithLifecycle()
+        val unreadSummary by vm.unreadSummary.collectAsStateWithLifecycle()
+        val activeUrgentBanner by vm.activeUrgentBanner.collectAsStateWithLifecycle()
+        val isNotificationsOpen by vm.isNotificationsOpen.collectAsStateWithLifecycle()
+        val isDoubtBoxOpen by vm.isDoubtBoxOpen.collectAsStateWithLifecycle()
+        val highlightedDoubtId by vm.highlightedDoubtId.collectAsStateWithLifecycle()
+        val doubtAskContext by vm.doubtAskContext.collectAsStateWithLifecycle()
+        val isEngagementBusy by vm.isEngagementBusy.collectAsStateWithLifecycle()
+        val lastSeenAnnouncementMs by vm.lastSeenAnnouncementMs.collectAsStateWithLifecycle()
         val signedInAccount = vm.signedInAccount
 
         val snackbarHostState = remember { SnackbarHostState() }
@@ -395,7 +439,8 @@ fun RrbNursingApp(vm: MainViewModel) {
         }
 
         val inActiveSession = practiceSession != null || cbtSession != null
-        val inSubScreen = isSettingsOpen || isProfileOpen || isPlansOpen || isAdminOpen || subjectChaptersNav != null
+        val inSubScreen = isSettingsOpen || isProfileOpen || isPlansOpen || isAdminOpen ||
+            isNotificationsOpen || isDoubtBoxOpen || subjectChaptersNav != null
         val shouldKeepScreenOn = keepScreenOn && inActiveSession
 
         DisposableEffect(context, shouldKeepScreenOn) {
@@ -442,6 +487,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                     studyGoal = studyGoal,
                     state = state,
                     subscription = subscriptionState,
+                    unreadNotificationsCount = unreadSummary.totalBellUnread,
+                    unreadDoubtReplies = unreadSummary.unreadDoubtReplies,
                     onOpenFullProfile = {
                         scope.launch {
                             drawerState.close()
@@ -452,6 +499,18 @@ fun RrbNursingApp(vm: MainViewModel) {
                         scope.launch {
                             drawerState.close()
                             vm.openPlans()
+                        }
+                    },
+                    onOpenNotifications = {
+                        scope.launch {
+                            drawerState.close()
+                            vm.openNotifications()
+                        }
+                    },
+                    onOpenDoubtBox = {
+                        scope.launch {
+                            drawerState.close()
+                            vm.openDoubtBox()
                         }
                     },
                     onOpenExamPicker = {
@@ -571,25 +630,29 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     },
                                     actions = {
                                         IconButton(
-                                            onClick = { vm.selectTab(MainTab.DECK) },
-                                            modifier = Modifier.testTag("top_bookmarks_btn")
+                                            onClick = vm::openNotifications,
+                                            modifier = Modifier.testTag("top_notifications_btn")
                                         ) {
                                             BadgedBox(
                                                 badge = {
-                                                    if (state.overall.bookmarkCount > 0) {
+                                                    val bellCount = unreadSummary.totalBellUnread
+                                                    if (bellCount > 0) {
                                                         Badge(
                                                             containerColor = editorial.acidLime,
                                                             contentColor = editorial.onAcidLime
                                                         ) {
                                                             Text(
-                                                                "${state.overall.bookmarkCount}",
+                                                                if (bellCount > 99) "99+" else "$bellCount",
                                                                 fontWeight = FontWeight.Bold
                                                             )
                                                         }
                                                     }
                                                 }
                                             ) {
-                                                Icon(Icons.Filled.Bookmark, contentDescription = "Revision Deck")
+                                                Icon(
+                                                    imageVector = Icons.Filled.Notifications,
+                                                    contentDescription = "Notifications & Exam Alerts"
+                                                )
                                             }
                                         }
                                         IconButton(
@@ -728,6 +791,14 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onDismissSubmitPrompt = vm::dismissPracticeSubmitPrompt,
                                         onConfirmSubmit = vm::submitTimedPractice,
                                         onChangeReviewFilter = vm::setPracticeReviewFilter,
+                                        onAskDoubt = { item ->
+                                            vm.openAskDoubtSheet(
+                                                examId = activeExamId,
+                                                subject = item.question.subject,
+                                                questionId = item.id,
+                                                questionPreview = item.question.questionText
+                                            )
+                                        },
                                         onExit = vm::exitPracticeOrCbt
                                     )
                                 }
@@ -755,8 +826,49 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onRemovePreviewQuestion = vm::adminRemovePreviewQuestion,
                                         onPublishContentPack = vm::adminPublishContentPack,
                                         onDeleteQuestionPack = vm::adminDeleteQuestionPack,
+                                        announcements = announcements,
+                                        adminDoubts = adminDoubts,
+                                        onPublishAnnouncement = vm::adminPublishAnnouncement,
+                                        onDeleteAnnouncement = vm::adminDeleteAnnouncement,
+                                        onSendDirectNotification = vm::adminSendDirectNotification,
+                                        onReplyToDoubt = vm::adminReplyToDoubt,
+                                        onCloseDoubt = vm::adminCloseDoubt,
+                                        onDeleteDoubt = vm::adminDeleteDoubt,
                                         onShowMessage = vm::showMessage,
                                         onBack = vm::closeAdminConsole
+                                    )
+                                }
+
+                                isNotificationsOpen -> {
+                                    NotificationsInboxScreen(
+                                        announcements = announcements,
+                                        directNotifications = directNotifications,
+                                        activeExamId = activeExamId,
+                                        activeExamShortName = state.activeExam?.shortName ?: "RRB Nursing",
+                                        lastSeenAnnouncementMs = lastSeenAnnouncementMs,
+                                        onMarkAllRead = vm::markAllNotificationsRead,
+                                        onMarkDirectRead = vm::markDirectNotificationRead,
+                                        onDeleteDirectNotification = vm::deleteDirectNotification,
+                                        onOpenDoubtFromReply = { doubtId -> vm.openDoubtBox(doubtId) },
+                                        onShowMessage = vm::showMessage,
+                                        onBack = vm::closeNotifications
+                                    )
+                                }
+
+                                isDoubtBoxOpen -> {
+                                    DoubtBoxScreen(
+                                        doubts = studentDoubts,
+                                        highlightedDoubtId = highlightedDoubtId,
+                                        onOpenAskDoubt = {
+                                            vm.openAskDoubtSheet(
+                                                examId = activeExamId,
+                                                subject = focusSubject.ifBlank { "MSN" }
+                                            )
+                                        },
+                                        onMarkDoubtRead = vm::markStudentDoubtRead,
+                                        onCloseDoubt = vm::closeStudentDoubt,
+                                        onDeleteDoubt = vm::deleteStudentDoubt,
+                                        onBack = vm::closeDoubtBox
                                     )
                                 }
 
@@ -783,6 +895,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         negativeMarking = negMarking,
                                         keepScreenOn = keepScreenOn,
                                         dailyGoalQuestions = studyGoal.dailyGoalQuestions,
+                                        dailyReminder = dailyReminder,
                                         backupFolderSummary = backupFolderSummary,
                                         isBackupBusy = isBackupBusy,
                                         appUpdateState = appUpdateState,
@@ -796,6 +909,10 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onNegativeMarkingChange = vm::setNegativeMarking,
                                         onKeepScreenOnChange = vm::setKeepScreenOn,
                                         onDailyGoalChange = vm::setDailyGoalQuestions,
+                                        onDailyReminderEnabledChange = vm::setDailyReminderEnabled,
+                                        onDailyReminderTimeChange = vm::setDailyReminderTime,
+                                        onDailyReminderSmartNudgeChange = vm::setDailyReminderSmartNudge,
+                                        onSendTestReminder = vm::sendTestDailyReminder,
                                         onReopenOnboarding = vm::reopenOnboarding,
                                         onOpenPlans = vm::openPlans,
                                         onOpenAdminConsole = vm::openAdminConsole,
@@ -861,6 +978,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             vm.startDailyGoalDrill()
                                         },
                                         onOpenPlans = vm::openPlans,
+                                        onOpenNotifications = vm::openNotifications,
+                                        onOpenDoubtBox = { vm.openDoubtBox() },
                                         onOpenExamPicker = vm::openExamPicker,
                                         onPracticeSubject = { list, title ->
                                             vm.closeProfile()
@@ -935,7 +1054,19 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onSelectTab = vm::selectTab,
                                             onStartDrill = { list, title -> vm.startPractice(list, title) },
                                             subscription = subscriptionState,
-                                            onOpenPlans = vm::openPlans
+                                            onOpenPlans = vm::openPlans,
+                                            urgentBanner = activeUrgentBanner,
+                                            unreadDoubtReplies = unreadSummary.unreadDoubtReplies,
+                                            dailyReminder = dailyReminder,
+                                            onDismissUrgentBanner = vm::dismissUrgentBanner,
+                                            onOpenNotifications = vm::openNotifications,
+                                            onOpenDoubtBox = { vm.openDoubtBox() },
+                                            onAskQuickDoubt = {
+                                                vm.openAskDoubtSheet(
+                                                    examId = activeExamId,
+                                                    subject = focusSubject.ifBlank { "MSN" }
+                                                )
+                                            }
                                         )
 
                                         MainTab.SUBJECTS -> SubjectsHubScreen(
@@ -1112,6 +1243,21 @@ fun RrbNursingApp(vm: MainViewModel) {
                         onShowMessage = vm::showMessage
                     )
                 }
+
+                AskDoubtModalSheet(
+                    context = doubtAskContext,
+                    isBusy = isEngagementBusy,
+                    onSubmit = { examId, subject, questionId, questionPreview, doubtText ->
+                        vm.submitStudentDoubt(
+                            examId = examId,
+                            subject = subject,
+                            questionId = questionId,
+                            questionPreview = questionPreview,
+                            doubtText = doubtText
+                        )
+                    },
+                    onDismiss = vm::dismissAskDoubtSheet
+                )
             }
         }
     }

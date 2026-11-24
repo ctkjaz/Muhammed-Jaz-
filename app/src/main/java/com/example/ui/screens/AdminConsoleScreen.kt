@@ -59,6 +59,11 @@ import androidx.compose.ui.unit.dp
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.SubjectCatalog
+import com.example.data.notifications.AnnouncementCategory
+import com.example.data.notifications.AnnouncementPriority
+import com.example.data.notifications.CloudAnnouncement
+import com.example.data.notifications.CloudDoubt
+import com.example.data.notifications.DoubtStatus
 import com.example.data.subscription.AdminUserDirectoryRow
 import com.example.data.subscription.CloudAccessCode
 import com.example.data.subscription.CloudDeviceTrialLock
@@ -103,6 +108,29 @@ fun AdminConsoleScreen(
     onRemovePreviewQuestion: (Int) -> Unit,
     onPublishContentPack: () -> Unit,
     onDeleteQuestionPack: (packId: String, title: String) -> Unit,
+    announcements: List<CloudAnnouncement> = emptyList(),
+    adminDoubts: List<CloudDoubt> = emptyList(),
+    onPublishAnnouncement: (
+        title: String,
+        body: String,
+        category: AnnouncementCategory,
+        targetExamId: String,
+        priority: AnnouncementPriority,
+        actionUrl: String,
+        onSuccess: () -> Unit
+    ) -> Unit = { _, _, _, _, _, _, _ -> },
+    onDeleteAnnouncement: (String) -> Unit = {},
+    onSendDirectNotification: (
+        targetUserId: String,
+        recipientLabel: String,
+        title: String,
+        body: String,
+        actionUrl: String,
+        onSuccess: () -> Unit
+    ) -> Unit = { _, _, _, _, _, _ -> },
+    onReplyToDoubt: (CloudDoubt, String, () -> Unit) -> Unit = { _, _, _ -> },
+    onCloseDoubt: (String) -> Unit = {},
+    onDeleteDoubt: (String) -> Unit = {},
     onShowMessage: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
@@ -111,6 +139,8 @@ fun AdminConsoleScreen(
 
     val editorial = MaterialTheme.editorialColors
     var editingUser by remember { mutableStateOf<AdminUserDirectoryRow?>(null) }
+    var preselectedNotifyUser by remember { mutableStateOf<AdminUserDirectoryRow?>(null) }
+    val openDoubtCount = remember(adminDoubts) { adminDoubts.count { it.statusEnum == DoubtStatus.OPEN } }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
@@ -152,7 +182,7 @@ fun AdminConsoleScreen(
                             }
                         }
                         Text(
-                            text = "Users • Access Codes • Device Locks • OTA PDF Push",
+                            text = "Users • Codes • Locks • Content • Alerts • Doubts",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -176,10 +206,16 @@ fun AdminConsoleScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 AdminConsoleTab.entries.forEach { tab ->
+                    val pillLabel = if (tab == AdminConsoleTab.DOUBTS && openDoubtCount > 0) {
+                        "${tab.label} ($openDoubtCount)"
+                    } else {
+                        tab.label
+                    }
                     MonochromeFilterPill(
-                        label = tab.label,
+                        label = pillLabel,
                         selected = state.selectedTab == tab,
-                        onClick = { onSelectTab(tab) }
+                        onClick = { onSelectTab(tab) },
+                        modifier = Modifier.testTag("admin_tab_${tab.name}")
                     )
                 }
             }
@@ -189,7 +225,11 @@ fun AdminConsoleScreen(
             when (state.selectedTab) {
                 AdminConsoleTab.USERS -> AdminUsersTab(
                     users = state.users,
-                    onManageUser = { editingUser = it }
+                    onManageUser = { editingUser = it },
+                    onNotifyUser = { targetUser ->
+                        preselectedNotifyUser = targetUser
+                        onSelectTab(AdminConsoleTab.ALERTS)
+                    }
                 )
                 AdminConsoleTab.CODES -> AdminCodesTab(
                     codes = state.accessCodes,
@@ -213,6 +253,23 @@ fun AdminConsoleScreen(
                     onRemovePreview = onRemovePreviewQuestion,
                     onPublish = onPublishContentPack,
                     onDeletePack = onDeleteQuestionPack
+                )
+                AdminConsoleTab.ALERTS -> AdminAlertsTabContent(
+                    announcements = announcements,
+                    users = state.users,
+                    preselectedRecipient = preselectedNotifyUser,
+                    isMutating = state.isMutating,
+                    onConsumePreselectedRecipient = { preselectedNotifyUser = null },
+                    onPublishAnnouncement = onPublishAnnouncement,
+                    onDeleteAnnouncement = onDeleteAnnouncement,
+                    onSendDirectNotification = onSendDirectNotification
+                )
+                AdminConsoleTab.DOUBTS -> AdminDoubtsTabContent(
+                    doubts = adminDoubts,
+                    isMutating = state.isMutating,
+                    onReplyToDoubt = onReplyToDoubt,
+                    onCloseDoubt = onCloseDoubt,
+                    onDeleteDoubt = onDeleteDoubt
                 )
                 AdminConsoleTab.PRICING -> AdminPricingSupportTab(
                     config = config,
@@ -247,7 +304,8 @@ fun AdminConsoleScreen(
 @Composable
 private fun AdminUsersTab(
     users: List<AdminUserDirectoryRow>,
-    onManageUser: (AdminUserDirectoryRow) -> Unit
+    onManageUser: (AdminUserDirectoryRow) -> Unit,
+    onNotifyUser: (AdminUserDirectoryRow) -> Unit
 ) {
     val editorial = MaterialTheme.editorialColors
     var query by remember { mutableStateOf("") }
@@ -341,13 +399,28 @@ private fun AdminUsersTab(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    OutlinedButton(
-                        onClick = { onManageUser(row) },
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, editorial.borderSubtle),
-                        modifier = Modifier.heightIn(min = 44.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("Manage Plan / Suspend / Extend", fontWeight = FontWeight.SemiBold)
+                        OutlinedButton(
+                            onClick = { onManageUser(row) },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, editorial.borderSubtle),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 44.dp)
+                        ) {
+                            Text("Manage Plan", fontWeight = FontWeight.SemiBold)
+                        }
+                        OutlinedButton(
+                            onClick = { onNotifyUser(row) },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, AcidLime.copy(alpha = 0.7f)),
+                            modifier = Modifier.heightIn(min = 44.dp)
+                        ) {
+                            Text("Notify", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

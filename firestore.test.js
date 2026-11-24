@@ -935,4 +935,59 @@ test("Announcements: admin pushes live news/exam alerts; students can read but c
   await assertSucceeds(adminDb.collection("announcements").doc("alert_norcet_10").delete());
 });
 
+test("DirectNotifications: admin pushes individual alerts; only owner reads/marks read; cross-user & student forge denied", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const adminDb = testEnv
+    .authenticatedContext("owner_admin_uid", {
+      email: "jazsaleem2004@gmail.com",
+      email_verified: true,
+    })
+    .firestore();
+  const now = new Date(Date.now() - 2000);
+
+  const notifPayload = {
+    notificationId: "notif_1",
+    userId: ALICE_UID,
+    title: "Faculty replied to your doubt",
+    body: "Calcium gluconate stabilizes the cardiac membrane immediately.",
+    type: "doubt_reply",
+    referenceId: "doubt_1",
+    actionUrl: "",
+    read: false,
+    createdByEmail: "jazsaleem2004@gmail.com",
+    createdAt: now,
+  };
+
+  const aliceNotifs = (db) => db.collection("users").doc(ALICE_UID).collection("notifications");
+
+  // Unauthenticated denied
+  await assertFails(aliceNotifs(unauthDb).get());
+  await assertFails(aliceNotifs(unauthDb).doc("notif_1").set(notifPayload));
+
+  // Student cannot forge direct notification for self or others
+  await assertFails(aliceNotifs(aliceDb).doc("notif_1").set(notifPayload));
+  await assertFails(aliceNotifs(bobDb).doc("notif_1").set(notifPayload));
+
+  // Admin sends individual notification to Alice
+  await assertSucceeds(aliceNotifs(adminDb).doc("notif_1").set(notifPayload));
+
+  // Alice can read & list her own notifications; Bob cannot
+  await assertSucceeds(aliceNotifs(aliceDb).doc("notif_1").get());
+  await assertSucceeds(aliceNotifs(aliceDb).get());
+  await assertFails(aliceNotifs(bobDb).doc("notif_1").get());
+  await assertFails(aliceNotifs(bobDb).get());
+
+  // Alice can mark read, but cannot tamper with title/body or createdAt
+  await assertSucceeds(aliceNotifs(aliceDb).doc("notif_1").update({ read: true }));
+  await assertFails(aliceNotifs(aliceDb).doc("notif_1").update({ title: "Tampered", read: true }));
+  await assertFails(aliceNotifs(bobDb).doc("notif_1").update({ read: true }));
+
+  // Bob cannot delete Alice's notification; Alice can delete her own
+  await assertFails(aliceNotifs(bobDb).doc("notif_1").delete());
+  await assertSucceeds(aliceNotifs(aliceDb).doc("notif_1").delete());
+});
+
+
 

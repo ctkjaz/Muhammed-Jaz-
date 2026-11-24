@@ -1,21 +1,49 @@
 package com.example
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.Display
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.example.data.notifications.ClinEdgeNotificationManager
 import com.example.ui.ClinEdgeRootApp
+import kotlinx.coroutines.flow.MutableStateFlow
+
+data class NotificationDeepLink(
+    val target: String,
+    val doubtId: String = "",
+    val nonce: Long = System.currentTimeMillis()
+)
 
 class MainActivity : ComponentActivity() {
+    private val pendingDeepLink = MutableStateFlow<NotificationDeepLink?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableHighRefreshRateDisplay()
         enableEdgeToEdge()
+        captureDeepLink(intent)
         setContent {
-            ClinEdgeRootApp()
+            ClinEdgeRootApp(
+                pendingDeepLink = pendingDeepLink,
+                onConsumeDeepLink = { pendingDeepLink.value = null }
+            )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureDeepLink(intent)
+    }
+
+    private fun captureDeepLink(intent: Intent?) {
+        val target = intent?.getStringExtra(ClinEdgeNotificationManager.EXTRA_OPEN_TARGET)
+            ?.takeIf { it.isNotBlank() } ?: return
+        val doubtId = intent.getStringExtra(ClinEdgeNotificationManager.EXTRA_DOUBT_ID).orEmpty()
+        pendingDeepLink.value = NotificationDeepLink(target = target, doubtId = doubtId)
     }
 
     /**

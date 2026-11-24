@@ -1,9 +1,14 @@
 package com.example.ui.screens
 
+import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -36,16 +41,21 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -86,6 +96,9 @@ import com.example.data.backup.BackupFolderSummary
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.data.model.StudyGoalLogic
+import com.example.data.notifications.ClinEdgeNotificationManager
+import com.example.data.notifications.DailyReminderSettingsState
+import com.example.data.notifications.EngagementLogic
 import com.example.data.subscription.PlanTier
 import com.example.data.subscription.SubscriptionUiState
 import com.example.data.update.AppUpdateStatus
@@ -99,6 +112,7 @@ import com.example.ui.theme.SemanticWrongFill
 import com.example.ui.theme.editorialColors
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     profileName: String,
@@ -108,6 +122,7 @@ fun SettingsScreen(
     negativeMarking: Boolean,
     keepScreenOn: Boolean,
     dailyGoalQuestions: Int,
+    dailyReminder: DailyReminderSettingsState = DailyReminderSettingsState(),
     backupFolderSummary: BackupFolderSummary = BackupFolderSummary(),
     isBackupBusy: Boolean = false,
     appUpdateState: AppUpdateUiState = AppUpdateUiState(),
@@ -121,6 +136,10 @@ fun SettingsScreen(
     onNegativeMarkingChange: (Boolean) -> Unit,
     onKeepScreenOnChange: (Boolean) -> Unit,
     onDailyGoalChange: (Int) -> Unit,
+    onDailyReminderEnabledChange: (Boolean) -> Unit = {},
+    onDailyReminderTimeChange: (Int, Int) -> Unit = { _, _ -> },
+    onDailyReminderSmartNudgeChange: (Boolean) -> Unit = {},
+    onSendTestReminder: () -> Unit = {},
     onReopenOnboarding: () -> Unit,
     onOpenPlans: () -> Unit = {},
     onOpenAdminConsole: () -> Unit = {},
@@ -146,6 +165,50 @@ fun SettingsScreen(
     }
     var showResetStatsDialog by remember { mutableStateOf(false) }
     var showRestoreOptionsDialog by remember { mutableStateOf(false) }
+    var showReminderTimePicker by remember { mutableStateOf(false) }
+    var notifPermissionDenied by remember { mutableStateOf(false) }
+    var pendingTestAfterPermission by remember { mutableStateOf(false) }
+
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            notifPermissionDenied = false
+            if (pendingTestAfterPermission) {
+                pendingTestAfterPermission = false
+                onSendTestReminder()
+            } else {
+                onDailyReminderEnabledChange(true)
+            }
+        } else {
+            pendingTestAfterPermission = false
+            notifPermissionDenied = true
+        }
+    }
+
+    fun requestOrEnableReminder() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !ClinEdgeNotificationManager.hasNotificationPermission(context)
+        ) {
+            pendingTestAfterPermission = false
+            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            notifPermissionDenied = false
+            onDailyReminderEnabledChange(true)
+        }
+    }
+
+    fun requestOrSendTestNotification() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !ClinEdgeNotificationManager.hasNotificationPermission(context)
+        ) {
+            pendingTestAfterPermission = true
+            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            notifPermissionDenied = false
+            onSendTestReminder()
+        }
+    }
 
     val limeSwitchColors = SwitchDefaults.colors(
         checkedThumbColor = PureBlack,
@@ -623,6 +686,207 @@ fun SettingsScreen(
                 }
             }
 
+            // 5b. Daily Study Reminders & Notifications
+            item {
+                val formattedTime = EngagementLogic.formatReminderTime(dailyReminder.hour, dailyReminder.minute)
+                SettingsSectionCard(
+                    title = "Daily Study Reminders",
+                    icon = Icons.Filled.NotificationsActive,
+                    cardTag = "settings_card_reminders"
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 12.dp)
+                        ) {
+                            Text(
+                                text = "Daily reminder notification",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = if (dailyReminder.enabled) {
+                                    "Scheduled every day at $formattedTime"
+                                } else {
+                                    "Get a gentle nudge to protect your daily streak"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = dailyReminder.enabled,
+                            onCheckedChange = { checked ->
+                                if (checked) requestOrEnableReminder() else onDailyReminderEnabledChange(false)
+                            },
+                            colors = limeSwitchColors,
+                            modifier = Modifier.testTag("settings_daily_reminder_switch")
+                        )
+                    }
+
+                    if (notifPermissionDenied) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = editorial.wrongBg,
+                            border = BorderStroke(1.dp, editorial.wrongText.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Notifications are blocked in Android settings.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = editorial.wrongText,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(
+                                    onClick = {
+                                        runCatching {
+                                            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                            }
+                                            context.startActivity(intent)
+                                        }
+                                    }
+                                ) {
+                                    Text("Enable", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = editorial.borderSubtle)
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Schedule,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Reminder time",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = formattedTime,
+                                    style = MaterialTheme.typography.titleSmall.copy(fontFamily = MonoFontFamily),
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (editorial.isDark) AcidLime else PureBlack,
+                                    modifier = Modifier.testTag("settings_reminder_time_label")
+                                )
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = { showReminderTimePicker = true },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, editorial.borderSubtle),
+                            modifier = Modifier
+                                .heightIn(min = 44.dp)
+                                .testTag("settings_pick_reminder_time_btn")
+                        ) {
+                            Text("Change Time", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            Triple(7, 0, "7:00 AM"),
+                            Triple(13, 30, "1:30 PM"),
+                            Triple(20, 30, "8:30 PM")
+                        ).forEach { (h, m, lbl) ->
+                            MonochromeFilterPill(
+                                label = lbl,
+                                selected = dailyReminder.hour == h && dailyReminder.minute == m,
+                                onClick = { onDailyReminderTimeChange(h, m) },
+                                modifier = Modifier.testTag("settings_reminder_preset_${h}_${m}")
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = editorial.borderSubtle)
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 12.dp)
+                        ) {
+                            Text(
+                                text = "Smart streak & goal nudges",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Tailors each reminder to your live streak and remaining daily MCQs.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = dailyReminder.smartNudge,
+                            onCheckedChange = onDailyReminderSmartNudgeChange,
+                            colors = limeSwitchColors,
+                            modifier = Modifier.testTag("settings_smart_nudge_switch")
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = { requestOrSendTestNotification() },
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, editorial.borderSubtle),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("settings_test_reminder_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.NotificationsActive,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Send Test Notification", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
             // 6. Backup, Restore & Study Data
             item {
                 SettingsSectionCard(
@@ -976,6 +1240,47 @@ fun SettingsScreen(
                     modifier = Modifier.testTag("settings_restore_pick_file_btn")
                 ) {
                     Text("Choose File...")
+                }
+            }
+        )
+    }
+
+    if (showReminderTimePicker) {
+        val pickerState = rememberTimePickerState(
+            initialHour = dailyReminder.hour,
+            initialMinute = dailyReminder.minute,
+            is24Hour = false
+        )
+        AlertDialog(
+            onDismissRequest = { showReminderTimePicker = false },
+            containerColor = editorial.cardSurface,
+            title = { Text("Daily Reminder Time", fontWeight = FontWeight.Bold) },
+            text = {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    TimePicker(state = pickerState)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showReminderTimePicker = false
+                        onDailyReminderTimeChange(pickerState.hour, pickerState.minute)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = editorial.acidLime,
+                        contentColor = editorial.onAcidLime
+                    ),
+                    modifier = Modifier.testTag("settings_confirm_time_btn")
+                ) {
+                    Text("Set Time", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showReminderTimePicker = false }) {
+                    Text("Cancel")
                 }
             }
         )

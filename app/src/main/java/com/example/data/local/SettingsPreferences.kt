@@ -102,6 +102,36 @@ class SettingsPreferences(context: Context) {
     private val _dailyFreeQuotaUsed = MutableStateFlow(readDailyFreeQuotaUsed())
     val dailyFreeQuotaUsed: StateFlow<Int> = _dailyFreeQuotaUsed.asStateFlow()
 
+    private val _dailyReminderEnabled = MutableStateFlow(
+        prefs.getBoolean(KEY_DAILY_REMINDER_ENABLED, false)
+    )
+    val dailyReminderEnabled: StateFlow<Boolean> = _dailyReminderEnabled.asStateFlow()
+
+    private val _dailyReminderHour = MutableStateFlow(
+        prefs.getInt(KEY_DAILY_REMINDER_HOUR, DEFAULT_REMINDER_HOUR).coerceIn(0, 23)
+    )
+    val dailyReminderHour: StateFlow<Int> = _dailyReminderHour.asStateFlow()
+
+    private val _dailyReminderMinute = MutableStateFlow(
+        prefs.getInt(KEY_DAILY_REMINDER_MINUTE, DEFAULT_REMINDER_MINUTE).coerceIn(0, 59)
+    )
+    val dailyReminderMinute: StateFlow<Int> = _dailyReminderMinute.asStateFlow()
+
+    private val _dailyReminderSmartNudge = MutableStateFlow(
+        prefs.getBoolean(KEY_DAILY_REMINDER_SMART_NUDGE, true)
+    )
+    val dailyReminderSmartNudge: StateFlow<Boolean> = _dailyReminderSmartNudge.asStateFlow()
+
+    private val _lastSeenAnnouncementMs = MutableStateFlow(
+        prefs.getLong(KEY_LAST_SEEN_ANNOUNCEMENT_MS, 0L)
+    )
+    val lastSeenAnnouncementMs: StateFlow<Long> = _lastSeenAnnouncementMs.asStateFlow()
+
+    private val _dismissedBannerAnnouncementId = MutableStateFlow(
+        prefs.getString(KEY_DISMISSED_BANNER_ANNOUNCEMENT_ID, "") ?: ""
+    )
+    val dismissedBannerAnnouncementId: StateFlow<String> = _dismissedBannerAnnouncementId.asStateFlow()
+
     private fun readDailyFreeQuotaUsed(): Int {
         val today = StudyGoalLogic.todayDateKey()
         val storedDate = prefs.getString(KEY_FREE_QUOTA_DATE, "") ?: ""
@@ -298,6 +328,55 @@ class SettingsPreferences(context: Context) {
         prefs.edit().putString(KEY_CACHED_PLAN_NAME, planName.take(64)).apply()
     }
 
+    fun setDailyReminderEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DAILY_REMINDER_ENABLED, enabled).apply()
+        _dailyReminderEnabled.value = enabled
+    }
+
+    fun setDailyReminderTime(hour: Int, minute: Int) {
+        val h = hour.coerceIn(0, 23)
+        val m = minute.coerceIn(0, 59)
+        prefs.edit()
+            .putInt(KEY_DAILY_REMINDER_HOUR, h)
+            .putInt(KEY_DAILY_REMINDER_MINUTE, m)
+            .apply()
+        _dailyReminderHour.value = h
+        _dailyReminderMinute.value = m
+    }
+
+    fun setDailyReminderSmartNudge(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DAILY_REMINDER_SMART_NUDGE, enabled).apply()
+        _dailyReminderSmartNudge.value = enabled
+    }
+
+    fun markAnnouncementsSeenUpTo(timestampMs: Long) {
+        val next = maxOf(_lastSeenAnnouncementMs.value, timestampMs)
+        prefs.edit().putLong(KEY_LAST_SEEN_ANNOUNCEMENT_MS, next).apply()
+        _lastSeenAnnouncementMs.value = next
+    }
+
+    fun getLastNotifiedAnnouncementMs(): Long =
+        prefs.getLong(KEY_LAST_NOTIFIED_ANNOUNCEMENT_MS, 0L)
+
+    fun setLastNotifiedAnnouncementMs(timestampMs: Long) {
+        val next = maxOf(getLastNotifiedAnnouncementMs(), timestampMs)
+        prefs.edit().putLong(KEY_LAST_NOTIFIED_ANNOUNCEMENT_MS, next).apply()
+    }
+
+    fun getLastNotifiedDirectMs(): Long =
+        prefs.getLong(KEY_LAST_NOTIFIED_DIRECT_MS, 0L)
+
+    fun setLastNotifiedDirectMs(timestampMs: Long) {
+        val next = maxOf(getLastNotifiedDirectMs(), timestampMs)
+        prefs.edit().putLong(KEY_LAST_NOTIFIED_DIRECT_MS, next).apply()
+    }
+
+    fun dismissUrgentAnnouncementBanner(announcementId: String) {
+        val clean = announcementId.trim()
+        prefs.edit().putString(KEY_DISMISSED_BANNER_ANNOUNCEMENT_ID, clean).apply()
+        _dismissedBannerAnnouncementId.value = clean
+    }
+
     fun getLastSignedInUid(): String = prefs.getString(KEY_LAST_SIGNED_IN_UID, "") ?: ""
 
     fun setLastSignedInUid(uid: String) {
@@ -465,6 +544,17 @@ class SettingsPreferences(context: Context) {
         private const val KEY_FREE_QUOTA_USED = "free_quota_used"
         private const val KEY_SYNCED_OTA_VERSION = "synced_ota_catalog_version"
         private const val KEY_CACHED_PLAN_NAME = "cached_plan_name"
+        private const val KEY_DAILY_REMINDER_ENABLED = "daily_reminder_enabled"
+        private const val KEY_DAILY_REMINDER_HOUR = "daily_reminder_hour"
+        private const val KEY_DAILY_REMINDER_MINUTE = "daily_reminder_minute"
+        private const val KEY_DAILY_REMINDER_SMART_NUDGE = "daily_reminder_smart_nudge"
+        private const val KEY_LAST_SEEN_ANNOUNCEMENT_MS = "last_seen_announcement_ms"
+        private const val KEY_LAST_NOTIFIED_ANNOUNCEMENT_MS = "last_notified_announcement_ms"
+        private const val KEY_LAST_NOTIFIED_DIRECT_MS = "last_notified_direct_ms"
+        private const val KEY_DISMISSED_BANNER_ANNOUNCEMENT_ID = "dismissed_banner_announcement_id"
+
+        const val DEFAULT_REMINDER_HOUR = 20
+        const val DEFAULT_REMINDER_MINUTE = 0
 
         fun calculateSuggestedMinutes(questionCount: Int, secondsPerQuestion: Int): Int {
             if (questionCount <= 0 || secondsPerQuestion <= 0) return 0

@@ -37,6 +37,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.QuestionAnswer
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material3.AlertDialog
@@ -86,6 +87,7 @@ import com.example.ui.theme.SemanticCorrectFill
 import com.example.ui.theme.SemanticWarningFill
 import com.example.ui.theme.SemanticWrongFill
 import com.example.ui.theme.editorialColors
+import com.example.data.model.QuestionItem
 import com.example.ui.viewmodel.CbtReviewFilter
 import com.example.ui.viewmodel.PracticeSessionState
 import kotlinx.coroutines.delay
@@ -105,6 +107,7 @@ fun PracticeScreen(
     onDismissSubmitPrompt: () -> Unit,
     onConfirmSubmit: () -> Unit,
     onChangeReviewFilter: (CbtReviewFilter) -> Unit,
+    onAskDoubt: (QuestionItem) -> Unit = {},
     onExit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -350,19 +353,32 @@ fun PracticeScreen(
                                 DifficultyBadge(difficulty = q.difficulty)
                             }
 
-                            IconButton(
-                                onClick = { onToggleBookmark(q.id) },
-                                modifier = Modifier.testTag("practice_bookmark_btn")
-                            ) {
-                                Icon(
-                                    imageVector = if (isCurrentBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                                    contentDescription = if (isCurrentBookmarked) "Remove bookmark" else "Bookmark question",
-                                    tint = if (isCurrentBookmarked) {
-                                        if (editorial.isDark) AcidLime else PureBlack
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { onAskDoubt(currentItem) },
+                                    modifier = Modifier.testTag("practice_ask_doubt_icon_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.QuestionAnswer,
+                                        contentDescription = "Ask a doubt on this question",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { onToggleBookmark(q.id) },
+                                    modifier = Modifier.testTag("practice_bookmark_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = if (isCurrentBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                                        contentDescription = if (isCurrentBookmarked) "Remove bookmark" else "Bookmark question",
+                                        tint = if (isCurrentBookmarked) {
+                                            if (editorial.isDark) AcidLime else PureBlack
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    )
+                                }
                             }
                         }
 
@@ -539,6 +555,34 @@ fun PracticeScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = editorial.correctText
                                 )
+                            }
+                            HorizontalDivider(color = editorial.borderSubtle)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Still unsure about this rationale?",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                TextButton(
+                                    onClick = { onAskDoubt(currentItem) },
+                                    modifier = Modifier
+                                        .heightIn(min = 44.dp)
+                                        .testTag("practice_rationale_ask_doubt_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.QuestionAnswer,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = " Ask Doubt",
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }

@@ -11,6 +11,8 @@ import com.example.data.subscription.CloudQuestionPack
 
 enum class AdminConsoleTab(val label: String) {
     USERS("Users"),
+    ALERTS("Alerts"),
+    DOUBTS("Doubts"),
     CODES("Codes"),
     LOCKS("Locks"),
     CONTENT("Content"),
