@@ -20,6 +20,7 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.IgnoreExtraProperties
 import com.google.firebase.firestore.ServerTimestamp
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 enum class GrandTestStatus(val dbValue: String, val label: String) {
@@ -191,6 +192,16 @@ data class TierCountMetric(
     val sharePercent: Int
 )
 
+data class ExpiringSubscriberAlert(
+    val uid: String,
+    val displayName: String,
+    val email: String,
+    val planLabel: String,
+    val isTrial: Boolean,
+    val daysLeft: Int,
+    val expiresAtMs: Long
+)
+
 data class AdminAnalyticsSnapshot(
     val totalUsers: Int,
     val activePaidUsers: Int,
@@ -221,10 +232,13 @@ data class AdminAnalyticsSnapshot(
     val liveGrandTests: Int,
     val grandTestEnabled: Boolean,
     val tierDistribution: List<TierCountMetric>,
-    val topExams: List<ExamPopularityMetric>
+    val topExams: List<ExamPopularityMetric>,
+    val expiringIn7Days: List<ExpiringSubscriberAlert>
 )
 
 object AdminAnalyticsCalculator {
+    private const val DAY_MS = 86_400_000L
+    private const val SEVEN_DAYS_MS = 7L * DAY_MS
 
     fun compute(
         users: List<AdminUserDirectoryRow>,
@@ -247,6 +261,7 @@ object AdminAnalyticsCalculator {
         var trialConvertedToPaid = 0
 
         val examCounter = mutableMapOf<String, Int>()
+        val expiringAlerts = mutableListOf<ExpiringSubscriberAlert>()
 
         for (row in users) {
             val examKey = row.activeExamId.ifBlank { PlatformCatalogDefaults.EXAM_AIIMS_NORCET }
@@ -265,6 +280,32 @@ object AdminAnalyticsCalculator {
                 trialEverUsedCount++
                 if (isPaidTier && !isSuspended && !isExpired) {
                     trialConvertedToPaid++
+                }
+            }
+
+            if (!isSuspended && !isExpired && expiresAtMs != null &&
+                (rawTier == PlanTier.ALL_EXAM || rawTier == PlanTier.SINGLE_EXAM || rawTier == PlanTier.TRIAL)
+            ) {
+                val remainingMs = expiresAtMs - nowMs
+                if (remainingMs in 1L..SEVEN_DAYS_MS) {
+                    val daysLeft = ceil(remainingMs.toDouble() / DAY_MS.toDouble())
+                        .toInt()
+                        .coerceIn(1, 7)
+                    val planLabel = when (rawTier) {
+                        PlanTier.ALL_EXAM -> "All-Exam Pro"
+                        PlanTier.SINGLE_EXAM -> "Single Exam Pro"
+                        PlanTier.TRIAL -> "3-Day Trial"
+                        PlanTier.FREE -> "Free"
+                    }
+                    expiringAlerts += ExpiringSubscriberAlert(
+                        uid = row.uid,
+                        displayName = row.displayName.ifBlank { "Unnamed Student" },
+                        email = row.email.ifBlank { row.uid },
+                        planLabel = planLabel,
+                        isTrial = rawTier == PlanTier.TRIAL,
+                        daysLeft = daysLeft,
+                        expiresAtMs = expiresAtMs
+                    )
                 }
             }
 
@@ -365,7 +406,10 @@ object AdminAnalyticsCalculator {
             liveGrandTests = liveGrandTests,
             grandTestEnabled = grandTestEnabled,
             tierDistribution = tierDistribution,
-            topExams = topExams
+            topExams = topExams,
+            expiringIn7Days = expiringAlerts.sortedWith(
+                compareBy<ExpiringSubscriberAlert> { it.expiresAtMs }.thenBy { it.uid }
+            )
         )
     }
 }

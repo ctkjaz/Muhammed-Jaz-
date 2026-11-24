@@ -250,5 +250,110 @@ class V25FeaturesLogicTest {
         assertFalse(snapshot.grandTestEnabled)
         assertEquals("aiims_norcet", snapshot.topExams.first().examId)
         assertEquals(3, snapshot.topExams.first().userCount)
+        assertTrue(snapshot.expiringIn7Days.isEmpty())
+    }
+
+    @Test
+    fun adminAnalyticsDetectsExpiringWithin7DaysCohortInAscendingOrder() {
+        val nowMs = 1_750_000_000_000L
+        val hourMs = 3_600_000L
+        val dayMs = 86_400_000L
+
+        val users = listOf(
+            // Active Single-Exam expiring in exactly 7 days -> INCLUDED (3rd, 7d left)
+            AdminUserDirectoryRow(
+                uid = "u_7d", displayName = "Seven Day", email = "seven@test.com", phoneNumber = "",
+                activeExamId = "rrb_nursing", activeDeviceName = "Pixel", lastDeviceHash = "",
+                entitlement = CloudUserEntitlement(
+                    userId = "u_7d", planTier = PlanTier.SINGLE_EXAM.dbValue,
+                    status = SubscriptionStatus.ACTIVE.dbValue,
+                    expiresAt = Timestamp(Date(nowMs + 7L * dayMs))
+                ),
+                profile = null
+            ),
+            // Active All-Exam expiring in 18 hours -> INCLUDED (1st, 1d left)
+            AdminUserDirectoryRow(
+                uid = "u_18h", displayName = "Urgent Pro", email = "urgent@test.com", phoneNumber = "",
+                activeExamId = "aiims_norcet", activeDeviceName = "Pixel", lastDeviceHash = "",
+                entitlement = CloudUserEntitlement(
+                    userId = "u_18h", planTier = PlanTier.ALL_EXAM.dbValue,
+                    status = SubscriptionStatus.ACTIVE.dbValue,
+                    expiresAt = Timestamp(Date(nowMs + 18L * hourMs))
+                ),
+                profile = null
+            ),
+            // Active Trial expiring in 2.5 days -> INCLUDED (2nd, 3d left, isTrial = true)
+            AdminUserDirectoryRow(
+                uid = "u_trial", displayName = "Trial Nurse", email = "trial@test.com", phoneNumber = "",
+                activeExamId = "aiims_norcet", activeDeviceName = "OnePlus", lastDeviceHash = "",
+                entitlement = CloudUserEntitlement(
+                    userId = "u_trial", planTier = PlanTier.TRIAL.dbValue,
+                    status = SubscriptionStatus.ACTIVE.dbValue,
+                    expiresAt = Timestamp(Date(nowMs + 2L * dayMs + 12L * hourMs))
+                ),
+                profile = null
+            ),
+            // Active All-Exam expiring in 8 days -> EXCLUDED (> 7d)
+            AdminUserDirectoryRow(
+                uid = "u_8d", displayName = "Safe Pro", email = "safe@test.com", phoneNumber = "",
+                activeExamId = "aiims_norcet", activeDeviceName = "Samsung", lastDeviceHash = "",
+                entitlement = CloudUserEntitlement(
+                    userId = "u_8d", planTier = PlanTier.ALL_EXAM.dbValue,
+                    status = SubscriptionStatus.ACTIVE.dbValue,
+                    expiresAt = Timestamp(Date(nowMs + 8L * dayMs))
+                ),
+                profile = null
+            ),
+            // Suspended user expiring in 2 days -> EXCLUDED
+            AdminUserDirectoryRow(
+                uid = "u_susp", displayName = "Suspended", email = "susp@test.com", phoneNumber = "",
+                activeExamId = "aiims_norcet", activeDeviceName = "Xiaomi", lastDeviceHash = "",
+                entitlement = CloudUserEntitlement(
+                    userId = "u_susp", planTier = PlanTier.ALL_EXAM.dbValue,
+                    status = SubscriptionStatus.SUSPENDED.dbValue,
+                    expiresAt = Timestamp(Date(nowMs + 2L * dayMs))
+                ),
+                profile = null
+            ),
+            // Already expired 1 hour ago -> EXCLUDED
+            AdminUserDirectoryRow(
+                uid = "u_exp", displayName = "Expired", email = "exp@test.com", phoneNumber = "",
+                activeExamId = "aiims_norcet", activeDeviceName = "Vivo", lastDeviceHash = "",
+                entitlement = CloudUserEntitlement(
+                    userId = "u_exp", planTier = PlanTier.SINGLE_EXAM.dbValue,
+                    status = SubscriptionStatus.ACTIVE.dbValue,
+                    expiresAt = Timestamp(Date(nowMs - hourMs))
+                ),
+                profile = null
+            ),
+            // Free user -> EXCLUDED
+            AdminUserDirectoryRow(
+                uid = "u_free", displayName = "Free", email = "free@test.com", phoneNumber = "",
+                activeExamId = "aiims_norcet", activeDeviceName = "Realme", lastDeviceHash = "",
+                entitlement = CloudUserEntitlement(
+                    userId = "u_free", planTier = PlanTier.FREE.dbValue,
+                    status = SubscriptionStatus.ACTIVE.dbValue
+                ),
+                profile = null
+            )
+        )
+
+        val snapshot = AdminAnalyticsCalculator.compute(
+            users = users,
+            paymentRequests = emptyList(),
+            accessCodes = emptyList(),
+            questionReports = emptyList(),
+            questionPacks = emptyList(),
+            doubts = emptyList(),
+            announcements = emptyList(),
+            grandTests = emptyList(),
+            grandTestEnabled = false,
+            nowMs = nowMs
+        )
+
+        assertEquals(listOf("u_18h", "u_trial", "u_7d"), snapshot.expiringIn7Days.map { it.uid })
+        assertEquals(listOf(1, 3, 7), snapshot.expiringIn7Days.map { it.daysLeft })
+        assertEquals(listOf("All-Exam Pro", "3-Day Trial", "Single Exam Pro"), snapshot.expiringIn7Days.map { it.planLabel })
+        assertEquals(listOf(false, true, false), snapshot.expiringIn7Days.map { it.isTrial })
     }
 }

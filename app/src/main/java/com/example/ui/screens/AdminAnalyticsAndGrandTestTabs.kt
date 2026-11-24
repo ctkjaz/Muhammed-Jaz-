@@ -18,9 +18,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Leaderboard
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -54,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.grandtest.AdminAnalyticsCalculator
 import com.example.data.grandtest.CloudGrandTest
+import com.example.data.grandtest.ExpiringSubscriberAlert
 import com.example.data.grandtest.GrandTestLeaderboardSummary
 import com.example.data.grandtest.GrandTestStatus
 import com.example.data.model.PlatformCatalogDefaults
@@ -75,9 +78,12 @@ fun AdminAnalyticsTabContent(
     announcements: List<CloudAnnouncement>,
     doubts: List<CloudDoubt>,
     onToggleGrandTestEnabled: (Boolean) -> Unit,
-    onOpenGrandTestTab: () -> Unit
+    onOpenGrandTestTab: () -> Unit,
+    onSendRenewalNudge: (ExpiringSubscriberAlert, () -> Unit) -> Unit
 ) {
     val editorial = MaterialTheme.editorialColors
+    var nudgedUserIds by remember { mutableStateOf(setOf<String>()) }
+    var showAllExpiring by remember { mutableStateOf(false) }
     val snapshot = remember(
         state.users,
         state.paymentRequests,
@@ -186,6 +192,198 @@ fun AdminAnalyticsTabContent(
                     highlight = false,
                     modifier = Modifier.weight(1f)
                 )
+            }
+        }
+
+        // Expiring Within 7 Days — Renewal Alerts Cohort
+        item {
+            val alerts = snapshot.expiringIn7Days
+            val visibleAlerts = if (showAllExpiring) alerts else alerts.take(6)
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("analytics_expiring_7d_card"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (alerts.isNotEmpty()) AcidLime.copy(alpha = 0.65f) else editorial.borderSubtle
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.NotificationsActive,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = if (alerts.isNotEmpty()) AcidLime else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Expiring Within 7 Days",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (alerts.isNotEmpty()) AcidLime else MaterialTheme.colorScheme.surfaceContainerHigh
+                        ) {
+                            Text(
+                                text = "${alerts.size} DUE",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                color = if (alerts.isNotEmpty()) PureBlack else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+
+                    if (alerts.isEmpty()) {
+                        Text(
+                            text = "No active paid plans or 3-day trials are due to expire in the next 7 days.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = "Send a 1-tap personalized renewal nudge directly to each learner's in-app inbox.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        visibleAlerts.forEachIndexed { idx, alert ->
+                            if (idx > 0) {
+                                HorizontalDivider(color = editorial.borderSubtle)
+                            }
+                            val alreadyNudged = alert.uid in nudgedUserIds
+                            val isUrgent = alert.daysLeft <= 2
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = alert.displayName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (isUrgent) {
+                                                MaterialTheme.colorScheme.errorContainer
+                                            } else {
+                                                AcidLime.copy(alpha = 0.2f)
+                                            }
+                                        ) {
+                                            Text(
+                                                text = "${alert.daysLeft}d left",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                                color = if (isUrgent) {
+                                                    MaterialTheme.colorScheme.onErrorContainer
+                                                } else {
+                                                    AcidLime
+                                                },
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = "${alert.planLabel} • Ends ${EntitlementEvaluator.formatShortDate(alert.expiresAtMs)}",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = alert.email,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                if (alreadyNudged) {
+                                    OutlinedButton(
+                                        onClick = {},
+                                        enabled = false,
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        modifier = Modifier
+                                            .heightIn(min = 48.dp)
+                                            .testTag("analytics_nudged_${alert.uid}")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = "Renewal nudge sent",
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.size(4.dp))
+                                        Text("Sent", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = {
+                                            onSendRenewalNudge(alert) {
+                                                nudgedUserIds = nudgedUserIds + alert.uid
+                                            }
+                                        },
+                                        enabled = !state.isMutating,
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = AcidLime,
+                                            contentColor = PureBlack
+                                        ),
+                                        modifier = Modifier
+                                            .heightIn(min = 48.dp)
+                                            .testTag("analytics_nudge_${alert.uid}")
+                                    ) {
+                                        Text(
+                                            text = "Nudge",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (alerts.size > 6) {
+                            TextButton(
+                                onClick = { showAllExpiring = !showAllExpiring },
+                                modifier = Modifier.align(Alignment.End)
+                            ) {
+                                Text(
+                                    text = if (showAllExpiring) "Show fewer" else "Show all ${alerts.size} expiring users"
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 

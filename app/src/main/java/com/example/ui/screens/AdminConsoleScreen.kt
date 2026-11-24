@@ -271,7 +271,29 @@ fun AdminConsoleScreen(
                     announcements = announcements,
                     doubts = adminDoubts,
                     onToggleGrandTestEnabled = onToggleGrandTestEnabled,
-                    onOpenGrandTestTab = { onSelectTab(AdminConsoleTab.GRAND_TEST) }
+                    onOpenGrandTestTab = { onSelectTab(AdminConsoleTab.GRAND_TEST) },
+                    onSendRenewalNudge = { alert, onSent ->
+                        val expiryDate = EntitlementEvaluator.formatShortDate(alert.expiresAtMs)
+                        val dayPhrase = if (alert.daysLeft == 1) "tomorrow" else "in ${alert.daysLeft} days"
+                        val title = if (alert.isTrial) {
+                            "Your ClinEdge Trial Ends $dayPhrase"
+                        } else {
+                            "Renew Your ${alert.planLabel} Plan"
+                        }
+                        val body = if (alert.isTrial) {
+                            "Hi ${alert.displayName}, your 3-Day Free Trial ends on $expiryDate. Upgrade in Plans to keep unlimited MCQs, AI Clinical Tutor, and Spaced Repetition unlocked!"
+                        } else {
+                            "Hi ${alert.displayName}, your ${alert.planLabel} expires on $expiryDate ($dayPhrase). Renew via UPI in Plans to continue uninterrupted nursing exam prep."
+                        }
+                        onSendDirectNotification(
+                            alert.uid,
+                            alert.displayName,
+                            title,
+                            body,
+                            "",
+                            onSent
+                        )
+                    }
                 )
                 AdminConsoleTab.GRAND_TEST -> AdminGrandTestTabContent(
                     state = state,
