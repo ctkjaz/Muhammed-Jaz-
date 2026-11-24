@@ -93,6 +93,8 @@ import com.example.NotificationDeepLink
 import com.example.R
 import com.example.data.backup.BackupStorageManager
 import com.example.data.cloud.CloudSyncRepository
+import com.example.data.grandtest.GrandTestRepository
+import com.example.data.grandtest.GrandTestStatus
 import com.example.data.local.AppDatabase
 import com.example.data.local.ProfileAvatarStorage
 import com.example.data.local.SettingsPreferences
@@ -129,6 +131,7 @@ import com.example.ui.screens.ClinicalToolsScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.DeviceLockSupportDialog
 import com.example.ui.screens.DoubtBoxScreen
+import com.example.ui.screens.GrandTestScreen
 import com.example.ui.screens.NotificationsInboxScreen
 import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.SubjectChaptersScreen
@@ -222,6 +225,7 @@ private fun AuthenticatedClinEdgeApp(
                 val deviceLockManager = DeviceLockManager(app)
                 val engagementRepo = CloudEngagementRepository(firestore)
                 val paymentReportRepo = PaymentAndReportRepository(app, subscriptionRepo)
+                val grandTestRepo = GrandTestRepository(firestore)
                 MainViewModel(
                     repository = repository,
                     settings = settings,
@@ -235,7 +239,8 @@ private fun AuthenticatedClinEdgeApp(
                     deviceLockManager = deviceLockManager,
                     engagementRepo = engagementRepo,
                     appContext = app,
-                    paymentReportRepo = paymentReportRepo
+                    paymentReportRepo = paymentReportRepo,
+                    grandTestRepo = grandTestRepo
                 )
             }
         }
@@ -330,6 +335,15 @@ fun RrbNursingApp(vm: MainViewModel) {
         val flagQuestionTarget by vm.flagQuestionTarget.collectAsStateWithLifecycle()
         val isFlagBusy by vm.isFlagBusy.collectAsStateWithLifecycle()
         val isClinicalToolsOpen by vm.isClinicalToolsOpen.collectAsStateWithLifecycle()
+        val isGrandTestHubOpen by vm.isGrandTestHubOpen.collectAsStateWithLifecycle()
+        val publicGrandTests by vm.publicGrandTests.collectAsStateWithLifecycle()
+        val selectedGrandTestId by vm.selectedGrandTestId.collectAsStateWithLifecycle()
+        val grandTestLeaderboard by vm.grandTestLeaderboard.collectAsStateWithLifecycle()
+        val isGrandTestLoading by vm.isGrandTestLoading.collectAsStateWithLifecycle()
+        val grandTestEnabled = subscriptionState.config.grandTestEnabled
+        val liveGrandTest = remember(publicGrandTests) {
+            publicGrandTests.firstOrNull { it.parsedStatus == GrandTestStatus.LIVE }
+        }
         val targetExamDateIso by vm.targetExamDateIso.collectAsStateWithLifecycle()
         val srsCards by vm.srsCards.collectAsStateWithLifecycle()
         val srsNotebookSummary = remember(state.questions, srsCards) {
@@ -475,7 +489,7 @@ fun RrbNursingApp(vm: MainViewModel) {
 
         val inActiveSession = practiceSession != null || cbtSession != null
         val inSubScreen = isSettingsOpen || isProfileOpen || isPlansOpen || isAdminOpen ||
-            isNotificationsOpen || isDoubtBoxOpen || isClinicalToolsOpen || subjectChaptersNav != null
+            isNotificationsOpen || isDoubtBoxOpen || isClinicalToolsOpen || isGrandTestHubOpen || subjectChaptersNav != null
         val shouldKeepScreenOn = keepScreenOn && inActiveSession
 
         DisposableEffect(context, shouldKeepScreenOn) {
@@ -909,6 +923,12 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onOpenOtaQuestionEditor = vm::adminOpenOtaQuestionEditor,
                                         onSaveOtaQuestionEdit = vm::adminSaveOtaQuestionEdit,
                                         onDismissOtaQuestionEditor = vm::adminDismissOtaQuestionEditor,
+                                        onToggleGrandTestEnabled = vm::adminToggleGrandTestEnabled,
+                                        onCreateGrandTest = vm::adminCreateGrandTest,
+                                        onUpdateGrandTestStatus = vm::adminUpdateGrandTestStatus,
+                                        onDeleteGrandTest = vm::adminDeleteGrandTest,
+                                        onLoadGrandTestLeaderboard = vm::adminInspectGrandTestLeaderboard,
+                                        onDismissGrandTestLeaderboard = vm::adminDismissGrandTestLeaderboard,
                                         onShowMessage = vm::showMessage,
                                         onBack = vm::closeAdminConsole
                                     )
@@ -950,6 +970,19 @@ fun RrbNursingApp(vm: MainViewModel) {
                                 isClinicalToolsOpen -> {
                                     ClinicalToolsScreen(
                                         onBack = vm::closeClinicalTools
+                                    )
+                                }
+
+                                isGrandTestHubOpen && grandTestEnabled -> {
+                                    GrandTestScreen(
+                                        tests = publicGrandTests,
+                                        selectedTestId = selectedGrandTestId,
+                                        leaderboardSummary = grandTestLeaderboard,
+                                        isLoading = isGrandTestLoading,
+                                        onSelectTest = vm::selectGrandTestForLeaderboard,
+                                        onRefreshLeaderboard = vm::refreshSelectedGrandTestLeaderboard,
+                                        onStartGrandTest = vm::startGrandTestAttempt,
+                                        onBack = vm::closeGrandTestHub
                                     )
                                 }
 
@@ -1156,7 +1189,10 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             srsDueCount = srsNotebookSummary.dueEntries.size,
                                             onSetTargetExamDate = vm::setTargetExamDate,
                                             onOpenClinicalTools = vm::openClinicalTools,
-                                            onStartSrsDueDrill = vm::startSrsDueDrill
+                                            onStartSrsDueDrill = vm::startSrsDueDrill,
+                                            grandTestEnabled = grandTestEnabled,
+                                            liveGrandTest = liveGrandTest,
+                                            onOpenGrandTestHub = vm::openGrandTestHub
                                         )
 
                                         MainTab.SUBJECTS -> SubjectsHubScreen(
@@ -1195,7 +1231,10 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onStartNorcetMainsMock = vm::startNorcetMainsMock,
                                             onStartCustomCbt = { list, title, mins -> vm.startCbtCustom(list, title, mins) },
                                             onPracticePredictedBank = { list, title -> vm.startPractice(list, title) },
-                                            onOpenTimedPracticeConfig = { vm.openTimedPracticeConfig() }
+                                            onOpenTimedPracticeConfig = { vm.openTimedPracticeConfig() },
+                                            grandTestEnabled = grandTestEnabled,
+                                            liveGrandTest = liveGrandTest,
+                                            onOpenGrandTestHub = vm::openGrandTestHub
                                         )
 
                                         MainTab.STATS -> StatsScreen(

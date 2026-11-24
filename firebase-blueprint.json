@@ -255,6 +255,7 @@
         "supportEmail": { "type": "string" },
         "upiId": { "type": "string", "description": "Optional merchant/owner UPI VPA for direct student payments (max 80 chars)." },
         "upiPayeeName": { "type": "string", "description": "Optional UPI payee display name (max 80 chars)." },
+        "grandTestEnabled": { "type": "boolean", "description": "Optional Owner Admin kill-switch for Weekly All-India Grand Test & Percentile Leaderboard (defaults to false/dormant)." },
         "catalogVersion": { "type": "integer" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -616,6 +617,74 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "GrandTest": {
+      "title": "GrandTest",
+      "description": "Admin-managed Weekly All-India Grand Test event (dormant until Owner Admin enables grandTestEnabled in subscriptionConfig).",
+      "type": "object",
+      "properties": {
+        "testId": { "type": "string" },
+        "title": { "type": "string" },
+        "examId": { "type": "string" },
+        "weekLabel": { "type": "string" },
+        "questionCount": { "type": "integer" },
+        "durationMinutes": { "type": "integer" },
+        "negativeMarks": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "live", "closed"] },
+        "startsAtMs": { "type": "integer" },
+        "endsAtMs": { "type": "integer" },
+        "createdByEmail": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "testId",
+        "title",
+        "examId",
+        "weekLabel",
+        "questionCount",
+        "durationMinutes",
+        "negativeMarks",
+        "status",
+        "startsAtMs",
+        "endsAtMs",
+        "createdByEmail",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "GrandTestEntry": {
+      "title": "GrandTestEntry",
+      "description": "Single immutable student attempt record for a Weekly All-India Grand Test used to compute All-India Rank and Percentile.",
+      "type": "object",
+      "properties": {
+        "testId": { "type": "string" },
+        "userId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "examId": { "type": "string" },
+        "netScore": { "type": "number" },
+        "correctCount": { "type": "integer" },
+        "wrongCount": { "type": "integer" },
+        "skippedCount": { "type": "integer" },
+        "totalQuestions": { "type": "integer" },
+        "accuracyPercent": { "type": "integer" },
+        "timeTakenSeconds": { "type": "integer" },
+        "submittedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "testId",
+        "userId",
+        "studentName",
+        "examId",
+        "netScore",
+        "correctCount",
+        "wrongCount",
+        "skippedCount",
+        "totalQuestions",
+        "accuracyPercent",
+        "timeTakenSeconds",
+        "submittedAt"
+      ]
     }
   },
   "firestore": {
@@ -682,6 +751,14 @@
     "/questionReports/{reportId}": {
       "schema": { "$ref": "#/entities/QuestionReport" },
       "description": "Student-flagged MCQ error reports reviewed and resolved by the Owner Admin."
+    },
+    "/grandTests/{testId}": {
+      "schema": { "$ref": "#/entities/GrandTest" },
+      "description": "Weekly All-India Grand Test definitions managed by Owner Admin (feature dormant unless grandTestEnabled is true)."
+    },
+    "/grandTests/{testId}/entries/{userId}": {
+      "schema": { "$ref": "#/entities/GrandTestEntry" },
+      "description": "One-per-user immutable Grand Test leaderboard entries for All-India Rank and Percentile calculation."
     }
   }
 }

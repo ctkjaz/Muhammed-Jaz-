@@ -1190,5 +1190,167 @@ test("QuestionReports: student flags MCQ issue, cannot self-resolve or read othe
   );
 });
 
+test("15. GrandTests & Entries: admin toggle + draft privacy + 1 immutable attempt per student", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const adminDb = adminContext().firestore();
+
+  const now = new Date(Date.now() - 2000);
+  const nowMs = Date.now();
+
+  // Admin can toggle grandTestEnabled in subscriptionConfig
+  const configPayload = {
+    singleExam1M: 99,
+    singleExam3M: 249,
+    singleExam6M: 449,
+    singleExam1Y: 799,
+    allExam1M: 199,
+    allExam3M: 499,
+    allExam6M: 899,
+    allExam1Y: 1499,
+    freeDailyQuestionLimit: 15,
+    trialDays: 3,
+    supportWhatsAppNumber: "+919876543210",
+    supportEmail: ADMIN_EMAIL,
+    upiId: "clinedge@upi",
+    upiPayeeName: "ClinEdge Nursing Prep",
+    grandTestEnabled: false,
+    catalogVersion: 1,
+    updatedAt: now,
+  };
+  await assertSucceeds(adminDb.collection("appConfig").doc("subscriptionConfig").set(configPayload));
+  await assertSucceeds(
+    adminDb.collection("appConfig").doc("subscriptionConfig").set({
+      ...configPayload,
+      grandTestEnabled: true,
+    })
+  );
+  // Non-admin cannot toggle grandTestEnabled
+  await assertFails(
+    aliceDb.collection("appConfig").doc("subscriptionConfig").update({
+      grandTestEnabled: false,
+      updatedAt: now,
+    })
+  );
+
+  // Admin creates a draft test and a live test
+  const draftTest = {
+    testId: "gt_draft_1",
+    title: "All-India NORCET Grand Test #1 (Draft)",
+    examId: "aiims_norcet",
+    weekLabel: "Week 1",
+    questionCount: 50,
+    durationMinutes: 45,
+    negativeMarks: 0.33,
+    status: "draft",
+    startsAtMs: nowMs,
+    endsAtMs: nowMs + 7 * 86400000,
+    createdByEmail: ADMIN_EMAIL,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const liveTest = {
+    testId: "gt_live_1",
+    title: "All-India NORCET Grand Test #2",
+    examId: "aiims_norcet",
+    weekLabel: "Week 2",
+    questionCount: 50,
+    durationMinutes: 45,
+    negativeMarks: 0.33,
+    status: "live",
+    startsAtMs: nowMs,
+    endsAtMs: nowMs + 7 * 86400000,
+    createdByEmail: ADMIN_EMAIL,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await assertSucceeds(adminDb.collection("grandTests").doc("gt_draft_1").set(draftTest));
+  await assertSucceeds(adminDb.collection("grandTests").doc("gt_live_1").set(liveTest));
+
+  // Students cannot create grandTests or read draft grandTests
+  await assertFails(aliceDb.collection("grandTests").doc("gt_hack").set({ ...liveTest, testId: "gt_hack" }));
+  await assertFails(unauthDb.collection("grandTests").doc("gt_live_1").get());
+  await assertFails(aliceDb.collection("grandTests").doc("gt_draft_1").get());
+  await assertFails(aliceDb.collection("grandTests").get()); // unfiltered list denied because draft exists
+
+  // Signed-in students can read live/closed grand tests via status filter
+  await assertSucceeds(aliceDb.collection("grandTests").doc("gt_live_1").get());
+  await assertSucceeds(
+    aliceDb.collection("grandTests").where("status", "in", ["live", "closed"]).get()
+  );
+
+  // Alice submits a valid Grand Test entry on gt_live_1
+  const aliceEntry = {
+    testId: "gt_live_1",
+    userId: ALICE_UID,
+    studentName: "Alice Nurse",
+    examId: "aiims_norcet",
+    netScore: 38.0,
+    correctCount: 40,
+    wrongCount: 6,
+    skippedCount: 4,
+    totalQuestions: 50,
+    accuracyPercent: 87,
+    timeTakenSeconds: 1850,
+    submittedAt: now,
+  };
+  await assertFails(unauthDb.collection("grandTests").doc("gt_live_1").collection("entries").doc(ALICE_UID).set(aliceEntry));
+  await assertSucceeds(aliceDb.collection("grandTests").doc("gt_live_1").collection("entries").doc(ALICE_UID).set(aliceEntry));
+
+  // Alice cannot update her entry (immutable single attempt)
+  await assertFails(
+    aliceDb.collection("grandTests").doc("gt_live_1").collection("entries").doc(ALICE_UID).update({
+      netScore: 50.0,
+    })
+  );
+
+  // Bob cannot spoof Alice's entry or submit inconsistent counts
+  await assertFails(
+    bobDb.collection("grandTests").doc("gt_live_1").collection("entries").doc(ALICE_UID).set({
+      ...aliceEntry,
+      userId: BOB_UID,
+    })
+  );
+  await assertFails(
+    bobDb.collection("grandTests").doc("gt_live_1").collection("entries").doc(BOB_UID).set({
+      ...aliceEntry,
+      userId: BOB_UID,
+      correctCount: 45, // 45 + 6 + 4 != 50
+    })
+  );
+
+  // Bob cannot submit an entry to a draft test
+  await assertFails(
+    bobDb.collection("grandTests").doc("gt_draft_1").collection("entries").doc(BOB_UID).set({
+      ...aliceEntry,
+      testId: "gt_draft_1",
+      userId: BOB_UID,
+    })
+  );
+
+  // Bob can read leaderboard entries for gt_live_1
+  await assertSucceeds(bobDb.collection("grandTests").doc("gt_live_1").collection("entries").get());
+
+  // Admin closes gt_live_1; afterwards Bob cannot submit new entry
+  await assertSucceeds(
+    adminDb.collection("grandTests").doc("gt_live_1").update({
+      status: "closed",
+      updatedAt: now,
+    })
+  );
+  await assertFails(
+    bobDb.collection("grandTests").doc("gt_live_1").collection("entries").doc(BOB_UID).set({
+      ...aliceEntry,
+      userId: BOB_UID,
+      studentName: "Bob Nurse",
+    })
+  );
+
+  // Admin can delete entry and test
+  await assertSucceeds(adminDb.collection("grandTests").doc("gt_live_1").collection("entries").doc(ALICE_UID).delete());
+  await assertSucceeds(adminDb.collection("grandTests").doc("gt_draft_1").delete());
+});
+
 
 

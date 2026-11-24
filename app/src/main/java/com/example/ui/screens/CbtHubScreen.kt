@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,14 +37,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.data.grandtest.CloudGrandTest
 import com.example.data.local.SettingsPreferences
 import com.example.data.model.ExamStage
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectCatalog
+import com.example.data.subscription.EntitlementEvaluator
 import com.example.ui.components.SegmentedPillBar
+import com.example.ui.theme.AcidLime
 import com.example.ui.theme.MonoFontFamily
+import com.example.ui.theme.PureBlack
 import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.DashboardDerivedState
 import java.text.SimpleDateFormat
@@ -61,6 +66,9 @@ fun CbtHubScreen(
     onStartCustomCbt: (List<QuestionItem>, String, Int?) -> Unit,
     onPracticePredictedBank: (List<QuestionItem>, String) -> Unit,
     onOpenTimedPracticeConfig: () -> Unit,
+    grandTestEnabled: Boolean = false,
+    liveGrandTest: CloudGrandTest? = null,
+    onOpenGrandTestHub: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val editorial = MaterialTheme.editorialColors
@@ -183,6 +191,73 @@ fun CbtHubScreen(
                         onSelect = onSelectExamStage,
                         testTagOf = { "cbt_stage_${it.id}" }
                     )
+                }
+            }
+
+            // Weekly All-India Grand Test & Percentile Card — DORMANT BY DEFAULT (only visible when Owner Admin enables it)
+            if (grandTestEnabled) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("cbt_grand_test_card"),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = AcidLime.copy(alpha = 0.14f)),
+                        border = BorderStroke(1.dp, AcidLime.copy(alpha = 0.7f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.EmojiEvents,
+                                    contentDescription = null,
+                                    tint = AcidLime,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "WEEKLY ALL-INDIA GRAND TEST",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                    fontWeight = FontWeight.Bold,
+                                    color = AcidLime
+                                )
+                            }
+                            Text(
+                                text = liveGrandTest?.title ?: "All-India Nursing Grand Test & Percentile",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (liveGrandTest != null) {
+                                    "${liveGrandTest.weekLabel} • ${EntitlementEvaluator.shortExamLabel(liveGrandTest.examId)} • ${liveGrandTest.questionCount} Qs • ${liveGrandTest.durationMinutes} min • Live AIR & Percentile"
+                                } else {
+                                    "Compare your All-India Rank & Percentile against nursing aspirants nationwide."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Button(
+                                onClick = onOpenGrandTestHub,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("cbt_open_grand_test_btn"),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = AcidLime,
+                                    contentColor = PureBlack
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = if (liveGrandTest != null) "Enter Live Grand Test & Ranks" else "View Grand Test Leaderboard",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                 }
             }
 

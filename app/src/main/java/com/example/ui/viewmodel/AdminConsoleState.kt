@@ -4,6 +4,8 @@ import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionSourceType
+import com.example.data.grandtest.CloudGrandTest
+import com.example.data.grandtest.GrandTestLeaderboardSummary
 import com.example.data.subscription.AdminUserDirectoryRow
 import com.example.data.subscription.CloudAccessCode
 import com.example.data.subscription.CloudDeviceTrialLock
@@ -13,9 +15,11 @@ import com.example.data.subscription.CloudQuestionReport
 import com.example.data.subscription.OtaQuestionEditDraft
 
 enum class AdminConsoleTab(val label: String) {
+    ANALYTICS("Analytics"),
     USERS("Users"),
     PAYMENTS("Payments"),
     REPORTS("Reports"),
+    GRAND_TEST("Grand Test"),
     ALERTS("Alerts"),
     DOUBTS("Doubts"),
     CODES("Codes"),
@@ -42,7 +46,7 @@ data class AdminContentDraftState(
 )
 
 data class AdminConsoleUiState(
-    val selectedTab: AdminConsoleTab = AdminConsoleTab.USERS,
+    val selectedTab: AdminConsoleTab = AdminConsoleTab.ANALYTICS,
     val isLoading: Boolean = false,
     val isMutating: Boolean = false,
     val users: List<AdminUserDirectoryRow> = emptyList(),
@@ -51,6 +55,9 @@ data class AdminConsoleUiState(
     val questionPacks: List<CloudQuestionPack> = emptyList(),
     val paymentRequests: List<CloudPaymentRequest> = emptyList(),
     val questionReports: List<CloudQuestionReport> = emptyList(),
+    val grandTests: List<CloudGrandTest> = emptyList(),
+    val selectedGrandTestLeaderboard: GrandTestLeaderboardSummary? = null,
+    val isGrandTestLeaderboardLoading: Boolean = false,
     val otaEditDraft: OtaQuestionEditDraft? = null,
     val lastGeneratedCode: CloudAccessCode? = null,
     val contentDraft: AdminContentDraftState = AdminContentDraftState()

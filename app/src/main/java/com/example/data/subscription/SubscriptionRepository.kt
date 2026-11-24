@@ -751,6 +751,7 @@ class SubscriptionRepository(
                 "supportEmail" to config.supportEmail.trim().take(120),
                 "upiId" to config.upiId.trim().take(80),
                 "upiPayeeName" to config.upiPayeeName.trim().ifBlank { "ClinEdge Nursing Prep" }.take(80),
+                "grandTestEnabled" to config.grandTestEnabled,
                 "catalogVersion" to config.catalogVersion.coerceIn(0L, 1000000L),
                 "updatedAt" to FieldValue.serverTimestamp()
             )

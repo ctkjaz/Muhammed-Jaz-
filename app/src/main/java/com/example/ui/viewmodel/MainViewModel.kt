@@ -36,6 +36,11 @@ import com.example.data.cloud.extractFirestoreRootError
 import com.example.data.cloud.isPermissionDeniedOrOffline
 import com.example.data.export.PdfWorksheetOptions
 import com.example.data.export.PdfWorksheetWriter
+import com.example.data.grandtest.CloudGrandTest
+import com.example.data.grandtest.GrandTestLeaderboardLogic
+import com.example.data.grandtest.GrandTestLeaderboardSummary
+import com.example.data.grandtest.GrandTestRepository
+import com.example.data.grandtest.GrandTestStatus
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
 import com.example.data.update.AppUpdateChecker
@@ -216,7 +221,9 @@ data class CbtSessionState(
     val currentSectionIndex: Int = 0,
     val sectionRemainingSeconds: Int = 0,
     val showSectionAdvanceConfirm: Boolean = false,
-    val sectionAutoAdvanceNotice: String? = null
+    val sectionAutoAdvanceNotice: String? = null,
+    val grandTestId: String? = null,
+    val grandTestExamId: String? = null
 ) {
     val hasSectionLock: Boolean
         get() = sectionSize > 0 && sectionDurationSeconds > 0 && questions.size > sectionSize
@@ -336,6 +343,7 @@ class MainViewModel(
     private val engagementRepo: CloudEngagementRepository? = null,
     private val appContext: Context? = null,
     private val paymentReportRepo: PaymentAndReportRepository? = null,
+    private val grandTestRepo: GrandTestRepository? = null,
     private val aiTutorService: ClinEdgeAiTutorService = ClinEdgeAiTutorService()
 ) : ViewModel() {
 
@@ -525,6 +533,26 @@ class MainViewModel(
     // ------------------------------------------------------------------------
     private val _isClinicalToolsOpen = MutableStateFlow(false)
     val isClinicalToolsOpen: StateFlow<Boolean> = _isClinicalToolsOpen.asStateFlow()
+
+    // ------------------------------------------------------------------------
+    // v2.5: WEEKLY ALL-INDIA GRAND TEST & PERCENTILE (DORMANT BY DEFAULT)
+    // ------------------------------------------------------------------------
+    private val _isGrandTestHubOpen = MutableStateFlow(false)
+    val isGrandTestHubOpen: StateFlow<Boolean> = _isGrandTestHubOpen.asStateFlow()
+
+    private val _publicGrandTests = MutableStateFlow<List<CloudGrandTest>>(emptyList())
+    val publicGrandTests: StateFlow<List<CloudGrandTest>> = _publicGrandTests.asStateFlow()
+
+    private val _selectedGrandTestId = MutableStateFlow<String?>(null)
+    val selectedGrandTestId: StateFlow<String?> = _selectedGrandTestId.asStateFlow()
+
+    private val _grandTestLeaderboard = MutableStateFlow<GrandTestLeaderboardSummary?>(null)
+    val grandTestLeaderboard: StateFlow<GrandTestLeaderboardSummary?> = _grandTestLeaderboard.asStateFlow()
+
+    private val _isGrandTestLoading = MutableStateFlow(false)
+    val isGrandTestLoading: StateFlow<Boolean> = _isGrandTestLoading.asStateFlow()
+
+    private var publicGrandTestObserverJob: Job? = null
 
     val targetExamDateIso: StateFlow<String> = settings.targetExamDateIso
     val srsCards: StateFlow<Map<String, SrsCardState>> = settings.srsCards
@@ -1102,6 +1130,8 @@ class MainViewModel(
         aiTutorJob = null
         aiDraftJob?.cancel()
         aiDraftJob = null
+        publicGrandTestObserverJob?.cancel()
+        publicGrandTestObserverJob = null
         syncListenerJobs.forEach { it.cancel() }
         syncListenerJobs = emptyList()
         settings.clearLocalSession()
@@ -1216,6 +1246,7 @@ class MainViewModel(
                     if (!isSigningOut) {
                         _subscriptionConfig.value = cfg
                         triggerOtaPackSyncIfNeeded(cfg.catalogVersion)
+                        syncPublicGrandTestObserver(cfg.grandTestEnabled)
                     }
                 }
             }
@@ -1620,6 +1651,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isGrandTestHubOpen.value = false
         _selectedTab.value = tab
     }
 
@@ -1631,6 +1663,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isGrandTestHubOpen.value = false
         _isSettingsOpen.value = true
     }
 
@@ -1646,6 +1679,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isGrandTestHubOpen.value = false
         _isProfileOpen.value = true
     }
 
@@ -1664,6 +1698,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isGrandTestHubOpen.value = false
         _isPlansOpen.value = true
     }
 
@@ -1682,6 +1717,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isGrandTestHubOpen.value = false
         _isPlansOpen.value = true
     }
 
@@ -1702,6 +1738,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isGrandTestHubOpen.value = false
         _isAdminOpen.value = true
         refreshAdminDashboard()
     }
@@ -1718,6 +1755,7 @@ class MainViewModel(
         _isAdminOpen.value = false
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
+        _isGrandTestHubOpen.value = false
         _isClinicalToolsOpen.value = true
     }
 
@@ -1791,6 +1829,7 @@ class MainViewModel(
         _isPlansOpen.value = false
         _isAdminOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isGrandTestHubOpen.value = false
         _chaptersHighYieldOnly.value = false
         _subjectChaptersNav.value = SubjectChaptersNavState(
             subjectCode = subjectCode,
@@ -2992,6 +3031,30 @@ class MainViewModel(
                 cloudSync.upsertMockHistory(currentUserId, savedMock)
                     .onSuccess { markSynced() }
                     .onFailure { recordSyncFailure(it) }
+
+                val gtId = sess.grandTestId
+                if (!gtId.isNullOrBlank() && grandTestRepo != null) {
+                    val elapsedSec = (sess.totalSeconds - sess.remainingSeconds).coerceAtLeast(0)
+                    val displayName = settings.profileName.value.ifBlank { signedInAccount.displayName }.ifBlank { "Nursing Aspirant" }
+                    grandTestRepo.submitGrandTestEntry(
+                        testId = gtId,
+                        userId = currentUserId,
+                        studentName = displayName,
+                        examId = sess.grandTestExamId ?: settings.activeExamId.value,
+                        netScore = netScore,
+                        correctCount = right,
+                        wrongCount = wrong,
+                        skippedCount = skipped,
+                        totalQuestions = sess.questions.size,
+                        accuracyPercent = acc,
+                        timeTakenSeconds = elapsedSec
+                    ).onSuccess {
+                        showMessage("Official Grand Test submitted! View your All-India Rank & Percentile.")
+                        selectGrandTestForLeaderboard(gtId)
+                    }.onFailure { err ->
+                        Log.w(TAG, "Grand test entry submission skipped/failed", err)
+                    }
+                }
             }
         }
     }
@@ -3599,13 +3662,16 @@ class MainViewModel(
             val codes = repo.adminFetchAccessCodes().getOrDefault(_adminState.value.accessCodes)
             val locks = repo.adminFetchDeviceLocks().getOrDefault(_adminState.value.deviceLocks)
             val packs = repo.adminFetchAllQuestionPacks().getOrDefault(_adminState.value.questionPacks)
+            val grandTests = grandTestRepo?.adminFetchAllGrandTests()?.getOrDefault(_adminState.value.grandTests)
+                ?: _adminState.value.grandTests
             _adminState.update {
                 it.copy(
                     isLoading = false,
                     users = users,
                     accessCodes = codes,
                     deviceLocks = locks,
-                    questionPacks = packs
+                    questionPacks = packs,
+                    grandTests = grandTests
                 )
             }
         }
@@ -3912,6 +3978,7 @@ class MainViewModel(
         _isAdminOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isGrandTestHubOpen.value = false
         _isNotificationsOpen.value = true
         val newestAnnMs = _announcements.value.maxOfOrNull { it.createdAtMs } ?: System.currentTimeMillis()
         settings.markAnnouncementsSeenUpTo(maxOf(newestAnnMs, System.currentTimeMillis()))
@@ -3967,6 +4034,7 @@ class MainViewModel(
         _isAdminOpen.value = false
         _isNotificationsOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isGrandTestHubOpen.value = false
         _highlightedDoubtId.value = highlightDoubtId?.takeIf { it.isNotBlank() }
         _isDoubtBoxOpen.value = true
     }
@@ -4565,6 +4633,269 @@ class MainViewModel(
 
     fun adminDismissOtaQuestionEditor() {
         _adminState.update { it.copy(otaEditDraft = null) }
+    }
+
+    // ------------------------------------------------------------------------
+    // v2.5: WEEKLY ALL-INDIA GRAND TEST & ADMIN KILL-SWITCH LOGIC
+    // ------------------------------------------------------------------------
+
+    private fun syncPublicGrandTestObserver(enabled: Boolean) {
+        if (!enabled || grandTestRepo == null || currentUserId.isBlank() || isSigningOut) {
+            publicGrandTestObserverJob?.cancel()
+            publicGrandTestObserverJob = null
+            _publicGrandTests.value = emptyList()
+            _grandTestLeaderboard.value = null
+            _selectedGrandTestId.value = null
+            if (!enabled) {
+                _isGrandTestHubOpen.value = false
+            }
+            return
+        }
+        if (publicGrandTestObserverJob?.isActive == true) return
+        publicGrandTestObserverJob = viewModelScope.launch {
+            grandTestRepo.observePublicGrandTests().collect { tests ->
+                if (!isSigningOut) {
+                    _publicGrandTests.value = tests
+                    val currentSel = _selectedGrandTestId.value
+                    if (currentSel == null || tests.none { it.effectiveTestId == currentSel }) {
+                        val preferred = tests.firstOrNull { it.parsedStatus == GrandTestStatus.LIVE }
+                            ?: tests.firstOrNull()
+                        _selectedGrandTestId.value = preferred?.effectiveTestId
+                    }
+                }
+            }
+        }
+    }
+
+    fun openGrandTestHub() {
+        if (!_subscriptionConfig.value.grandTestEnabled) {
+            showMessage("Weekly All-India Grand Test is currently dormant.")
+            return
+        }
+        _subjectChaptersNav.value = null
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = false
+        _isPlansOpen.value = false
+        _isAdminOpen.value = false
+        _isNotificationsOpen.value = false
+        _isDoubtBoxOpen.value = false
+        _isClinicalToolsOpen.value = false
+        _isGrandTestHubOpen.value = true
+        val targetId = _selectedGrandTestId.value
+            ?: _publicGrandTests.value.firstOrNull { it.parsedStatus == GrandTestStatus.LIVE }?.effectiveTestId
+            ?: _publicGrandTests.value.firstOrNull()?.effectiveTestId
+        if (!targetId.isNullOrBlank()) {
+            selectGrandTestForLeaderboard(targetId)
+        }
+    }
+
+    fun closeGrandTestHub() {
+        _isGrandTestHubOpen.value = false
+    }
+
+    fun selectGrandTestForLeaderboard(testId: String) {
+        val repo = grandTestRepo ?: return
+        val test = _publicGrandTests.value.firstOrNull { it.effectiveTestId == testId }
+            ?: _adminState.value.grandTests.firstOrNull { it.effectiveTestId == testId }
+            ?: return
+        _selectedGrandTestId.value = testId
+        viewModelScope.launch {
+            _isGrandTestLoading.value = true
+            val res = repo.fetchLeaderboardEntries(testId)
+            _isGrandTestLoading.value = false
+            res.onSuccess { entries ->
+                _grandTestLeaderboard.value = GrandTestLeaderboardLogic.buildSummary(
+                    test = test,
+                    entries = entries,
+                    currentUserId = currentUserId
+                )
+            }.onFailure { err ->
+                showMessage("Could not load leaderboard: ${err.message}")
+            }
+        }
+    }
+
+    fun refreshSelectedGrandTestLeaderboard() {
+        val id = _selectedGrandTestId.value ?: return
+        selectGrandTestForLeaderboard(id)
+    }
+
+    fun startGrandTestAttempt(test: CloudGrandTest) {
+        if (!_subscriptionConfig.value.grandTestEnabled && !isOwnerAdmin) {
+            showMessage("Weekly All-India Grand Test is currently dormant.")
+            return
+        }
+        if (test.parsedStatus != GrandTestStatus.LIVE) {
+            showMessage("This Grand Test is no longer accepting submissions.")
+            return
+        }
+        val alreadyAttempted = _grandTestLeaderboard.value
+            ?.takeIf { it.test.effectiveTestId == test.effectiveTestId }
+            ?.currentUserRank != null
+        if (alreadyAttempted) {
+            showMessage("Your official attempt is already recorded for this Grand Test.")
+            return
+        }
+
+        val targetCount = test.questionCount.toInt().coerceIn(10, 200)
+        val examLinkedIds = allPlatformLinks.value
+            .filter { it.examId == test.examId }
+            .map { it.questionId }
+            .toSet()
+        val allPool = dedupedPlatformQuestions.value.ifEmpty { allPlatformQuestions.value }
+        val examPool = if (examLinkedIds.isNotEmpty()) {
+            allPool.filter { it.id in examLinkedIds }
+        } else {
+            emptyList()
+        }
+        // Deterministic ordering seeded by testId so every student receives the same Grand Test paper!
+        val seededRandom = java.util.Random(test.effectiveTestId.hashCode().toLong())
+        val ordered = (examPool.shuffled(seededRandom) + allPool.filter { it.id !in examLinkedIds }.shuffled(seededRandom))
+            .distinctBy { it.id }
+            .take(targetCount)
+
+        if (ordered.isEmpty()) {
+            showMessage("Question bank is still loading. Please try again in a moment.")
+            return
+        }
+
+        stopActiveTimer()
+        _practiceSession.value = null
+        val totalSecs = (test.durationMinutes.toInt().coerceIn(5, 240)) * 60
+        _cbtSession.value = CbtSessionState(
+            title = test.title,
+            questions = ordered,
+            currentIndex = 0,
+            selectedAnswers = emptyMap(),
+            paletteStatuses = mapOf(0 to CbtPaletteStatus.NOT_ANSWERED),
+            hasCountdown = true,
+            totalSeconds = totalSecs,
+            remainingSeconds = totalSecs,
+            isSubmitted = false,
+            negativeMarks = test.negativeMarks,
+            grandTestId = test.effectiveTestId,
+            grandTestExamId = test.examId
+        )
+        startCbtTimer()
+    }
+
+    fun adminToggleGrandTestEnabled(enabled: Boolean) {
+        val repo = subscriptionRepo ?: return
+        if (!isOwnerAdmin) return
+        val updated = _subscriptionConfig.value.copy(grandTestEnabled = enabled)
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.adminSaveSubscriptionConfig(updated)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                _subscriptionConfig.value = updated
+                syncPublicGrandTestObserver(enabled)
+                showMessage(
+                    if (enabled) "Weekly All-India Grand Test is now LIVE for all students!"
+                    else "Weekly All-India Grand Test set to DORMANT (hidden from students)."
+                )
+            }.onFailure { err ->
+                showMessage("Could not update Grand Test toggle: ${err.message}")
+            }
+        }
+    }
+
+    fun adminCreateGrandTest(
+        title: String,
+        examId: String,
+        weekLabel: String,
+        questionCount: Int,
+        durationMinutes: Int,
+        status: GrandTestStatus,
+        onSuccess: () -> Unit
+    ) {
+        val repo = grandTestRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.adminCreateGrandTest(
+                title = title,
+                examId = examId,
+                weekLabel = weekLabel,
+                questionCount = questionCount,
+                durationMinutes = durationMinutes,
+                negativeMarks = 0.33,
+                status = status
+            )
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess { created ->
+                showMessage("Created \"${created.title}\" (${created.parsedStatus.label}).")
+                onSuccess()
+                refreshAdminDashboard()
+            }.onFailure { err ->
+                showMessage("Could not create Grand Test: ${err.message}")
+            }
+        }
+    }
+
+    fun adminUpdateGrandTestStatus(testId: String, status: GrandTestStatus) {
+        val repo = grandTestRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.adminUpdateGrandTestStatus(testId, status)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                showMessage("Grand Test status changed to ${status.label}.")
+                refreshAdminDashboard()
+            }.onFailure { err ->
+                showMessage("Could not update status: ${err.message}")
+            }
+        }
+    }
+
+    fun adminDeleteGrandTest(testId: String, title: String) {
+        val repo = grandTestRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update { it.copy(isMutating = true) }
+            val res = repo.adminDeleteGrandTest(testId)
+            _adminState.update { it.copy(isMutating = false) }
+            res.onSuccess {
+                showMessage("Deleted \"$title\".")
+                refreshAdminDashboard()
+            }.onFailure { err ->
+                showMessage("Delete failed: ${err.message}")
+            }
+        }
+    }
+
+    fun adminInspectGrandTestLeaderboard(test: CloudGrandTest) {
+        val repo = grandTestRepo ?: return
+        if (!isOwnerAdmin) return
+        viewModelScope.launch {
+            _adminState.update {
+                it.copy(isGrandTestLeaderboardLoading = true, selectedGrandTestLeaderboard = null)
+            }
+            val res = repo.fetchLeaderboardEntries(test.effectiveTestId)
+            res.onSuccess { entries ->
+                val summary = GrandTestLeaderboardLogic.buildSummary(
+                    test = test,
+                    entries = entries,
+                    currentUserId = currentUserId
+                )
+                _adminState.update {
+                    it.copy(
+                        isGrandTestLeaderboardLoading = false,
+                        selectedGrandTestLeaderboard = summary
+                    )
+                }
+            }.onFailure { err ->
+                _adminState.update { it.copy(isGrandTestLeaderboardLoading = false) }
+                showMessage("Could not load leaderboard: ${err.message}")
+            }
+        }
+    }
+
+    fun adminDismissGrandTestLeaderboard() {
+        _adminState.update {
+            it.copy(selectedGrandTestLeaderboard = null, isGrandTestLeaderboardLoading = false)
+        }
     }
 
     private fun stopActiveTimer() {

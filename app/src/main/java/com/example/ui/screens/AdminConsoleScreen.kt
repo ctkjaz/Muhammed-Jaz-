@@ -68,6 +68,8 @@ import com.example.data.notifications.AnnouncementCategory
 import com.example.data.notifications.AnnouncementPriority
 import com.example.data.notifications.CloudAnnouncement
 import com.example.data.notifications.CloudDoubt
+import com.example.data.grandtest.CloudGrandTest
+import com.example.data.grandtest.GrandTestStatus
 import com.example.data.notifications.DoubtStatus
 import com.example.data.subscription.AdminUserDirectoryRow
 import com.example.data.subscription.CloudAccessCode
@@ -150,6 +152,20 @@ fun AdminConsoleScreen(
     onOpenOtaQuestionEditor: (questionId: String, reportId: String) -> Unit = { _, _ -> },
     onSaveOtaQuestionEdit: (OtaQuestionEditDraft) -> Unit = {},
     onDismissOtaQuestionEditor: () -> Unit = {},
+    onToggleGrandTestEnabled: (Boolean) -> Unit = {},
+    onCreateGrandTest: (
+        title: String,
+        examId: String,
+        weekLabel: String,
+        questionCount: Int,
+        durationMinutes: Int,
+        status: GrandTestStatus,
+        onSuccess: () -> Unit
+    ) -> Unit = { _, _, _, _, _, _, _ -> },
+    onUpdateGrandTestStatus: (String, GrandTestStatus) -> Unit = { _, _ -> },
+    onDeleteGrandTest: (String, String) -> Unit = { _, _ -> },
+    onLoadGrandTestLeaderboard: (CloudGrandTest) -> Unit = {},
+    onDismissGrandTestLeaderboard: () -> Unit = {},
     onShowMessage: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
@@ -207,7 +223,7 @@ fun AdminConsoleScreen(
                             }
                         }
                         Text(
-                            text = "Users • Codes • Locks • Content • Alerts • Doubts",
+                            text = "Analytics • Users • Payments • Grand Test • Content • Alerts",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -249,6 +265,24 @@ fun AdminConsoleScreen(
             HorizontalDivider(color = editorial.borderSubtle, modifier = Modifier.padding(top = 6.dp))
 
             when (state.selectedTab) {
+                AdminConsoleTab.ANALYTICS -> AdminAnalyticsTabContent(
+                    state = state,
+                    config = config,
+                    announcements = announcements,
+                    doubts = adminDoubts,
+                    onToggleGrandTestEnabled = onToggleGrandTestEnabled,
+                    onOpenGrandTestTab = { onSelectTab(AdminConsoleTab.GRAND_TEST) }
+                )
+                AdminConsoleTab.GRAND_TEST -> AdminGrandTestTabContent(
+                    state = state,
+                    config = config,
+                    onToggleGrandTestEnabled = onToggleGrandTestEnabled,
+                    onCreateGrandTest = onCreateGrandTest,
+                    onUpdateGrandTestStatus = onUpdateGrandTestStatus,
+                    onDeleteGrandTest = onDeleteGrandTest,
+                    onLoadLeaderboard = onLoadGrandTestLeaderboard,
+                    onDismissLeaderboard = onDismissGrandTestLeaderboard
+                )
                 AdminConsoleTab.USERS -> AdminUsersTab(
                     users = state.users,
                     onManageUser = { editingUser = it },

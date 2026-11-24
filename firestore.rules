@@ -145,7 +145,8 @@ service cloud.firestore {
                'singleExam1M', 'singleExam3M', 'singleExam6M', 'singleExam1Y',
                'allExam1M', 'allExam3M', 'allExam6M', 'allExam1Y',
                'freeDailyQuestionLimit', 'trialDays', 'supportWhatsAppNumber',
-               'supportEmail', 'upiId', 'upiPayeeName', 'catalogVersion', 'updatedAt'
+               'supportEmail', 'upiId', 'upiPayeeName', 'grandTestEnabled',
+               'catalogVersion', 'updatedAt'
              ]) &&
              data.singleExam1M is int && data.singleExam1M >= 0 && data.singleExam1M <= 100000 &&
              data.singleExam3M is int && data.singleExam3M >= 0 && data.singleExam3M <= 100000 &&
@@ -161,6 +162,7 @@ service cloud.firestore {
              data.supportEmail is string && data.supportEmail.size() <= 120 &&
              (!('upiId' in data) || (data.upiId is string && data.upiId.size() <= 80)) &&
              (!('upiPayeeName' in data) || (data.upiPayeeName is string && data.upiPayeeName.size() <= 80)) &&
+             (!('grandTestEnabled' in data) || data.grandTestEnabled is bool) &&
              data.catalogVersion is int && data.catalogVersion >= 0 && data.catalogVersion <= 1000000 &&
              isValidTimestamp(data.updatedAt);
     }
@@ -499,6 +501,60 @@ service cloud.firestore {
              data.adminResolutionNote is string && data.adminResolutionNote.size() <= 500 &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
+    }
+
+    // 16. GrandTest (Weekly All-India Grand Test)
+    function isValidGrandTest(data, testId) {
+      return data.keys().hasAll([
+               'testId', 'title', 'examId', 'weekLabel', 'questionCount',
+               'durationMinutes', 'negativeMarks', 'status', 'startsAtMs',
+               'endsAtMs', 'createdByEmail', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'testId', 'title', 'examId', 'weekLabel', 'questionCount',
+               'durationMinutes', 'negativeMarks', 'status', 'startsAtMs',
+               'endsAtMs', 'createdByEmail', 'createdAt', 'updatedAt'
+             ]) &&
+             data.testId is string && data.testId == testId &&
+             data.title is string && data.title.size() >= 3 && data.title.size() <= 120 &&
+             data.examId is string && data.examId.size() >= 1 && data.examId.size() <= 64 &&
+             data.weekLabel is string && data.weekLabel.size() >= 1 && data.weekLabel.size() <= 40 &&
+             data.questionCount is int && data.questionCount >= 10 && data.questionCount <= 200 &&
+             data.durationMinutes is int && data.durationMinutes >= 5 && data.durationMinutes <= 240 &&
+             data.negativeMarks is number && data.negativeMarks >= 0 && data.negativeMarks <= 1 &&
+             data.status is string && data.status in ['draft', 'live', 'closed'] &&
+             data.startsAtMs is int && data.startsAtMs >= 0 &&
+             data.endsAtMs is int && data.endsAtMs >= data.startsAtMs &&
+             data.createdByEmail is string && data.createdByEmail.size() <= 120 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // 17. GrandTestEntry (Immutable 1-attempt-per-user Leaderboard Entry)
+    function isValidGrandTestEntry(data, testId, userId) {
+      return data.keys().hasAll([
+               'testId', 'userId', 'studentName', 'examId', 'netScore',
+               'correctCount', 'wrongCount', 'skippedCount', 'totalQuestions',
+               'accuracyPercent', 'timeTakenSeconds', 'submittedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'testId', 'userId', 'studentName', 'examId', 'netScore',
+               'correctCount', 'wrongCount', 'skippedCount', 'totalQuestions',
+               'accuracyPercent', 'timeTakenSeconds', 'submittedAt'
+             ]) &&
+             data.testId is string && data.testId == testId &&
+             data.userId is string && data.userId == userId &&
+             data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 60 &&
+             data.examId is string && data.examId.size() >= 1 && data.examId.size() <= 64 &&
+             data.totalQuestions is int && data.totalQuestions >= 1 && data.totalQuestions <= 200 &&
+             data.correctCount is int && data.correctCount >= 0 && data.correctCount <= data.totalQuestions &&
+             data.wrongCount is int && data.wrongCount >= 0 && data.wrongCount <= data.totalQuestions &&
+             data.skippedCount is int && data.skippedCount >= 0 && data.skippedCount <= data.totalQuestions &&
+             (data.correctCount + data.wrongCount + data.skippedCount) == data.totalQuestions &&
+             data.netScore is number && data.netScore >= -200 && data.netScore <= data.totalQuestions &&
+             data.accuracyPercent is int && data.accuracyPercent >= 0 && data.accuracyPercent <= 100 &&
+             data.timeTakenSeconds is int && data.timeTakenSeconds >= 0 && data.timeTakenSeconds <= 20000 &&
+             isValidTimestamp(data.submittedAt);
     }
 
     // ------------------------------------------------------------------------
@@ -975,6 +1031,42 @@ service cloud.firestore {
 
       allow delete: if isValidId(reportId) &&
                        (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+    }
+
+    // ------------------------------------------------------------------------
+    // /grandTests/{testId} — Weekly All-India Grand Tests & Percentile Leaderboard
+    // ------------------------------------------------------------------------
+    match /grandTests/{testId} {
+      allow get: if isSignedIn() && isValidId(testId) &&
+                    (isAdmin() || existing().status in ['live', 'closed']);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.status in ['live', 'closed']);
+
+      allow create: if isAdmin() &&
+                       isValidId(testId) &&
+                       isValidGrandTest(incoming(), testId);
+
+      allow update: if isAdmin() &&
+                       isValidId(testId) &&
+                       isValidGrandTest(incoming(), testId) &&
+                       incoming().testId == existing().testId &&
+                       incoming().createdAt == existing().createdAt;
+
+      allow delete: if isAdmin() && isValidId(testId);
+
+      match /entries/{userId} {
+        allow get: if isSignedIn() && isValidId(testId) && isValidId(userId);
+        allow list: if isSignedIn() && isValidId(testId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(testId) &&
+                         isValidId(userId) &&
+                         isValidGrandTestEntry(incoming(), testId, userId) &&
+                         exists(/databases/$(database)/documents/grandTests/$(testId)) &&
+                         get(/databases/$(database)/documents/grandTests/$(testId)).data.status == 'live';
+
+        allow update: if false;
+        allow delete: if isAdmin() && isValidId(testId) && isValidId(userId);
+      }
     }
   }
 }

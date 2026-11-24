@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -66,6 +67,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.example.data.grandtest.CloudGrandTest
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.ExamCountdownLogic
@@ -76,6 +78,7 @@ import com.example.data.model.QuestionItem
 import com.example.data.notifications.CloudAnnouncement
 import com.example.data.notifications.DailyReminderSettingsState
 import com.example.data.notifications.EngagementLogic
+import com.example.data.subscription.EntitlementEvaluator
 import com.example.data.subscription.PlanTier
 import com.example.data.subscription.SubscriptionUiState
 import com.example.ui.components.AcidLimeProgressBar
@@ -123,6 +126,9 @@ fun DashboardScreen(
     onSetTargetExamDate: (String) -> Unit = {},
     onOpenClinicalTools: () -> Unit = {},
     onStartSrsDueDrill: () -> Unit = {},
+    grandTestEnabled: Boolean = false,
+    liveGrandTest: CloudGrandTest? = null,
+    onOpenGrandTestHub: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showExamDateDialog by remember { mutableStateOf(false) }
@@ -302,6 +308,76 @@ fun DashboardScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = if (activeStreak > 0) editorial.onAcidLime else MaterialTheme.colorScheme.onSurface
                                 )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 1a. Live Weekly All-India Grand Test Banner — DORMANT BY DEFAULT (only when Admin turns it ON)
+            if (grandTestEnabled && liveGrandTest != null) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = editorial.acidLime.copy(alpha = 0.14f)),
+                        border = BorderStroke(1.dp, editorial.acidLime.copy(alpha = 0.7f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onOpenGrandTestHub)
+                            .testTag("dashboard_grand_test_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.EmojiEvents,
+                                    contentDescription = null,
+                                    tint = editorial.acidLime,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = "LIVE · ${liveGrandTest.weekLabel.uppercase(Locale.US)}",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                        fontWeight = FontWeight.Bold,
+                                        color = editorial.acidLime
+                                    )
+                                    Text(
+                                        text = liveGrandTest.title,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${EntitlementEvaluator.shortExamLabel(liveGrandTest.examId)} • ${liveGrandTest.questionCount}Q • All-India Percentile",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = onOpenGrandTestHub,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = editorial.acidLime,
+                                    contentColor = editorial.onAcidLime
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Text("Join", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                             }
                         }
                     }

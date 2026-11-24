@@ -70,6 +70,7 @@ data class CloudSubscriptionConfig(
     val supportEmail: String = OWNER_ADMIN_EMAIL,
     val upiId: String = "",
     val upiPayeeName: String = "ClinEdge Nursing Prep",
+    val grandTestEnabled: Boolean = false,
     val catalogVersion: Long = 0L,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
