@@ -17,6 +17,14 @@ private const val HARNESS_PREFS_NAME = "clinedge_appcheck_meta"
 private const val KEY_HARNESS_DEBUG_ACTIVE = "harness_debug_token_active"
 private const val RECAPTCHA_SITE_KEY_RES = "recaptcha_site_key"
 
+@Volatile
+internal var isAppCheckTokenWarmedUp: Boolean = false
+    private set
+
+internal fun markAppCheckWarmedUp() {
+    isAppCheckTokenWarmedUp = true
+}
+
 /**
  * Configures Firebase App Check before any Firebase AI Logic or Firestore calls.
  * Must be invoked in MainActivity.onCreate() right after super.onCreate(), before setContent().
@@ -25,10 +33,11 @@ private const val RECAPTCHA_SITE_KEY_RES = "recaptcha_site_key"
  * - If launched in the AI Studio streaming emulator / test harness (BuildConfig.DEBUG with
  *   FIREBASE_APPCHECK_DEBUG_TOKEN intent extra or previously stored harness token), synchronously
  *   commits the debug secret and installs DebugAppCheckProviderFactory.
- * - On physical Android devices installing a GitHub Actions debug APK (where no harness debug
+ * - On physical Android devices installing a sideloaded debug APK (where no harness debug
  *   token is injected) AND on all Release builds, installs RecaptchaAppCheckProviderFactory with
- *   the provisioned recaptcha_site_key so real devices pass App Check attestation cleanly instead
- *   of generating an unregistered random debug UUID.
+ *   the provisioned recaptcha_site_key so real devices pass App Check attestation cleanly.
+ * - Immediately triggers a non-blocking background token pre-warm so reCAPTCHA Enterprise
+ *   completes initialization while the user browses the app instead of blocking their first AI call.
  */
 fun configureAppCheck(context: Context, intent: Intent?) {
     try {
@@ -57,6 +66,7 @@ fun configureAppCheck(context: Context, intent: Intent?) {
                     .commit()
                 appCheck.installAppCheckProviderFactory(DebugAppCheckProviderFactory.getInstance())
                 Log.d(TAG, "App Check debug secret committed; DebugAppCheckProviderFactory installed.")
+                preWarmAppCheckToken(appCheck)
                 return
             }
 
@@ -64,23 +74,46 @@ fun configureAppCheck(context: Context, intent: Intent?) {
             if (hasHarnessToken) {
                 appCheck.installAppCheckProviderFactory(DebugAppCheckProviderFactory.getInstance())
                 Log.d(TAG, "Reusing previously provisioned harness debug token for App Check.")
+                preWarmAppCheckToken(appCheck)
                 return
             }
 
             // Physical device running sideloaded debug APK: prefer real reCAPTCHA Enterprise attestation
             if (installRecaptchaProviderIfConfigured(appContext, appCheck)) {
                 Log.d(TAG, "No harness debug token found; using RecaptchaAppCheckProviderFactory on device.")
+                preWarmAppCheckToken(appCheck)
                 return
             }
 
             // Fallback when recaptcha_site_key is absent in a local debug environment
             appCheck.installAppCheckProviderFactory(DebugAppCheckProviderFactory.getInstance())
             Log.w(TAG, "recaptcha_site_key unavailable; fell back to DebugAppCheckProviderFactory.")
+            preWarmAppCheckToken(appCheck)
         } else {
-            installRecaptchaProviderIfConfigured(appContext, appCheck)
+            if (installRecaptchaProviderIfConfigured(appContext, appCheck)) {
+                preWarmAppCheckToken(appCheck)
+            }
         }
     } catch (e: Exception) {
         Log.e(TAG, "Failed to initialize Firebase App Check", e)
+    }
+}
+
+/**
+ * Non-blocking fire-and-forget pre-warm of the App Check token on app startup.
+ * RecaptchaAppCheckProviderFactory initializes lazily on first token request (taking 3-12s on mobile);
+ * pre-warming it at launch ensures the token is already cached in memory before the student taps AI Tutor.
+ */
+private fun preWarmAppCheckToken(appCheck: FirebaseAppCheck) {
+    runCatching {
+        appCheck.getAppCheckToken(false)
+            .addOnSuccessListener {
+                isAppCheckTokenWarmedUp = true
+                Log.d(TAG, "App Check token pre-warmed and cached.")
+            }
+            .addOnFailureListener { err ->
+                Log.w(TAG, "App Check background pre-warm failed (will retry on AI request): ${err.message}")
+            }
     }
 }
 

@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
+import com.example.data.ai.AiStreamEvent
 import com.example.data.ai.AiTutorUiState
 import com.example.data.ai.ClinEdgeAiTutorService
 import com.example.data.backup.BackupFolderSummary
@@ -4394,22 +4395,33 @@ class MainViewModel(
         aiTutorJob = viewModelScope.launch {
             try {
                 var latestText = ""
-                aiTutorService.explainMcqStream(
+                aiTutorService.explainMcqEvents(
                     question = question,
                     selectedOptionIndex = aiTutorSelectedOptionIndex,
                     activeExamName = examName,
                     followUpPrompt = followUpPrompt,
                     previousExplanation = aiTutorLastExplanation
-                ).collect { accumulated ->
-                    latestText = accumulated
-                    _aiTutorState.value = AiTutorUiState.Streaming(text = accumulated, promptLabel = label)
-                }
-                if (latestText.isNotBlank()) {
-                    if (followUpPrompt.isNullOrBlank()) {
-                        aiTutorLastExplanation = latestText
+                ).collect { event ->
+                    when (event) {
+                        is AiStreamEvent.Status -> {
+                            if (latestText.isBlank()) {
+                                _aiTutorState.value = AiTutorUiState.Loading(promptLabel = event.message)
+                            }
+                        }
+                        is AiStreamEvent.Partial -> {
+                            latestText = event.accumulatedText
+                            _aiTutorState.value = AiTutorUiState.Streaming(text = latestText, promptLabel = label)
+                        }
+                        is AiStreamEvent.Completed -> {
+                            latestText = event.finalText
+                            if (followUpPrompt.isNullOrBlank()) {
+                                aiTutorLastExplanation = latestText
+                            }
+                            _aiTutorState.value = AiTutorUiState.Success(text = latestText, promptLabel = label)
+                        }
                     }
-                    _aiTutorState.value = AiTutorUiState.Success(text = latestText, promptLabel = label)
-                } else {
+                }
+                if (latestText.isBlank()) {
                     _aiTutorState.value = AiTutorUiState.Error("AI Tutor returned an empty response. Please retry.")
                 }
             } catch (e: CancellationException) {
@@ -4435,9 +4447,18 @@ class MainViewModel(
         aiDraftJob = viewModelScope.launch {
             try {
                 var latest = ""
-                aiTutorService.draftAdminDoubtReplyStream(doubt).collect { accumulated ->
-                    latest = accumulated
-                    onStreamText(accumulated)
+                aiTutorService.draftAdminDoubtReplyEvents(doubt).collect { event ->
+                    when (event) {
+                        is AiStreamEvent.Status -> Unit
+                        is AiStreamEvent.Partial -> {
+                            latest = event.accumulatedText
+                            onStreamText(latest)
+                        }
+                        is AiStreamEvent.Completed -> {
+                            latest = event.finalText
+                            onStreamText(latest)
+                        }
+                    }
                 }
                 if (latest.isNotBlank()) {
                     showMessage("AI draft ready — review & edit before posting.")

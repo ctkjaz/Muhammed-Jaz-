@@ -39,10 +39,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -213,19 +216,44 @@ fun AiClinicalTutorSheet(
                             )
                         }
                         is AiTutorUiState.Loading -> {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Text(
-                                    text = uiState.promptLabel.ifBlank { "Analyzing clinical concept..." },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            var elapsedSec by remember(question.id, uiState.promptLabel) { mutableIntStateOf(0) }
+                            LaunchedEffect(question.id, uiState.promptLabel) {
+                                while (true) {
+                                    delay(1_000L)
+                                    elapsedSec++
+                                }
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Text(
+                                        text = buildString {
+                                            append(uiState.promptLabel.ifBlank { "Analyzing clinical concept..." })
+                                            if (elapsedSec >= 2) append(" (${elapsedSec}s)")
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (elapsedSec >= 7) {
+                                    OutlinedButton(
+                                        onClick = onRetry,
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier
+                                            .heightIn(min = 40.dp)
+                                            .testTag("ai_tutor_slow_retry_btn")
+                                    ) {
+                                        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.size(6.dp))
+                                        Text("Taking long? Tap to retry", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
                             }
                         }
                         is AiTutorUiState.Streaming -> {
