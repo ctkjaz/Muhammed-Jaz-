@@ -55,6 +55,7 @@ import com.example.data.model.SubjectCatalog
 import com.example.data.model.SubjectMeta
 import com.example.data.model.SubjectPracticeLogic
 import com.example.data.model.SyllabusCatalog
+import com.example.data.subscription.SubscriptionUiState
 import com.example.ui.components.DifficultyFilterBar
 import com.example.ui.components.FlashcardItemCard
 import com.example.ui.components.MonochromeFilterPill
@@ -84,7 +85,8 @@ fun SubjectsHubScreen(
     onStartTimedConfig: (String, Boolean, String?) -> Unit,
     onStartCbtCustom: (List<QuestionItem>, String) -> Unit,
     onOpenImporter: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    subscription: SubscriptionUiState = SubscriptionUiState()
 ) {
     val activeExamId = state.activeExam?.id
     val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExamId)
@@ -124,14 +126,20 @@ fun SubjectsHubScreen(
 
         when (practicePathway) {
             PracticePathway.BY_SUBJECT -> {
+                val effectiveSubjectExamFilter = if (subscription.isExamLockedForSwitch(subjectExamFilter)) {
+                    subscription.primaryUnlockedExamId ?: state.activeExam?.id
+                } else {
+                    subjectExamFilter
+                }
                 CrossExamSubjectPracticeView(
                     state = state,
-                    examFilter = subjectExamFilter,
+                    subscription = subscription,
+                    examFilter = effectiveSubjectExamFilter,
                     difficultyFilter = difficultyFilter,
                     onSelectExamFilter = onSelectSubjectExamFilter,
                     onSelectDifficulty = onSelectDifficulty,
-                    onOpenSubjectChapters = { code -> onOpenSubjectChapters(code, true, subjectExamFilter) },
-                    onStartTimed = { code -> onStartTimedConfig(code, true, subjectExamFilter) }
+                    onOpenSubjectChapters = { code -> onOpenSubjectChapters(code, true, effectiveSubjectExamFilter) },
+                    onStartTimed = { code -> onStartTimedConfig(code, true, effectiveSubjectExamFilter) }
                 )
             }
 
@@ -140,6 +148,7 @@ fun SubjectsHubScreen(
                     state = state,
                     activeExamId = activeExamId,
                     isNorcet = isNorcet,
+                    isAdmin = subscription.isAdmin,
                     activeSection = activeSection,
                     difficultyFilter = difficultyFilter,
                     onSelectDifficulty = onSelectDifficulty,
@@ -158,6 +167,7 @@ fun SubjectsHubScreen(
 @Composable
 private fun CrossExamSubjectPracticeView(
     state: DashboardDerivedState,
+    subscription: SubscriptionUiState,
     examFilter: String?,
     difficultyFilter: DifficultyFilter,
     onSelectExamFilter: (String?) -> Unit,
@@ -196,9 +206,15 @@ private fun CrossExamSubjectPracticeView(
         }
     }
 
-    val orderedExams = remember(state.availableExams, state.activeExam?.id) {
+    val orderedExams = remember(state.availableExams, state.activeExam?.id, subscription.unlockedExamIds, subscription.isSingleExamLocked) {
         val activeId = state.activeExam?.id
-        state.availableExams.sortedBy { if (it.id == activeId) 0 else 1 }
+        state.availableExams.sortedBy { exam ->
+            when {
+                subscription.isSingleExamLocked && !subscription.isExamLockedForSwitch(exam.id) -> 0
+                exam.id == activeId -> 1
+                else -> 2
+            }
+        }
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -250,23 +266,25 @@ private fun CrossExamSubjectPracticeView(
                             .testTag("subject_search_input")
                     )
 
-                    // Optional Exam Filter (defaults to All Exams)
+                    // Exam Filter (locked exams redirect Single-Exam subscribers to Plans & Access)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        val allExamsLocked = subscription.isExamLockedForSwitch(null)
                         MonochromeFilterPill(
-                            label = "All Exams",
-                            selected = examFilter == null,
+                            label = if (allExamsLocked) "🔒 All Exams" else "All Exams",
+                            selected = examFilter == null && !allExamsLocked,
                             onClick = { onSelectExamFilter(null) },
                             modifier = Modifier.testTag("subj_exam_filter_all")
                         )
                         orderedExams.forEach { exam ->
+                            val isLocked = subscription.isExamLockedForSwitch(exam.id)
                             MonochromeFilterPill(
-                                label = exam.shortName,
-                                selected = examFilter == exam.id,
+                                label = if (isLocked) "🔒 ${exam.shortName}" else exam.shortName,
+                                selected = examFilter == exam.id && !isLocked,
                                 onClick = { onSelectExamFilter(exam.id) },
                                 modifier = Modifier.testTag("subj_exam_filter_${exam.id}")
                             )
@@ -361,6 +379,7 @@ private fun ExamScopedSubjectsView(
     state: DashboardDerivedState,
     activeExamId: String?,
     isNorcet: Boolean,
+    isAdmin: Boolean,
     activeSection: SubjectHubSection,
     difficultyFilter: DifficultyFilter,
     onSelectDifficulty: (DifficultyFilter) -> Unit,
@@ -476,6 +495,7 @@ private fun ExamScopedSubjectsView(
                     allQuestions = pyqOnlyPool,
                     activeExamShortName = examShort,
                     isNorcet = isNorcet,
+                    isAdmin = isAdmin,
                     diffSuffix = diffSuffix,
                     columns = columns,
                     onStartPractice = onStartPractice,
@@ -617,6 +637,7 @@ private fun PyqShiftList(
     allQuestions: List<QuestionItem>,
     activeExamShortName: String,
     isNorcet: Boolean,
+    isAdmin: Boolean,
     diffSuffix: String,
     columns: Int,
     onStartPractice: (List<QuestionItem>, String) -> Unit,
@@ -670,15 +691,17 @@ private fun PyqShiftList(
                     ) {
                         Text("Random 100", fontWeight = FontWeight.Bold)
                     }
-                    OutlinedButton(
-                        onClick = onOpenImporter,
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, editorial.borderSubtle),
-                        modifier = Modifier
-                            .heightIn(min = 44.dp)
-                            .testTag("pyq_add_pdf_btn")
-                    ) {
-                        Text("+ Import")
+                    if (isAdmin) {
+                        OutlinedButton(
+                            onClick = onOpenImporter,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, editorial.borderSubtle),
+                            modifier = Modifier
+                                .heightIn(min = 44.dp)
+                                .testTag("pyq_add_pdf_btn")
+                        ) {
+                            Text("+ Import")
+                        }
                     }
                 }
             }

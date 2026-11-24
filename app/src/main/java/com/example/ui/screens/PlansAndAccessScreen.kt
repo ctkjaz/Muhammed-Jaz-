@@ -51,6 +51,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,6 +68,7 @@ import com.example.data.cloud.SignedInAccountInfo
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.subscription.DeviceLockConflictState
 import com.example.data.subscription.EntitlementEvaluator
+import com.example.data.subscription.ExamLockUpgradeContext
 import com.example.data.subscription.PaywallPromptState
 import com.example.data.subscription.PlanTenure
 import com.example.data.subscription.PlanTier
@@ -91,7 +93,8 @@ fun PlansAndAccessScreen(
     onRedeemCode: (String, () -> Unit) -> Unit,
     onShowMessage: (String) -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    examLockContext: ExamLockUpgradeContext? = null
 ) {
     BackHandler(onBack = onBack)
 
@@ -99,9 +102,20 @@ fun PlansAndAccessScreen(
     val editorial = MaterialTheme.editorialColors
 
     var selectedPlanGroup by remember { mutableStateOf(PlanTier.ALL_EXAM) }
-    var selectedExamId by remember { mutableStateOf(PlatformCatalogDefaults.EXAM_AIIMS_NORCET) }
+    var selectedExamId by remember {
+        mutableStateOf(examLockContext?.requestedExamId ?: PlatformCatalogDefaults.EXAM_AIIMS_NORCET)
+    }
     var selectedTenure by remember { mutableStateOf(PlanTenure.THREE_MONTHS) }
     var codeInput by remember { mutableStateOf("") }
+
+    LaunchedEffect(examLockContext) {
+        if (examLockContext != null) {
+            examLockContext.requestedExamId?.takeIf { it.isNotBlank() }?.let { reqId ->
+                selectedExamId = reqId
+            }
+            selectedPlanGroup = PlanTier.ALL_EXAM
+        }
+    }
 
     val activePrice = subscription.config.priceFor(selectedPlanGroup, selectedTenure)
     val selectedPlanSummary = if (selectedPlanGroup == PlanTier.ALL_EXAM) {
@@ -143,6 +157,164 @@ fun PlansAndAccessScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+            }
+
+            // Contextual Exam Lock Upgrade Card (Single-Exam subscriber tapped another exam or All Exams)
+            if (examLockContext != null) {
+                item(key = "exam_lock_upgrade_card") {
+                    val requestedId = examLockContext.requestedExamId
+                    val requestedLabel = if (requestedId.isNullOrBlank()) {
+                        "All 29 Nursing Exams"
+                    } else {
+                        EntitlementEvaluator.shortExamLabel(requestedId)
+                    }
+                    val currentLabel = examLockContext.currentUnlockedExamIds
+                        .filter { it.isNotBlank() && it != "all" }
+                        .joinToString(", ") { EntitlementEvaluator.shortExamLabel(it) }
+                        .ifBlank { "your Single-Exam track" }
+                    val cfg = subscription.config
+
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                        border = BorderStroke(2.dp, editorial.acidLime),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier.testTag("exam_lock_upgrade_banner")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = editorial.acidLime
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Lock,
+                                            contentDescription = null,
+                                            tint = editorial.onAcidLime,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = "SINGLE-EXAM LOCK",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                            fontWeight = FontWeight.Bold,
+                                            color = editorial.onAcidLime
+                                        )
+                                    }
+                                }
+                            }
+
+                            Text(
+                                text = "Unlock $requestedLabel",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Your current Single-Exam subscription is locked to $currentLabel. Add $requestedLabel as an extra exam or upgrade to the All-Exam Nursing Prep pack for unlimited access to all 29 Indian nursing exams.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            // Pricing Breakdown Comparison
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = editorial.elevatedSurface,
+                                border = BorderStroke(1.dp, editorial.borderSubtle)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (!requestedId.isNullOrBlank()) {
+                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text(
+                                                text = "Add $requestedLabel (Additional Single-Exam Charge)",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "₹${cfg.singleExam1M}/1M  ·  ₹${cfg.singleExam3M}/3M  ·  ₹${cfg.singleExam6M}/6M  ·  ₹${cfg.singleExam1Y}/1Y",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        HorizontalDivider(color = editorial.borderSubtle)
+                                    }
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = "Recommended · All-Exam Nursing Prep (All 29 Exams)",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "₹${cfg.allExam1M}/1M  ·  ₹${cfg.allExam3M}/3M  ·  ₹${cfg.allExam6M}/6M  ·  ₹${cfg.allExam1Y}/1Y",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                            color = if (editorial.isDark) AcidLime else MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (!requestedId.isNullOrBlank()) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            selectedPlanGroup = PlanTier.SINGLE_EXAM
+                                            selectedExamId = requestedId
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = BorderStroke(1.dp, editorial.borderSubtle),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 48.dp)
+                                            .testTag("exam_lock_pick_single_btn")
+                                    ) {
+                                        Text(
+                                            text = "Add $requestedLabel",
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                                Button(
+                                    onClick = { selectedPlanGroup = PlanTier.ALL_EXAM },
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = editorial.acidLime,
+                                        contentColor = editorial.onAcidLime
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .testTag("exam_lock_pick_all_btn")
+                                ) {
+                                    Text(
+                                        text = "All-Exam Pack",
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

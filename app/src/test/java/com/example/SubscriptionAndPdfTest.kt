@@ -264,6 +264,80 @@ class SubscriptionAndPdfTest {
         assertTrue(compressedRes.text.contains("Which artery is palpated"))
     }
 
+    @Test
+    fun singleExamLock_blocksOtherExamsAndAllExams_butAllowsUnlockedAndHigherTiers() {
+        val singleExamEnt = CloudUserEntitlement(
+            userId = "u_single",
+            planTier = PlanTier.SINGLE_EXAM.dbValue,
+            unlockedExamIds = listOf(PlatformCatalogDefaults.EXAM_RRB_NURSING),
+            status = SubscriptionStatus.ACTIVE.dbValue,
+            expiresAt = Timestamp(Date(baseNowMs + 30L * 86_400_000L))
+        )
+        val singleState = EntitlementEvaluator.evaluate(
+            entitlement = singleExamEnt,
+            config = defaultConfig,
+            serverNowMs = baseNowMs,
+            dailyFreeUsed = 0,
+            freeSampleMockUsed = false,
+            deviceShortCode = "CE-SINGLE",
+            deviceHash = "hash_single",
+            isAdmin = false
+        )
+        assertTrue(singleState.isSingleExamLocked)
+        assertEquals(PlatformCatalogDefaults.EXAM_RRB_NURSING, singleState.primaryUnlockedExamId)
+        assertFalse(singleState.isExamLockedForSwitch(PlatformCatalogDefaults.EXAM_RRB_NURSING))
+        assertTrue(singleState.isExamLockedForSwitch(PlatformCatalogDefaults.EXAM_AIIMS_NORCET))
+        assertTrue(singleState.isExamLockedForSwitch(null))
+        assertTrue(singleState.isExamLockedForSwitch(""))
+
+        // All-Exam tier is never single-exam locked
+        val allExamState = EntitlementEvaluator.evaluate(
+            entitlement = singleExamEnt.copy(
+                planTier = PlanTier.ALL_EXAM.dbValue,
+                unlockedExamIds = listOf("all")
+            ),
+            config = defaultConfig,
+            serverNowMs = baseNowMs,
+            dailyFreeUsed = 0,
+            freeSampleMockUsed = false,
+            deviceShortCode = "CE-ALL",
+            deviceHash = "hash_all",
+            isAdmin = false
+        )
+        assertFalse(allExamState.isSingleExamLocked)
+        assertFalse(allExamState.isExamLockedForSwitch(PlatformCatalogDefaults.EXAM_AIIMS_NORCET))
+        assertFalse(allExamState.isExamLockedForSwitch(null))
+
+        // Owner Admin is never single-exam locked
+        val adminState = EntitlementEvaluator.evaluate(
+            entitlement = singleExamEnt,
+            config = defaultConfig,
+            serverNowMs = baseNowMs,
+            dailyFreeUsed = 0,
+            freeSampleMockUsed = false,
+            deviceShortCode = "CE-ADMIN",
+            deviceHash = "hash_admin",
+            isAdmin = true
+        )
+        assertFalse(adminState.isSingleExamLocked)
+        assertFalse(adminState.isExamLockedForSwitch(PlatformCatalogDefaults.EXAM_AIIMS_NORCET))
+        assertFalse(adminState.isExamLockedForSwitch(null))
+
+        // Free tier users can still browse exam tracks (subject to daily free limit / paywall)
+        val freeState = EntitlementEvaluator.evaluate(
+            entitlement = null,
+            config = defaultConfig,
+            serverNowMs = baseNowMs,
+            dailyFreeUsed = 0,
+            freeSampleMockUsed = false,
+            deviceShortCode = "CE-FREE",
+            deviceHash = "hash_free",
+            isAdmin = false
+        )
+        assertFalse(freeState.isSingleExamLocked)
+        assertFalse(freeState.isExamLockedForSwitch(PlatformCatalogDefaults.EXAM_AIIMS_NORCET))
+    }
+
     private fun deflateBytes(input: ByteArray): ByteArray {
         val deflater = Deflater()
         deflater.setInput(input)

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Restore
@@ -73,6 +74,7 @@ import com.example.data.model.DifficultyFilter
 import com.example.data.model.Exam
 import com.example.data.model.ExamCategory
 import com.example.data.model.PlatformCatalogDefaults
+import com.example.data.subscription.SubscriptionUiState
 import com.example.data.model.Profession
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
@@ -1206,7 +1208,8 @@ fun ExamPickerModalSheet(
     activeExamId: String,
     @Suppress("UNUSED_PARAMETER") examQuestionCounts: Map<String, Int>,
     onSelectExam: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    subscription: SubscriptionUiState = SubscriptionUiState()
 ) {
     if (!isVisible) return
 
@@ -1276,6 +1279,35 @@ fun ExamPickerModalSheet(
                     modifier = Modifier.testTag("close_exam_picker_btn")
                 ) {
                     Icon(Icons.Filled.Close, contentDescription = "Close exam picker")
+                }
+            }
+
+            if (subscription.isSingleExamLocked) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = editorial.acidLime.copy(alpha = 0.16f),
+                    border = BorderStroke(1.dp, editorial.acidLime),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("exam_picker_single_lock_banner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Lock,
+                            contentDescription = null,
+                            tint = if (editorial.isDark) editorial.acidLime else PureBlack,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Single-Exam plan active. Tapping another exam opens Plans & Upgrade options.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
             }
 
@@ -1383,6 +1415,7 @@ fun ExamPickerModalSheet(
                             }
                             catExams.forEach { exam ->
                                 val isSelected = exam.id == activeExamId
+                                val isLocked = subscription.isExamLockedForSwitch(exam.id)
                                 val hasStages = PlatformCatalogDefaults.supportsStages(exam.id)
                                 val markingLabel = PlatformCatalogDefaults.formatMarkingLabel(exam)
                                 Card(
@@ -1461,6 +1494,31 @@ fun ExamPickerModalSheet(
                                                 tint = if (editorial.isDark) editorial.acidLime else PureBlack,
                                                 modifier = Modifier.size(22.dp)
                                             )
+                                        } else if (isLocked) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = editorial.elevatedSurface,
+                                                    border = BorderStroke(1.dp, editorial.borderSubtle)
+                                                ) {
+                                                    Text(
+                                                        text = "ADD-ON",
+                                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                                Icon(
+                                                    imageVector = Icons.Filled.Lock,
+                                                    contentDescription = "Requires add-on or All-Exam upgrade",
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }

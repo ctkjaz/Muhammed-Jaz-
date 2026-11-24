@@ -148,10 +148,11 @@ internal fun AdminAlertsTabContent(
     ) {
         item(key = "alerts_mode_switch") {
             SegmentedPillBar(
-                options = listOf("Broadcast Alert", "Individual Student"),
-                selectedIndex = modeIndex,
+                options = listOf(0, 1),
+                selected = modeIndex,
+                labelOf = { idx -> if (idx == 0) "Broadcast Alert" else "Individual Student" },
                 onSelect = { modeIndex = it },
-                testTagPrefix = "admin_alert_mode"
+                testTagOf = { idx -> "admin_alert_mode_$idx" }
             )
         }
 

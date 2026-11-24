@@ -1030,15 +1030,17 @@ fun SettingsScreen(
                         }
                     }
 
-                    HorizontalDivider(color = editorial.borderSubtle)
+                    if (subscription.isAdmin) {
+                        HorizontalDivider(color = editorial.borderSubtle)
 
-                    SettingsActionRow(
-                        icon = Icons.Filled.AddCircleOutline,
-                        title = "Import questions",
-                        subtitle = "Paste shift PDF text or bulk MCQ sets into your bank",
-                        onClick = onOpenImporter,
-                        testTag = "settings_open_importer_row"
-                    )
+                        SettingsActionRow(
+                            icon = Icons.Filled.AddCircleOutline,
+                            title = "Import questions",
+                            subtitle = "Paste shift PDF text or bulk MCQ sets into your bank",
+                            onClick = onOpenImporter,
+                            testTag = "settings_open_importer_row"
+                        )
+                    }
                     HorizontalDivider(color = editorial.borderSubtle)
                     SettingsActionRow(
                         icon = Icons.Filled.PictureAsPdf,

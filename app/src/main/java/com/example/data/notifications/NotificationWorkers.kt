@@ -105,7 +105,7 @@ class BootRescheduleReceiver : BroadcastReceiver() {
         if (action == Intent.ACTION_BOOT_COMPLETED ||
             action == Intent.ACTION_MY_PACKAGE_REPLACED ||
             action == Intent.ACTION_TIMEZONE_CHANGED ||
-            action == Intent.ACTION_TIME_SET
+            action == Intent.ACTION_TIME_CHANGED
         ) {
             val settings = SettingsPreferences(context)
             ClinEdgeNotificationManager.ensureChannelsCreated(context)

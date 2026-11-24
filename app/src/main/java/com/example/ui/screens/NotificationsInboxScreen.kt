@@ -183,12 +183,16 @@ fun NotificationsInboxScreen(
                     InboxSection.PERSONAL.label
                 }
                 SegmentedPillBar(
-                    options = listOf(InboxSection.NEWS_ALERTS.label, personalLabel),
-                    selectedIndex = if (selectedSection == InboxSection.NEWS_ALERTS) 0 else 1,
-                    onSelect = { idx ->
-                        selectedSection = if (idx == 0) InboxSection.NEWS_ALERTS else InboxSection.PERSONAL
+                    options = InboxSection.entries,
+                    selected = selectedSection,
+                    labelOf = { sec ->
+                        when (sec) {
+                            InboxSection.NEWS_ALERTS -> sec.label
+                            InboxSection.PERSONAL -> personalLabel
+                        }
                     },
-                    testTagPrefix = "inbox_tab"
+                    onSelect = { selectedSection = it },
+                    testTagOf = { sec -> "inbox_tab_${sec.name.lowercase()}" }
                 )
             }
 

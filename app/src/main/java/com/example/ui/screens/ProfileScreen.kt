@@ -480,12 +480,14 @@ fun ProfileDrawerContent(
                     onClick = onSyncNow,
                     testTag = "drawer_sync_now_btn"
                 )
-                DrawerActionRow(
-                    icon = Icons.Filled.AddCircleOutline,
-                    label = "Import & Backup",
-                    onClick = onOpenImporter,
-                    testTag = "drawer_importer_btn"
-                )
+                if (subscription.isAdmin) {
+                    DrawerActionRow(
+                        icon = Icons.Filled.AddCircleOutline,
+                        label = "Import & Backup",
+                        onClick = onOpenImporter,
+                        testTag = "drawer_importer_btn"
+                    )
+                }
                 DrawerActionRow(
                     icon = Icons.Filled.Settings,
                     label = "Settings & Appearance",

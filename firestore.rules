@@ -560,10 +560,11 @@ service cloud.firestore {
       }
 
       match /customQuestions/{questionId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(questionId);
-        allow list: if isOwner(userId);
+        allow get: if (isOwner(userId) || isAdmin()) && isValidId(userId) && isValidId(questionId);
+        allow list: if isOwner(userId) || isAdmin();
 
-        allow create: if isOwner(userId) &&
+        allow create: if isAdmin() &&
+                         isOwner(userId) &&
                          isValidId(userId) &&
                          isValidId(questionId) &&
                          incoming().keys().hasAll([
@@ -580,7 +581,8 @@ service cloud.firestore {
                          ]) &&
                          isValidCustomQuestion(incoming(), userId);
 
-        allow update: if isOwner(userId) &&
+        allow update: if isAdmin() &&
+                         isOwner(userId) &&
                          isValidId(userId) &&
                          isValidId(questionId) &&
                          isValidCustomQuestion(incoming(), userId) &&
@@ -593,7 +595,7 @@ service cloud.firestore {
                            'examYear', 'examShift', 'examIds', 'updatedAt'
                          ]);
 
-        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(questionId);
+        allow delete: if isAdmin() && isOwner(userId) && isValidId(userId) && isValidId(questionId);
       }
 
       match /notifications/{notificationId} {

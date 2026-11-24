@@ -260,6 +260,7 @@ fun RrbNursingApp(vm: MainViewModel) {
         val isSettingsOpen by vm.isSettingsOpen.collectAsStateWithLifecycle()
         val isProfileOpen by vm.isProfileOpen.collectAsStateWithLifecycle()
         val isPlansOpen by vm.isPlansOpen.collectAsStateWithLifecycle()
+        val plansExamLockContext by vm.plansExamLockContext.collectAsStateWithLifecycle()
         val isAdminOpen by vm.isAdminOpen.collectAsStateWithLifecycle()
         val isExamPickerOpen by vm.isExamPickerOpen.collectAsStateWithLifecycle()
         val activeExamId by vm.activeExamId.collectAsStateWithLifecycle()
@@ -882,7 +883,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onStartTrial = vm::claimThreeDayFreeTrial,
                                         onRedeemCode = vm::redeemAccessCode,
                                         onShowMessage = vm::showMessage,
-                                        onBack = vm::closePlans
+                                        onBack = vm::closePlans,
+                                        examLockContext = plansExamLockContext
                                     )
                                 }
 
@@ -1092,7 +1094,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                                 )
                                             },
                                             onStartCbtCustom = { list, title -> vm.startCbtCustom(list, title) },
-                                            onOpenImporter = vm::openImporter
+                                            onOpenImporter = vm::openImporter,
+                                            subscription = subscriptionState
                                         )
 
                                         MainTab.CBT -> CbtHubScreen(
@@ -1145,39 +1148,41 @@ fun RrbNursingApp(vm: MainViewModel) {
                     filterCountProvider = { key, diff -> vm.timedConfigMatchingCount(key, diff) }
                 )
 
-                ImporterModalSheet(
-                    state = importerState,
-                    activeExamShortName = state.activeExam?.shortName ?: "RRB Nursing",
-                    backupFolderSummary = backupFolderSummary,
-                    isBackupBusy = isBackupBusy,
-                    onUpdate = vm::updateImporter,
-                    onPickPdfFile = {
-                        runCatching {
-                            importerPdfFileLauncher.launch(arrayOf("*/*"))
-                        }.onFailure { err ->
-                            vm.showMessage("Could not open file picker: ${err.message}")
-                        }
-                    },
-                    onPreviewPdf = vm::previewPdfTextImport,
-                    onCommitPdf = vm::commitPreviewImport,
-                    onImportJson = vm::importJsonBatch,
-                    onChooseBackupFolder = { backupFolderLauncher.launch(null) },
-                    onResetBackupFolder = vm::resetBackupFolderToDefault,
-                    onExportBackup = vm::createBackupInActiveFolder,
-                    onRestoreBackup = {
-                        if (backupFolderSummary.backupCount > 0) {
-                            vm.restoreLatestFromActiveFolder()
-                        } else {
-                            restoreLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
-                        }
-                    },
-                    onOpenPdfExport = {
-                        vm.closeImporter()
-                        vm.openPdfExport()
-                    },
-                    onClearCustom = vm::clearCustomQuestions,
-                    onDismiss = vm::closeImporter
-                )
+                if (subscriptionState.isAdmin) {
+                    ImporterModalSheet(
+                        state = importerState,
+                        activeExamShortName = state.activeExam?.shortName ?: "RRB Nursing",
+                        backupFolderSummary = backupFolderSummary,
+                        isBackupBusy = isBackupBusy,
+                        onUpdate = vm::updateImporter,
+                        onPickPdfFile = {
+                            runCatching {
+                                importerPdfFileLauncher.launch(arrayOf("*/*"))
+                            }.onFailure { err ->
+                                vm.showMessage("Could not open file picker: ${err.message}")
+                            }
+                        },
+                        onPreviewPdf = vm::previewPdfTextImport,
+                        onCommitPdf = vm::commitPreviewImport,
+                        onImportJson = vm::importJsonBatch,
+                        onChooseBackupFolder = { backupFolderLauncher.launch(null) },
+                        onResetBackupFolder = vm::resetBackupFolderToDefault,
+                        onExportBackup = vm::createBackupInActiveFolder,
+                        onRestoreBackup = {
+                            if (backupFolderSummary.backupCount > 0) {
+                                vm.restoreLatestFromActiveFolder()
+                            } else {
+                                restoreLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                            }
+                        },
+                        onOpenPdfExport = {
+                            vm.closeImporter()
+                            vm.openPdfExport()
+                        },
+                        onClearCustom = vm::clearCustomQuestions,
+                        onDismiss = vm::closeImporter
+                    )
+                }
 
                 ExamPickerModalSheet(
                     isVisible = isExamPickerOpen,
@@ -1186,7 +1191,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                     activeExamId = activeExamId,
                     examQuestionCounts = state.examQuestionCounts,
                     onSelectExam = vm::selectActiveExam,
-                    onDismiss = vm::closeExamPicker
+                    onDismiss = vm::closeExamPicker,
+                    subscription = subscriptionState
                 )
 
                 val pdfMatchingCount = remember(pdfExportConfig, state.questions, state.lowestAccuracyQuestions) {

@@ -586,10 +586,11 @@ class NursingPrepRepository(
 
     suspend fun restoreBackupWithDetails(
         jsonText: String,
-        defaultExamId: String = PlatformCatalogDefaults.EXAM_RRB_NURSING
+        defaultExamId: String = PlatformCatalogDefaults.EXAM_RRB_NURSING,
+        allowCustomQuestions: Boolean = true
     ): BulkQuestionParser.RestoredBackup = withContext(Dispatchers.IO) {
         val restored = BulkQuestionParser.parseBackupJson(jsonText)
-        if (restored.customQuestions.isNotEmpty()) {
+        if (allowCustomQuestions && restored.customQuestions.isNotEmpty()) {
             saveCustomQuestions(
                 questions = restored.customQuestions,
                 examIds = listOf(defaultExamId),

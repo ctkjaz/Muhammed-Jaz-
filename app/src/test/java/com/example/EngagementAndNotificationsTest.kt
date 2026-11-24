@@ -82,10 +82,10 @@ class EngagementAndNotificationsTest {
         val streakAtRisk = EngagementLogic.buildDailyReminderCopy(
             goalState = DailyStudyGoalState(
                 dailyGoalQuestions = 30,
-                todayDateKey = today,
+                todayStudyDate = today,
                 todayAnsweredCount = 12,
                 currentStreakDays = 6,
-                lastGoalMetDateKey = yesterday
+                lastGoalMetDate = yesterday
             ),
             todayKey = today,
             yesterdayKey = yesterday,
@@ -99,10 +99,10 @@ class EngagementAndNotificationsTest {
         val goalDone = EngagementLogic.buildDailyReminderCopy(
             goalState = DailyStudyGoalState(
                 dailyGoalQuestions = 20,
-                todayDateKey = today,
+                todayStudyDate = today,
                 todayAnsweredCount = 24,
                 currentStreakDays = 4,
-                lastGoalMetDateKey = today
+                lastGoalMetDate = today
             ),
             todayKey = today,
             yesterdayKey = yesterday,

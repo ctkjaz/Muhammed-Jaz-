@@ -238,6 +238,11 @@ data class DeviceLockConflictState(
     val deviceName: String
 )
 
+data class ExamLockUpgradeContext(
+    val requestedExamId: String?,
+    val currentUnlockedExamIds: Set<String>
+)
+
 data class SubscriptionUiState(
     val isAdmin: Boolean = false,
     val rawTier: PlanTier = PlanTier.FREE,
@@ -269,6 +274,18 @@ data class SubscriptionUiState(
             effectiveTier == PlanTier.ALL_EXAM ||
             effectiveTier == PlanTier.TRIAL ||
             "all" in unlockedExamIds
+
+    val isSingleExamLocked: Boolean
+        get() = !isAdmin && effectiveTier == PlanTier.SINGLE_EXAM && !hasAllExamAccess
+
+    val primaryUnlockedExamId: String?
+        get() = unlockedExamIds.firstOrNull { it.isNotBlank() && it != "all" }
+
+    fun isExamLockedForSwitch(targetExamId: String?): Boolean {
+        if (!isSingleExamLocked) return false
+        if (targetExamId.isNullOrBlank()) return true
+        return targetExamId !in unlockedExamIds
+    }
 
     val remainingFreeQuestionsToday: Int
         get() = (dailyFreeLimit - dailyFreeUsed).coerceAtLeast(0)

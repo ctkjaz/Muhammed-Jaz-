@@ -74,6 +74,7 @@ import com.example.data.subscription.DeviceIdentity
 import com.example.data.subscription.DeviceLockConflictState
 import com.example.data.subscription.DeviceLockManager
 import com.example.data.subscription.EntitlementEvaluator
+import com.example.data.subscription.ExamLockUpgradeContext
 import com.example.data.subscription.PaywallPromptState
 import com.example.data.subscription.PlanTenure
 import com.example.data.subscription.PlanTier
@@ -422,6 +423,9 @@ class MainViewModel(
 
     private val _isPlansOpen = MutableStateFlow(false)
     val isPlansOpen: StateFlow<Boolean> = _isPlansOpen.asStateFlow()
+
+    private val _plansExamLockContext = MutableStateFlow<ExamLockUpgradeContext?>(null)
+    val plansExamLockContext: StateFlow<ExamLockUpgradeContext?> = _plansExamLockContext.asStateFlow()
 
     private val _isAdminOpen = MutableStateFlow(false)
     val isAdminOpen: StateFlow<Boolean> = _isAdminOpen.asStateFlow()
@@ -829,6 +833,19 @@ class MainViewModel(
                         hour = settings.dailyReminderHour.value,
                         minute = settings.dailyReminderMinute.value
                     )
+                }
+            }
+        }
+        viewModelScope.launch {
+            subscriptionState.collect { sub ->
+                if (sub.isLoaded && sub.isSingleExamLocked) {
+                    val allowedExam = sub.primaryUnlockedExamId ?: return@collect
+                    if (settings.activeExamId.value !in sub.unlockedExamIds) {
+                        settings.setActiveExamId(allowedExam)
+                    }
+                    if (sub.isExamLockedForSwitch(_subjectPracticeExamFilter.value)) {
+                        _subjectPracticeExamFilter.value = allowedExam
+                    }
                 }
             }
         }
@@ -1317,14 +1334,16 @@ class MainViewModel(
             }
         }
 
-        // 4. Custom Questions
+        // 4. Custom Questions (core question bank writes are restricted to Owner Admin)
         mergeCloudCustomQuestionsIntoLocal(snapshot.customQuestions)
-        val cloudCustomIds = snapshot.customQuestions.map { it.id }.toSet()
-        val (localCustom, localExamMap) = repository.getCustomQuestionsWithExamIds()
-        val missingInCloud = localCustom.filter { it.id !in cloudCustomIds }
-        if (missingInCloud.isNotEmpty()) {
-            cloudSync.upsertCustomQuestions(currentUserId, missingInCloud, localExamMap)
-                .onFailure { recordSyncFailure(it) }
+        if (isOwnerAdmin) {
+            val cloudCustomIds = snapshot.customQuestions.map { it.id }.toSet()
+            val (localCustom, localExamMap) = repository.getCustomQuestionsWithExamIds()
+            val missingInCloud = localCustom.filter { it.id !in cloudCustomIds }
+            if (missingInCloud.isNotEmpty()) {
+                cloudSync.upsertCustomQuestions(currentUserId, missingInCloud, localExamMap)
+                    .onFailure { recordSyncFailure(it) }
+            }
         }
     }
 
@@ -1523,8 +1542,27 @@ class MainViewModel(
     }
 
     fun openPlans() {
+        _plansExamLockContext.value = null
         _paywallPrompt.value = null
         _subjectChaptersNav.value = null
+        _isExamPickerOpen.value = false
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = false
+        _isAdminOpen.value = false
+        _isNotificationsOpen.value = false
+        _isDoubtBoxOpen.value = false
+        _isPlansOpen.value = true
+    }
+
+    fun openPlansForExamLock(requestedExamId: String?) {
+        val sub = subscriptionState.value
+        _plansExamLockContext.value = ExamLockUpgradeContext(
+            requestedExamId = requestedExamId?.takeIf { it.isNotBlank() },
+            currentUnlockedExamIds = sub.unlockedExamIds
+        )
+        _paywallPrompt.value = null
+        _subjectChaptersNav.value = null
+        _isExamPickerOpen.value = false
         _isSettingsOpen.value = false
         _isProfileOpen.value = false
         _isAdminOpen.value = false
@@ -1535,6 +1573,7 @@ class MainViewModel(
 
     fun closePlans() {
         _isPlansOpen.value = false
+        _plansExamLockContext.value = null
     }
 
     fun openAdminConsole() {
@@ -1562,6 +1601,10 @@ class MainViewModel(
         examIdFilter: String? = null
     ) {
         val sub = subscriptionState.value
+        if (isCrossExam && sub.isExamLockedForSwitch(examIdFilter)) {
+            openPlansForExamLock(examIdFilter)
+            return
+        }
         if (isCrossExam && examIdFilter == null && !sub.canAccessCrossExamPractice()) {
             showPaywallPrompt(
                 title = "All-Exam Subject Mode",
@@ -1621,6 +1664,11 @@ class MainViewModel(
     }
 
     fun selectActiveExam(examId: String) {
+        if (subscriptionState.value.isExamLockedForSwitch(examId)) {
+            _isExamPickerOpen.value = false
+            openPlansForExamLock(examId)
+            return
+        }
         val changed = settings.activeExamId.value != examId
         settings.setActiveExamId(examId)
         _isExamPickerOpen.value = false
@@ -1648,10 +1696,20 @@ class MainViewModel(
     }
 
     fun selectPracticePathway(pathway: PracticePathway) {
+        if (pathway == PracticePathway.BY_SUBJECT) {
+            val sub = subscriptionState.value
+            if (sub.isSingleExamLocked && sub.isExamLockedForSwitch(_subjectPracticeExamFilter.value)) {
+                _subjectPracticeExamFilter.value = sub.primaryUnlockedExamId ?: settings.activeExamId.value
+            }
+        }
         _practicePathway.value = pathway
     }
 
     fun selectSubjectPracticeExamFilter(examId: String?) {
+        if (subscriptionState.value.isExamLockedForSwitch(examId)) {
+            openPlansForExamLock(examId)
+            return
+        }
         _subjectPracticeExamFilter.value = examId
     }
 
@@ -1682,6 +1740,10 @@ class MainViewModel(
         _subjectChaptersNav.value = null
         _isSettingsOpen.value = false
         _isProfileOpen.value = false
+        val sub = subscriptionState.value
+        if (sub.isSingleExamLocked && sub.isExamLockedForSwitch(_subjectPracticeExamFilter.value)) {
+            _subjectPracticeExamFilter.value = sub.primaryUnlockedExamId ?: settings.activeExamId.value
+        }
         _practicePathway.value = PracticePathway.BY_SUBJECT
         _selectedTab.value = MainTab.SUBJECTS
     }
@@ -1692,6 +1754,10 @@ class MainViewModel(
         difficultyFilter: DifficultyFilter = _difficultyFilter.value
     ) {
         val sub = subscriptionState.value
+        if (sub.isExamLockedForSwitch(examIdFilter)) {
+            openPlansForExamLock(examIdFilter)
+            return
+        }
         if (examIdFilter == null && !sub.canAccessCrossExamPractice()) {
             showPaywallPrompt(
                 title = "All-Exam Subject Mode",
@@ -2756,6 +2822,10 @@ class MainViewModel(
     // BULK IMPORTER & BACKUP
     // ------------------------------------------------------------------------
     fun openImporter() {
+        if (!isOwnerAdmin) {
+            showMessage("Core question bank imports are restricted to Owner Admin.")
+            return
+        }
         val activeExamId = settings.activeExamId.value
         val defaultShift = when {
             PlatformCatalogDefaults.isPgimerExam(activeExamId) -> "PGIMER-2025"
@@ -2775,10 +2845,15 @@ class MainViewModel(
     }
 
     fun updateImporter(transform: (ImporterUiState) -> ImporterUiState) {
+        if (!isOwnerAdmin) return
         _importerState.update(transform)
     }
 
     fun importPdfFileForImporter(context: android.content.Context, uri: Uri, displayFileName: String) {
+        if (!isOwnerAdmin) {
+            showMessage("Core question bank imports are restricted to Owner Admin.")
+            return
+        }
         viewModelScope.launch {
             val result = PdfTextExtractor.extractFromUri(context, uri)
             result.onSuccess { extracted ->
@@ -2830,6 +2905,10 @@ class MainViewModel(
         }
 
     fun previewPdfTextImport() {
+        if (!isOwnerAdmin) {
+            showMessage("Core question bank imports are restricted to Owner Admin.")
+            return
+        }
         val st = _importerState.value
         viewModelScope.launch {
             val parsed = parseImporterDraftOffMain(st)
@@ -2838,6 +2917,10 @@ class MainViewModel(
     }
 
     fun commitPreviewImport() {
+        if (!isOwnerAdmin) {
+            showMessage("Core question bank changes are restricted to Owner Admin.")
+            return
+        }
         val st = _importerState.value
         val list = st.previewQuestions
         if (list.isEmpty()) return
@@ -2875,6 +2958,10 @@ class MainViewModel(
     }
 
     fun importJsonBatch() {
+        if (!isOwnerAdmin) {
+            showMessage("Core question bank changes are restricted to Owner Admin.")
+            return
+        }
         val raw = _importerState.value.jsonText
         val parsed = runCatching { BulkQuestionParser.parseJsonBatch(raw, markAsCustom = true) }
             .onFailure { showMessage("Invalid JSON format: ${it.message}") }
@@ -3037,7 +3124,11 @@ class MainViewModel(
     fun restoreBackupFromText(jsonText: String) {
         viewModelScope.launch {
             runCatching {
-                repository.restoreBackupWithDetails(jsonText, defaultExamId = settings.activeExamId.value)
+                repository.restoreBackupWithDetails(
+                    jsonText = jsonText,
+                    defaultExamId = settings.activeExamId.value,
+                    allowCustomQuestions = isOwnerAdmin
+                )
             }.onSuccess { restored ->
                 restored.studentInfo?.let { st ->
                     if (st.displayName.isNotBlank()) settings.setProfileName(st.displayName)
@@ -3063,7 +3154,9 @@ class MainViewModel(
                     )
                 }
                 restored.activeExamId?.takeIf { it.isNotBlank() }?.let { examId ->
-                    settings.setActiveExamId(examId)
+                    if (!subscriptionState.value.isExamLockedForSwitch(examId)) {
+                        settings.setActiveExamId(examId)
+                    }
                 }
                 _importerState.update { it.copy(isVisible = false) }
                 if (currentUserId.isNotBlank() && !isSigningOut) {
@@ -3076,8 +3169,9 @@ class MainViewModel(
                 val planSummary = restored.planInfo?.planName?.takeIf { it.isNotBlank() }
                     ?.let { " ($it)" }
                     .orEmpty()
+                val customPrefix = if (isOwnerAdmin) "${restored.customQuestions.size} custom Qs, " else ""
                 showMessage(
-                    "Backup restored (${restored.customQuestions.size} custom Qs, ${restored.progressList.size} progress items$profileSummary$planSummary)."
+                    "Backup restored (${customPrefix}${restored.progressList.size} progress items$profileSummary$planSummary)."
                 )
             }.onFailure {
                 showMessage("Failed to restore backup: ${it.message}")
@@ -3086,6 +3180,10 @@ class MainViewModel(
     }
 
     fun clearCustomQuestions() {
+        if (!isOwnerAdmin) {
+            showMessage("Core question bank changes are restricted to Owner Admin.")
+            return
+        }
         viewModelScope.launch {
             repository.clearCustomQuestions()
             if (currentUserId.isNotBlank() && !isSigningOut) {

@@ -412,19 +412,30 @@ test("MockHistory & CustomQuestions subcollections: owner CRUD & list succeed; i
       .set({ ...validMockPayload(ALICE_UID, created), accuracyPercent: 150 })
   );
 
-  // CustomQuestion create, update, delete
-  await assertSucceeds(
+  // Non-admin student CANNOT modify core customQuestions bank
+  await assertFails(
     aliceDb
       .collection("users")
       .doc(ALICE_UID)
       .collection("customQuestions")
-      .doc("C_1001")
+      .doc("C_STUDENT_BLOCKED")
       .set(validCustomQuestionPayload(ALICE_UID, created))
   );
+
+  // Owner Admin CAN create, update, and delete customQuestions on own admin account
+  const adminDb = adminContext().firestore();
   await assertSucceeds(
-    aliceDb
+    adminDb
       .collection("users")
-      .doc(ALICE_UID)
+      .doc(ADMIN_UID)
+      .collection("customQuestions")
+      .doc("C_1001")
+      .set(validCustomQuestionPayload(ADMIN_UID, created))
+  );
+  await assertSucceeds(
+    adminDb
+      .collection("users")
+      .doc(ADMIN_UID)
       .collection("customQuestions")
       .doc("C_1001")
       .update({
@@ -433,22 +444,22 @@ test("MockHistory & CustomQuestions subcollections: owner CRUD & list succeed; i
       })
   );
   await assertSucceeds(
-    aliceDb
+    adminDb
       .collection("users")
-      .doc(ALICE_UID)
+      .doc(ADMIN_UID)
       .collection("customQuestions")
       .doc("C_1001")
       .delete()
   );
 
-  // Reject out-of-bounds correctIndex
+  // Reject out-of-bounds correctIndex even for admin
   await assertFails(
-    aliceDb
+    adminDb
       .collection("users")
-      .doc(ALICE_UID)
+      .doc(ADMIN_UID)
       .collection("customQuestions")
       .doc("C_BAD")
-      .set({ ...validCustomQuestionPayload(ALICE_UID, created), correctIndex: 9 })
+      .set({ ...validCustomQuestionPayload(ADMIN_UID, created), correctIndex: 9 })
   );
 
   // Cross-user isolation
