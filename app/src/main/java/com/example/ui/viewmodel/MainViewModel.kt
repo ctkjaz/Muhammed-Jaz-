@@ -52,12 +52,15 @@ import com.example.data.model.CategoryStat
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.Exam
+import com.example.data.model.DailyFocusProgress
 import com.example.data.model.ExamCountdownLogic
 import com.example.data.model.ExamQuestionLink
 import com.example.data.model.ExamRoadmapSummary
 import com.example.data.model.ExamSection
 import com.example.data.model.ExamStage
 import com.example.data.model.Flashcard
+import com.example.data.model.FocusTimerLogic
+import com.example.data.model.FocusTimerPreset
 import com.example.data.model.MockHistory
 import com.example.data.model.MockSelectionLogic
 import com.example.data.model.PlatformCatalogDefaults
@@ -538,6 +541,9 @@ class MainViewModel(
     private val _isClinicalToolsOpen = MutableStateFlow(false)
     val isClinicalToolsOpen: StateFlow<Boolean> = _isClinicalToolsOpen.asStateFlow()
 
+    private val _isFlashcardStudioOpen = MutableStateFlow(false)
+    val isFlashcardStudioOpen: StateFlow<Boolean> = _isFlashcardStudioOpen.asStateFlow()
+
     // ------------------------------------------------------------------------
     // v2.5: WEEKLY ALL-INDIA GRAND TEST & PERCENTILE (DORMANT BY DEFAULT)
     // ------------------------------------------------------------------------
@@ -561,6 +567,8 @@ class MainViewModel(
     val targetExamDateIso: StateFlow<String> = settings.targetExamDateIso
     val srsCards: StateFlow<Map<String, SrsCardState>> = settings.srsCards
     val questionNotes: StateFlow<Map<String, QuestionNote>> = settings.questionNotes
+    val masteredFlashcardIds: StateFlow<Set<String>> = settings.masteredFlashcardIds
+    val dailyFocusProgress: StateFlow<DailyFocusProgress> = settings.dailyFocusProgress
 
     val lastSeenAnnouncementMs: StateFlow<Long> = settings.lastSeenAnnouncementMs
     val backgroundPushEnabled: StateFlow<Boolean> = settings.backgroundPushEnabled
@@ -1670,6 +1678,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isFlashcardStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _selectedTab.value = tab
     }
@@ -1682,6 +1691,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isFlashcardStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _isSettingsOpen.value = true
     }
@@ -1775,11 +1785,51 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isGrandTestHubOpen.value = false
+        _isFlashcardStudioOpen.value = false
         _isClinicalToolsOpen.value = true
     }
 
     fun closeClinicalTools() {
         _isClinicalToolsOpen.value = false
+    }
+
+    fun openFlashcardStudio() {
+        _subjectChaptersNav.value = null
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = false
+        _isPlansOpen.value = false
+        _isAdminOpen.value = false
+        _isNotificationsOpen.value = false
+        _isDoubtBoxOpen.value = false
+        _isGrandTestHubOpen.value = false
+        _isClinicalToolsOpen.value = false
+        _isFlashcardStudioOpen.value = true
+    }
+
+    fun closeFlashcardStudio() {
+        _isFlashcardStudioOpen.value = false
+    }
+
+    fun setFlashcardMastered(cardId: String, mastered: Boolean) {
+        val current = settings.masteredFlashcardIds.value
+        val updated = if (mastered) current + cardId else current - cardId
+        settings.setMasteredFlashcardIds(updated)
+    }
+
+    fun resetFlashcardMastery() {
+        settings.setMasteredFlashcardIds(emptySet())
+        showMessage("Rapid Recall mastery progress reset.")
+    }
+
+    fun recordFocusSessionCompleted(preset: FocusTimerPreset) {
+        val updated = FocusTimerLogic.recordCompletedSession(
+            current = settings.dailyFocusProgress.value,
+            preset = preset
+        )
+        settings.setDailyFocusProgress(updated)
+        if (!preset.isBreak) {
+            showMessage("Focus sprint complete! +${preset.durationMinutes} min logged today.")
+        }
     }
 
     fun setTargetExamDate(dateIso: String) {

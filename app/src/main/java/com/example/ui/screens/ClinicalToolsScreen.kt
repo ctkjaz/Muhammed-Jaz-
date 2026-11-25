@@ -47,11 +47,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.data.model.ClinicalCalculatorLogic
 import com.example.data.model.ClinicalMnemonicsCatalog
+import com.example.data.model.DailyFocusProgress
+import com.example.data.model.FocusTimerPreset
 import com.example.data.model.LabValueCategory
 import com.example.data.model.MnemonicCategory
 import com.example.data.model.NormalLabValue
 import com.example.data.model.NormalLabValuesCatalog
 import com.example.ui.components.ClinicalMnemonicCard
+import com.example.ui.components.FocusStudyTimerCard
 import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.components.SegmentedPillBar
 import com.example.ui.theme.MonoFontFamily
@@ -70,11 +73,13 @@ private enum class ClinicalCalcType(val label: String) {
 @Composable
 fun ClinicalToolsScreen(
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    dailyFocusProgress: DailyFocusProgress = DailyFocusProgress(),
+    onFocusSessionCompleted: (FocusTimerPreset) -> Unit = {}
 ) {
     BackHandler(onBack = onBack)
     val editorial = MaterialTheme.editorialColors
-    // 0 = Calculators, 1 = Normal Lab Values, 2 = High-Yield Mnemonics
+    // 0 = Calculators, 1 = Normal Lab Values, 2 = High-Yield Mnemonics, 3 = Focus Timer
     var activeSection by remember { mutableIntStateOf(0) }
     var activeCalc by remember { mutableStateOf(ClinicalCalcType.IV_DRIP) }
     var labQuery by remember { mutableStateOf("") }
@@ -119,7 +124,7 @@ fun ClinicalToolsScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Offline nursing calculators, NORCET labs & high-yield mnemonics",
+                    text = "Calculators, NORCET labs, mnemonics & Pomodoro focus timer",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -134,13 +139,14 @@ fun ClinicalToolsScreen(
         ) {
             item(key = "tools_section_switch") {
                 SegmentedPillBar(
-                    options = listOf(0, 1, 2),
+                    options = listOf(0, 1, 2, 3),
                     selected = activeSection,
                     labelOf = {
                         when (it) {
-                            0 -> "Calculators (6)"
-                            1 -> "Labs (${NormalLabValuesCatalog.ALL_VALUES.size})"
-                            else -> "Mnemonics (${ClinicalMnemonicsCatalog.ALL_MNEMONICS.size})"
+                            0 -> "Calcs"
+                            1 -> "Labs"
+                            2 -> "Mnemonics"
+                            else -> "Focus"
                         }
                     },
                     onSelect = { activeSection = it },
@@ -217,7 +223,7 @@ fun ClinicalToolsScreen(
                 items(items = filteredLabs, key = { it.name }) { entry ->
                     LabValueCard(entry)
                 }
-            } else {
+            } else if (activeSection == 2) {
                 item(key = "mnemonic_search") {
                     OutlinedTextField(
                         value = mnemonicQuery,
@@ -258,6 +264,13 @@ fun ClinicalToolsScreen(
 
                 items(items = filteredMnemonics, key = { it.id }) { mnemonic ->
                     ClinicalMnemonicCard(mnemonic = mnemonic)
+                }
+            } else {
+                item(key = "focus_study_timer") {
+                    FocusStudyTimerCard(
+                        dailyProgress = dailyFocusProgress,
+                        onSessionCompleted = onFocusSessionCompleted
+                    )
                 }
             }
         }

@@ -136,6 +136,8 @@ fun DashboardScreen(
     onStartSmartWeakDrill: () -> Unit = {},
     onStartRecoveryDayDrill: (String, Int) -> Unit = { _, _ -> },
     onStartImageSpotterDrill: () -> Unit = {},
+    onOpenFlashcardStudio: () -> Unit = {},
+    masteredFlashcardCount: Int = 0,
     modifier: Modifier = Modifier
 ) {
     var showExamDateDialog by remember { mutableStateOf(false) }
@@ -1296,15 +1298,14 @@ fun DashboardScreen(
                             Icons.Filled.Quiz
                         ) to { onSelectTab(MainTab.CBT) }
                     )
-                    if (!isPureNursing && (!isNorcet || state.activeExamStage == ExamStage.PRELIMS)) {
-                        add(
-                            Triple(
-                                "Fact Flashcards",
-                                "${state.flashcards.size} cards",
-                                Icons.Filled.Tune
-                            ) to { onOpenSubjectSection(SubjectHubSection.CA_GK) }
-                        )
-                    }
+                    val totalRapidCards = com.example.data.model.RapidRecallCatalog.BUILTIN_CLINICAL_CARDS.size + state.flashcards.size
+                    add(
+                        Triple(
+                            "Rapid Recall Flashcards",
+                            if (masteredFlashcardCount > 0) "$masteredFlashcardCount/$totalRapidCards mastered" else "$totalRapidCards flip cards",
+                            Icons.Filled.Tune
+                        ) to onOpenFlashcardStudio
+                    )
                 }
 
                 if (isWide) {

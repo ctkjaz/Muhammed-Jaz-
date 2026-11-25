@@ -136,6 +136,7 @@ import com.example.ui.screens.ClinicalToolsScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.DeviceLockSupportDialog
 import com.example.ui.screens.DoubtBoxScreen
+import com.example.ui.screens.FlashcardDeckScreen
 import com.example.ui.screens.GrandTestScreen
 import com.example.ui.screens.NotificationsInboxScreen
 import com.example.ui.screens.OnboardingScreen
@@ -342,6 +343,9 @@ fun RrbNursingApp(vm: MainViewModel) {
         val flagQuestionTarget by vm.flagQuestionTarget.collectAsStateWithLifecycle()
         val isFlagBusy by vm.isFlagBusy.collectAsStateWithLifecycle()
         val isClinicalToolsOpen by vm.isClinicalToolsOpen.collectAsStateWithLifecycle()
+        val isFlashcardStudioOpen by vm.isFlashcardStudioOpen.collectAsStateWithLifecycle()
+        val masteredFlashcardIds by vm.masteredFlashcardIds.collectAsStateWithLifecycle()
+        val dailyFocusProgress by vm.dailyFocusProgress.collectAsStateWithLifecycle()
         val isGrandTestHubOpen by vm.isGrandTestHubOpen.collectAsStateWithLifecycle()
         val publicGrandTests by vm.publicGrandTests.collectAsStateWithLifecycle()
         val selectedGrandTestId by vm.selectedGrandTestId.collectAsStateWithLifecycle()
@@ -555,7 +559,7 @@ fun RrbNursingApp(vm: MainViewModel) {
 
         val inActiveSession = practiceSession != null || cbtSession != null
         val inSubScreen = isSettingsOpen || isProfileOpen || isPlansOpen || isAdminOpen ||
-            isNotificationsOpen || isDoubtBoxOpen || isClinicalToolsOpen || isGrandTestHubOpen || subjectChaptersNav != null
+            isNotificationsOpen || isDoubtBoxOpen || isClinicalToolsOpen || isFlashcardStudioOpen || isGrandTestHubOpen || subjectChaptersNav != null
         val shouldKeepScreenOn = keepScreenOn && inActiveSession
 
         DisposableEffect(context, shouldKeepScreenOn) {
@@ -1038,7 +1042,19 @@ fun RrbNursingApp(vm: MainViewModel) {
 
                                 isClinicalToolsOpen -> {
                                     ClinicalToolsScreen(
-                                        onBack = vm::closeClinicalTools
+                                        onBack = vm::closeClinicalTools,
+                                        dailyFocusProgress = dailyFocusProgress,
+                                        onFocusSessionCompleted = vm::recordFocusSessionCompleted
+                                    )
+                                }
+
+                                isFlashcardStudioOpen -> {
+                                    FlashcardDeckScreen(
+                                        caFlashcards = state.flashcards,
+                                        masteredIds = masteredFlashcardIds,
+                                        onMarkCardMastered = vm::setFlashcardMastered,
+                                        onResetMastery = vm::resetFlashcardMastery,
+                                        onBack = vm::closeFlashcardStudio
                                     )
                                 }
 
@@ -1271,7 +1287,9 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onStartRecoveryDayDrill = { subjCode, count ->
                                                 vm.startSmartWeakTopicDrill(subjectCode = subjCode, targetCount = count)
                                             },
-                                            onStartImageSpotterDrill = vm::startImageBasedSpotterDrill
+                                            onStartImageSpotterDrill = vm::startImageBasedSpotterDrill,
+                                            onOpenFlashcardStudio = vm::openFlashcardStudio,
+                                            masteredFlashcardCount = masteredFlashcardIds.size
                                         )
 
                                         MainTab.SUBJECTS -> SubjectsHubScreen(

@@ -5,10 +5,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import com.example.data.model.AccountSessionLogic
+import com.example.data.model.DailyFocusProgress
 import com.example.data.model.DailyStudyGoalState
+import com.example.data.model.FocusTimerLogic
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.QuestionNote
 import com.example.data.model.QuestionNotesLogic
+import com.example.data.model.RapidRecallCatalog
 import com.example.data.model.SpacedRepetitionLogic
 import com.example.data.model.SrsCardState
 import com.example.data.model.StudyGoalLogic
@@ -160,6 +163,16 @@ class SettingsPreferences(context: Context) {
         QuestionNotesLogic.deserializeMap(prefs.getString(KEY_QUESTION_NOTES_JSON, null))
     )
     val questionNotes: StateFlow<Map<String, QuestionNote>> = _questionNotes.asStateFlow()
+
+    private val _masteredFlashcardIds = MutableStateFlow(
+        RapidRecallCatalog.deserializeMasteredIds(prefs.getString(KEY_MASTERED_FLASHCARDS, null))
+    )
+    val masteredFlashcardIds: StateFlow<Set<String>> = _masteredFlashcardIds.asStateFlow()
+
+    private val _dailyFocusProgress = MutableStateFlow(
+        FocusTimerLogic.deserializeProgress(prefs.getString(KEY_DAILY_FOCUS_PROGRESS, null))
+    )
+    val dailyFocusProgress: StateFlow<DailyFocusProgress> = _dailyFocusProgress.asStateFlow()
 
     private fun readDailyFreeQuotaUsed(): Int {
         val today = StudyGoalLogic.todayDateKey()
@@ -424,6 +437,18 @@ class SettingsPreferences(context: Context) {
         _questionNotes.value = notes
     }
 
+    fun setMasteredFlashcardIds(ids: Set<String>) {
+        val serialized = RapidRecallCatalog.serializeMasteredIds(ids)
+        prefs.edit().putString(KEY_MASTERED_FLASHCARDS, serialized).apply()
+        _masteredFlashcardIds.value = ids
+    }
+
+    fun setDailyFocusProgress(progress: DailyFocusProgress) {
+        val serialized = FocusTimerLogic.serializeProgress(progress)
+        prefs.edit().putString(KEY_DAILY_FOCUS_PROGRESS, serialized).apply()
+        _dailyFocusProgress.value = progress
+    }
+
     fun getLastNotifiedAppUpdateVersion(): String =
         prefs.getString(KEY_LAST_NOTIFIED_APP_UPDATE_VERSION, "") ?: ""
 
@@ -629,6 +654,8 @@ class SettingsPreferences(context: Context) {
         private const val KEY_DISMISSED_BANNER_ANNOUNCEMENT_ID = "dismissed_banner_announcement_id"
         private const val KEY_SRS_CARDS_JSON = "srs_mistake_cards_json"
         private const val KEY_QUESTION_NOTES_JSON = "personal_question_notes_json"
+        private const val KEY_MASTERED_FLASHCARDS = "rapid_recall_mastered_ids"
+        private const val KEY_DAILY_FOCUS_PROGRESS = "daily_focus_timer_progress"
         private const val KEY_TARGET_EXAM_DATE_ISO = "target_exam_date_iso"
         private const val KEY_LAST_NOTIFIED_APP_UPDATE_VERSION = "last_notified_app_update_version"
         private const val KEY_BACKGROUND_PUSH_ENABLED = "background_push_enabled"
