@@ -101,6 +101,7 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.ProfileAvatarStorage
 import com.example.data.local.SettingsPreferences
 import com.example.data.local.ThemePreference
+import com.example.data.model.ExamReadinessEngine
 import com.example.data.model.ExamStage
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.PracticePathway
@@ -356,6 +357,32 @@ fun RrbNursingApp(vm: MainViewModel) {
             SpacedRepetitionLogic.buildSummary(
                 questions = state.questions,
                 storedCards = srsCards
+            )
+        }
+        val examReadiness = remember(
+            state.overall,
+            state.subjectStats,
+            state.stageSubjectStats,
+            state.activeExamSupportsStages,
+            state.mockHistory,
+            srsCards,
+            studyGoal
+        ) {
+            val activeSubjects = if (state.activeExamSupportsStages) {
+                state.stageSubjectStats.ifEmpty { state.subjectStats }
+            } else {
+                state.subjectStats
+            }
+            ExamReadinessEngine.compute(
+                totalQuestions = state.overall.totalQuestions,
+                attemptedUnique = state.overall.attemptedUnique,
+                totalAttempts = state.overall.totalAttempts,
+                accuracyPercent = state.overall.accuracyPercent,
+                subjectStats = activeSubjects,
+                mockHistory = state.mockHistory,
+                srsCards = srsCards,
+                currentStreakDays = studyGoal.effectiveCurrentStreak(),
+                dailyGoalMetToday = studyGoal.isGoalMetToday()
             )
         }
         val smartStudyPlan = remember(state.stageQuestions, state.questions, srsCards, studyGoal.dailyGoalQuestions) {
@@ -1291,7 +1318,11 @@ fun RrbNursingApp(vm: MainViewModel) {
                                                 vm.startPractice(list, "Lowest Accuracy Review")
                                             },
                                             onToggleBookmark = vm::toggleBookmark,
-                                            onClearStats = vm::clearAllStatistics
+                                            onClearStats = vm::clearAllStatistics,
+                                            readiness = examReadiness,
+                                            onPracticeSubject = { subjectCode ->
+                                                vm.openSubjectChapters(subjectCode)
+                                            }
                                         )
 
                                         MainTab.DECK -> BookmarksScreen(

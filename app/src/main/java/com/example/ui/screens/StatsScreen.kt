@@ -41,9 +41,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.model.CategoryStat
+import com.example.data.model.ExamReadinessSummary
 import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectStat
 import com.example.ui.components.AcidLimeProgressBar
+import com.example.ui.components.ExamReadinessCard
 import com.example.ui.components.MetricTile
 import com.example.ui.components.QuestionSummaryCard
 import com.example.ui.theme.AmoledBorder
@@ -67,7 +69,9 @@ fun StatsScreen(
     onPracticeLowestAccuracy: (List<QuestionItem>) -> Unit,
     onToggleBookmark: (String) -> Unit,
     onClearStats: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    readiness: ExamReadinessSummary? = null,
+    onPracticeSubject: ((String) -> Unit)? = null
 ) {
     var confirmReset by remember { mutableStateOf(false) }
     val editorial = MaterialTheme.editorialColors
@@ -175,6 +179,15 @@ fun StatsScreen(
                             )
                         }
                     }
+                }
+            }
+
+            if (readiness != null) {
+                item(key = "exam_readiness_overview") {
+                    ExamReadinessCard(
+                        summary = readiness,
+                        onDrillWeakSubject = onPracticeSubject
+                    )
                 }
             }
 

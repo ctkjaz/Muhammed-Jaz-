@@ -46,9 +46,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.data.model.ClinicalCalculatorLogic
+import com.example.data.model.ClinicalMnemonicsCatalog
 import com.example.data.model.LabValueCategory
+import com.example.data.model.MnemonicCategory
 import com.example.data.model.NormalLabValue
 import com.example.data.model.NormalLabValuesCatalog
+import com.example.ui.components.ClinicalMnemonicCard
 import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.components.SegmentedPillBar
 import com.example.ui.theme.MonoFontFamily
@@ -71,11 +74,13 @@ fun ClinicalToolsScreen(
 ) {
     BackHandler(onBack = onBack)
     val editorial = MaterialTheme.editorialColors
-    // 0 = Calculators, 1 = Normal Lab Values
+    // 0 = Calculators, 1 = Normal Lab Values, 2 = High-Yield Mnemonics
     var activeSection by remember { mutableIntStateOf(0) }
     var activeCalc by remember { mutableStateOf(ClinicalCalcType.IV_DRIP) }
     var labQuery by remember { mutableStateOf("") }
     var labCategory by remember { mutableStateOf<LabValueCategory?>(null) }
+    var mnemonicQuery by remember { mutableStateOf("") }
+    var mnemonicCategory by remember { mutableStateOf<MnemonicCategory?>(null) }
 
     val filteredLabs = remember(labQuery, labCategory) {
         val q = labQuery.trim().lowercase(Locale.US)
@@ -86,6 +91,10 @@ fun ClinicalToolsScreen(
                     entry.normalRange.lowercase(Locale.US).contains(q) ||
                     entry.examPearl.lowercase(Locale.US).contains(q))
         }
+    }
+
+    val filteredMnemonics = remember(mnemonicQuery, mnemonicCategory) {
+        ClinicalMnemonicsCatalog.search(mnemonicQuery, mnemonicCategory)
     }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -110,7 +119,7 @@ fun ClinicalToolsScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "100% offline bedside nursing calculators & NORCET lab ranges",
+                    text = "Offline nursing calculators, NORCET labs & high-yield mnemonics",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -125,9 +134,15 @@ fun ClinicalToolsScreen(
         ) {
             item(key = "tools_section_switch") {
                 SegmentedPillBar(
-                    options = listOf(0, 1),
+                    options = listOf(0, 1, 2),
                     selected = activeSection,
-                    labelOf = { if (it == 0) "Calculators (6)" else "Normal Lab Values (${NormalLabValuesCatalog.ALL_VALUES.size})" },
+                    labelOf = {
+                        when (it) {
+                            0 -> "Calculators (6)"
+                            1 -> "Labs (${NormalLabValuesCatalog.ALL_VALUES.size})"
+                            else -> "Mnemonics (${ClinicalMnemonicsCatalog.ALL_MNEMONICS.size})"
+                        }
+                    },
                     onSelect = { activeSection = it },
                     testTagOf = { "clinical_tools_tab_$it" }
                 )
@@ -162,7 +177,7 @@ fun ClinicalToolsScreen(
                         ClinicalCalcType.BISHOP -> BishopScorerCard()
                     }
                 }
-            } else {
+            } else if (activeSection == 1) {
                 item(key = "lab_search") {
                     OutlinedTextField(
                         value = labQuery,
@@ -201,6 +216,48 @@ fun ClinicalToolsScreen(
 
                 items(items = filteredLabs, key = { it.name }) { entry ->
                     LabValueCard(entry)
+                }
+            } else {
+                item(key = "mnemonic_search") {
+                    OutlinedTextField(
+                        value = mnemonicQuery,
+                        onValueChange = { mnemonicQuery = it },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        label = { Text("Search mnemonic, drug, triad, or exam trap") },
+                        placeholder = { Text("e.g., MONA, RIPES, VEAL CHOP, Cushing, BMW...") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("mnemonics_search_input")
+                    )
+                }
+
+                item(key = "mnemonic_categories") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        MonochromeFilterPill(
+                            label = "All (${ClinicalMnemonicsCatalog.ALL_MNEMONICS.size})",
+                            selected = mnemonicCategory == null,
+                            onClick = { mnemonicCategory = null },
+                            modifier = Modifier.testTag("mnemonic_cat_all")
+                        )
+                        MnemonicCategory.entries.forEach { cat ->
+                            MonochromeFilterPill(
+                                label = cat.label,
+                                selected = mnemonicCategory == cat,
+                                onClick = { mnemonicCategory = cat },
+                                modifier = Modifier.testTag("mnemonic_cat_${cat.name.lowercase()}")
+                            )
+                        }
+                    }
+                }
+
+                items(items = filteredMnemonics, key = { it.id }) { mnemonic ->
+                    ClinicalMnemonicCard(mnemonic = mnemonic)
                 }
             }
         }
