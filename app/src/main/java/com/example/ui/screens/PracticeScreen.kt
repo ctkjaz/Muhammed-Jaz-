@@ -40,8 +40,10 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.QuestionAnswer
+import androidx.compose.material.icons.filled.StickyNote2
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.StickyNote2
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -77,6 +79,8 @@ import com.example.ui.components.ImageBasedQuestionBadge
 import com.example.ui.components.MetricTile
 import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.components.PyqSourceBadge
+import com.example.ui.components.QuestionNoteBannerCard
+import com.example.ui.components.QuestionNoteEditorDialog
 import com.example.ui.components.formatTimer
 import com.example.ui.theme.AcidLime
 import com.example.ui.theme.EditorialBannerKpiAccent
@@ -92,6 +96,7 @@ import com.example.ui.theme.SemanticWarningFill
 import com.example.ui.theme.SemanticWrongFill
 import com.example.ui.theme.editorialColors
 import com.example.data.model.QuestionItem
+import com.example.data.model.QuestionNote
 import com.example.ui.viewmodel.CbtReviewFilter
 import com.example.ui.viewmodel.PracticeSessionState
 import kotlinx.coroutines.delay
@@ -115,10 +120,14 @@ fun PracticeScreen(
     canUseAiTutor: Boolean = false,
     onExplainWithAi: (QuestionItem, Int?) -> Unit = { _, _ -> },
     onFlagQuestion: (QuestionItem) -> Unit = {},
+    questionNotes: Map<String, QuestionNote> = emptyMap(),
+    onSaveQuestionNote: (String, String) -> Unit = { _, _ -> },
+    onDeleteQuestionNote: (String) -> Unit = {},
     onExit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showExitConfirm by remember { mutableStateOf(false) }
+    var showNoteEditor by remember { mutableStateOf(false) }
 
     BackHandler {
         if (session.timedMode && !session.isSubmittedSummary) {
@@ -363,7 +372,23 @@ fun PracticeScreen(
                                 }
                             }
 
+                            val currentNote = questionNotes[q.id]
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { showNoteEditor = true },
+                                    modifier = Modifier.testTag("practice_note_icon_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = if (currentNote != null) Icons.Filled.StickyNote2 else Icons.Outlined.StickyNote2,
+                                        contentDescription = if (currentNote != null) "Edit personal note" else "Add personal note",
+                                        tint = if (currentNote != null) {
+                                            if (editorial.isDark) AcidLime else PureBlack
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
                                 IconButton(
                                     onClick = { onFlagQuestion(currentItem) },
                                     modifier = Modifier.testTag("practice_flag_icon_btn")
@@ -649,6 +674,31 @@ fun PracticeScreen(
                         }
                     }
                 }
+
+                val savedNote = questionNotes[q.id]
+                if (savedNote != null) {
+                    QuestionNoteBannerCard(
+                        note = savedNote,
+                        onEdit = { showNoteEditor = true }
+                    )
+                }
+            }
+
+            if (showNoteEditor) {
+                QuestionNoteEditorDialog(
+                    questionStem = q.questionText,
+                    subject = q.subject,
+                    existingNote = questionNotes[q.id]?.text.orEmpty(),
+                    onSave = { text ->
+                        onSaveQuestionNote(q.id, text)
+                        showNoteEditor = false
+                    },
+                    onDelete = {
+                        onDeleteQuestionNote(q.id)
+                        showNoteEditor = false
+                    },
+                    onDismiss = { showNoteEditor = false }
+                )
             }
 
             // Clean Bottom Navigation Strip with stable keys

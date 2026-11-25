@@ -353,6 +353,7 @@ fun RrbNursingApp(vm: MainViewModel) {
         }
         val targetExamDateIso by vm.targetExamDateIso.collectAsStateWithLifecycle()
         val srsCards by vm.srsCards.collectAsStateWithLifecycle()
+        val questionNotes by vm.questionNotes.collectAsStateWithLifecycle()
         val srsNotebookSummary = remember(state.questions, srsCards) {
             SpacedRepetitionLogic.buildSummary(
                 questions = state.questions,
@@ -944,6 +945,9 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         canUseAiTutor = subscriptionState.hasAnyActivePaidOrTrial || subscriptionState.isAdmin,
                                         onExplainWithAi = vm::openAiTutorForQuestion,
                                         onFlagQuestion = vm::openFlagQuestionSheet,
+                                        questionNotes = questionNotes,
+                                        onSaveQuestionNote = vm::saveQuestionNote,
+                                        onDeleteQuestionNote = vm::deleteQuestionNote,
                                         onExit = vm::exitPracticeOrCbt
                                     )
                                 }
@@ -1320,6 +1324,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onToggleBookmark = vm::toggleBookmark,
                                             onClearStats = vm::clearAllStatistics,
                                             readiness = examReadiness,
+                                            streakDays = studyGoal.effectiveCurrentStreak(),
                                             onPracticeSubject = { subjectCode ->
                                                 vm.openSubjectChapters(subjectCode)
                                             }
@@ -1332,7 +1337,10 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onOpenPdfExport = { sourceKey -> vm.openPdfExport(defaultSource = sourceKey, defaultLimit = 0) },
                                             onToggleBookmark = vm::toggleBookmark,
                                             onResetSrsCard = vm::resetSrsCard,
-                                            onRemoveSrsCard = vm::removeSrsCard
+                                            onRemoveSrsCard = vm::removeSrsCard,
+                                            questionNotes = questionNotes,
+                                            onSaveQuestionNote = vm::saveQuestionNote,
+                                            onDeleteQuestionNote = vm::deleteQuestionNote
                                         )
                                     }
                                 }

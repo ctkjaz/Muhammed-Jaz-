@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
@@ -29,6 +30,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -52,6 +54,7 @@ import com.example.ui.theme.editorialColors
 fun ExamReadinessCard(
     summary: ExamReadinessSummary,
     onDrillWeakSubject: ((String) -> Unit)? = null,
+    onShareReadiness: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val editorial = MaterialTheme.editorialColors
@@ -112,24 +115,42 @@ fun ExamReadinessCard(
                     }
                 }
 
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "${summary.overallScore}%",
-                        style = MaterialTheme.typography.headlineMedium.copy(fontFamily = MonoFontFamily),
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = bandContainer
-                    ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (onShareReadiness != null) {
+                        IconButton(
+                            onClick = onShareReadiness,
+                            modifier = Modifier.testTag("readiness_share_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Share,
+                                contentDescription = "Share Exam Readiness report",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = summary.band.label,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = bandContent,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            text = "${summary.overallScore}%",
+                            style = MaterialTheme.typography.headlineMedium.copy(fontFamily = MonoFontFamily),
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = bandContainer
+                        ) {
+                            Text(
+                                text = summary.band.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = bandContent,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
                     }
                 }
             }

@@ -33,6 +33,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -41,6 +42,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -57,10 +59,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.data.model.ResultShareFormatter
 import com.example.ui.components.AcidLimeProgressBar
 import com.example.ui.components.ClinicalQuestionImageCard
 import com.example.ui.components.ImageBasedQuestionBadge
@@ -68,6 +72,7 @@ import com.example.ui.components.MetricTile
 import com.example.ui.components.MonochromeFilterPill
 import com.example.ui.components.PyqSourceBadge
 import com.example.ui.components.formatTimer
+import com.example.ui.components.sharePlainText
 import com.example.ui.theme.AcidLime
 import com.example.ui.theme.AmoledBorder
 import com.example.ui.theme.EditorialBannerKpiAccent
@@ -828,6 +833,7 @@ private fun CbtResultScreen(
     modifier: Modifier = Modifier
 ) {
     val editorial = MaterialTheme.editorialColors
+    val context = LocalContext.current
     data class SubjTotals(var total: Int = 0, var right: Int = 0, var wrong: Int = 0)
     var right = 0
     var wrong = 0
@@ -904,15 +910,56 @@ private fun CbtResultScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            Button(
-                                onClick = onExit,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = AcidLime,
-                                    contentColor = PureBlack
-                                ),
-                                shape = RoundedCornerShape(10.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text("Done", fontWeight = FontWeight.Bold)
+                                IconButton(
+                                    onClick = {
+                                        val topSubj = subjMap.entries
+                                            .filter { it.value.right + it.value.wrong > 0 }
+                                            .maxByOrNull { (_, s) ->
+                                                (s.right.toDouble() / (s.right + s.wrong).toDouble())
+                                            }
+                                            ?.let { (subj, s) ->
+                                                val pct = ((s.right.toFloat() / (s.right + s.wrong)) * 100f).toInt()
+                                                "$subj ($pct%)"
+                                            }
+                                        val shareText = ResultShareFormatter.formatCbtResultShare(
+                                            title = session.title,
+                                            netScore = netScore,
+                                            totalQuestions = session.questions.size,
+                                            right = right,
+                                            wrong = wrong,
+                                            skipped = skipped,
+                                            accuracyPercent = acc,
+                                            negativeMarks = session.negativeMarks,
+                                            topSubjectLine = topSubj
+                                        )
+                                        sharePlainText(
+                                            context = context,
+                                            subject = "ClinEdge CBT Score · ${session.title}",
+                                            text = shareText
+                                        )
+                                    },
+                                    modifier = Modifier.testTag("cbt_share_result_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Share,
+                                        contentDescription = "Share CBT score card",
+                                        tint = EditorialBannerKpiAccent
+                                    )
+                                }
+                                Button(
+                                    onClick = onExit,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = AcidLime,
+                                        contentColor = PureBlack
+                                    ),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("Done", fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
 

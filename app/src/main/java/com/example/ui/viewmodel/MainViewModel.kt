@@ -66,6 +66,8 @@ import com.example.data.model.Profession
 import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
+import com.example.data.model.QuestionNote
+import com.example.data.model.QuestionNotesLogic
 import com.example.data.model.QuestionSourceType
 import com.example.data.model.SessionCheckResult
 import com.example.data.model.SmartWeakTopicPlanner
@@ -558,6 +560,7 @@ class MainViewModel(
 
     val targetExamDateIso: StateFlow<String> = settings.targetExamDateIso
     val srsCards: StateFlow<Map<String, SrsCardState>> = settings.srsCards
+    val questionNotes: StateFlow<Map<String, QuestionNote>> = settings.questionNotes
 
     val lastSeenAnnouncementMs: StateFlow<Long> = settings.lastSeenAnnouncementMs
     val backgroundPushEnabled: StateFlow<Boolean> = settings.backgroundPushEnabled
@@ -1802,6 +1805,19 @@ class MainViewModel(
         val updated = SpacedRepetitionLogic.removeCard(settings.srsCards.value, questionId)
         settings.setSrsCards(updated)
         showMessage("Removed from SRS Mistake Notebook.")
+    }
+
+    fun saveQuestionNote(questionId: String, rawNote: String) {
+        val clean = QuestionNotesLogic.sanitizeNote(rawNote)
+        val updated = QuestionNotesLogic.upsertNote(settings.questionNotes.value, questionId, clean)
+        settings.setQuestionNotes(updated)
+        showMessage(if (clean.isBlank()) "Personal note cleared." else "Personal note saved to your Deck.")
+    }
+
+    fun deleteQuestionNote(questionId: String) {
+        val updated = QuestionNotesLogic.removeNote(settings.questionNotes.value, questionId)
+        settings.setQuestionNotes(updated)
+        showMessage("Personal note deleted.")
     }
 
     fun startSrsDueDrill() {

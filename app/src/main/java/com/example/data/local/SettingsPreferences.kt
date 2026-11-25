@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import com.example.data.model.AccountSessionLogic
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.PlatformCatalogDefaults
+import com.example.data.model.QuestionNote
+import com.example.data.model.QuestionNotesLogic
 import com.example.data.model.SpacedRepetitionLogic
 import com.example.data.model.SrsCardState
 import com.example.data.model.StudyGoalLogic
@@ -153,6 +155,11 @@ class SettingsPreferences(context: Context) {
         prefs.getString(KEY_TARGET_EXAM_DATE_ISO, "") ?: ""
     )
     val targetExamDateIso: StateFlow<String> = _targetExamDateIso.asStateFlow()
+
+    private val _questionNotes = MutableStateFlow(
+        QuestionNotesLogic.deserializeMap(prefs.getString(KEY_QUESTION_NOTES_JSON, null))
+    )
+    val questionNotes: StateFlow<Map<String, QuestionNote>> = _questionNotes.asStateFlow()
 
     private fun readDailyFreeQuotaUsed(): Int {
         val today = StudyGoalLogic.todayDateKey()
@@ -411,6 +418,12 @@ class SettingsPreferences(context: Context) {
         _targetExamDateIso.value = clean
     }
 
+    fun setQuestionNotes(notes: Map<String, QuestionNote>) {
+        val serialized = QuestionNotesLogic.serializeMap(notes)
+        prefs.edit().putString(KEY_QUESTION_NOTES_JSON, serialized).apply()
+        _questionNotes.value = notes
+    }
+
     fun getLastNotifiedAppUpdateVersion(): String =
         prefs.getString(KEY_LAST_NOTIFIED_APP_UPDATE_VERSION, "") ?: ""
 
@@ -615,6 +628,7 @@ class SettingsPreferences(context: Context) {
         private const val KEY_LAST_NOTIFIED_DIRECT_MS = "last_notified_direct_ms"
         private const val KEY_DISMISSED_BANNER_ANNOUNCEMENT_ID = "dismissed_banner_announcement_id"
         private const val KEY_SRS_CARDS_JSON = "srs_mistake_cards_json"
+        private const val KEY_QUESTION_NOTES_JSON = "personal_question_notes_json"
         private const val KEY_TARGET_EXAM_DATE_ISO = "target_exam_date_iso"
         private const val KEY_LAST_NOTIFIED_APP_UPDATE_VERSION = "last_notified_app_update_version"
         private const val KEY_BACKGROUND_PUSH_ENABLED = "background_push_enabled"
