@@ -229,7 +229,7 @@ fun SpecialtyTracksScreen(
                                 text = "LINKED CLINICAL STUDIO TOOLS",
                                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                                 fontWeight = FontWeight.Bold,
-                                color = editorial.acidLime
+                                color = editorial.acidLimeForeground
                             )
 
                             when (activeProjection.track) {
@@ -388,7 +388,7 @@ fun SpecialtyTracksScreen(
                                         text = if (proj.attemptedCount > 0) "${proj.accuracyPercent}%" else "NEW",
                                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isSelected) editorial.acidLime else MaterialTheme.colorScheme.onSurface
+                                        color = if (isSelected) editorial.acidLimeForeground else MaterialTheme.colorScheme.onSurface
                                     )
                                 }
                             }
@@ -483,7 +483,7 @@ private fun ActiveSpecialtyHeroCard(
                         text = if (projection.attemptedCount > 0) "${projection.accuracyPercent}% ACC" else "UNSTARTED",
                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                         fontWeight = FontWeight.Bold,
-                        color = editorial.acidLime
+                        color = editorial.acidLimeForeground
                     )
                 }
                 LinearProgressIndicator(
@@ -642,7 +642,7 @@ private fun LinkedToolActionRow(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = editorial.acidLime,
+                    tint = editorial.acidLimeForeground,
                     modifier = Modifier.size(20.dp)
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
@@ -664,7 +664,7 @@ private fun LinkedToolActionRow(
                 text = "OPEN →",
                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                 fontWeight = FontWeight.Bold,
-                color = editorial.acidLime
+                color = editorial.acidLimeForeground
             )
         }
     }

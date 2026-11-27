@@ -1854,10 +1854,7 @@ class MainViewModel(
         }
     }
 
-    fun selectTab(tab: MainTab) {
-        stopActiveTimer()
-        _practiceSession.value = null
-        _cbtSession.value = null
+    private fun closeAllOverlayScreens() {
         _subjectChaptersNav.value = null
         _isSettingsOpen.value = false
         _isProfileOpen.value = false
@@ -1871,22 +1868,18 @@ class MainViewModel(
         _isSpecialtyTracksOpen.value = false
         _isFlashcardStudioOpen.value = false
         _isGrandTestHubOpen.value = false
+    }
+
+    fun selectTab(tab: MainTab) {
+        stopActiveTimer()
+        _practiceSession.value = null
+        _cbtSession.value = null
+        closeAllOverlayScreens()
         _selectedTab.value = tab
     }
 
     fun openSettings() {
-        _subjectChaptersNav.value = null
-        _isProfileOpen.value = false
-        _isPlansOpen.value = false
-        _isAdminOpen.value = false
-        _isNotificationsOpen.value = false
-        _isDoubtBoxOpen.value = false
-        _isClinicalToolsOpen.value = false
-        _isEcgStudioOpen.value = false
-        _isIbqHubOpen.value = false
-        _isSpecialtyTracksOpen.value = false
-        _isFlashcardStudioOpen.value = false
-        _isGrandTestHubOpen.value = false
+        closeAllOverlayScreens()
         _isSettingsOpen.value = true
     }
 
@@ -1895,17 +1888,7 @@ class MainViewModel(
     }
 
     fun openProfile() {
-        _subjectChaptersNav.value = null
-        _isSettingsOpen.value = false
-        _isPlansOpen.value = false
-        _isAdminOpen.value = false
-        _isNotificationsOpen.value = false
-        _isDoubtBoxOpen.value = false
-        _isClinicalToolsOpen.value = false
-        _isEcgStudioOpen.value = false
-        _isIbqHubOpen.value = false
-        _isSpecialtyTracksOpen.value = false
-        _isGrandTestHubOpen.value = false
+        closeAllOverlayScreens()
         _isProfileOpen.value = true
     }
 
@@ -1916,18 +1899,8 @@ class MainViewModel(
     fun openPlans() {
         _plansExamLockContext.value = null
         _paywallPrompt.value = null
-        _subjectChaptersNav.value = null
         _isExamPickerOpen.value = false
-        _isSettingsOpen.value = false
-        _isProfileOpen.value = false
-        _isAdminOpen.value = false
-        _isNotificationsOpen.value = false
-        _isDoubtBoxOpen.value = false
-        _isClinicalToolsOpen.value = false
-        _isEcgStudioOpen.value = false
-        _isIbqHubOpen.value = false
-        _isSpecialtyTracksOpen.value = false
-        _isGrandTestHubOpen.value = false
+        closeAllOverlayScreens()
         _isPlansOpen.value = true
     }
 
@@ -1938,18 +1911,8 @@ class MainViewModel(
             currentUnlockedExamIds = sub.unlockedExamIds
         )
         _paywallPrompt.value = null
-        _subjectChaptersNav.value = null
         _isExamPickerOpen.value = false
-        _isSettingsOpen.value = false
-        _isProfileOpen.value = false
-        _isAdminOpen.value = false
-        _isNotificationsOpen.value = false
-        _isDoubtBoxOpen.value = false
-        _isClinicalToolsOpen.value = false
-        _isEcgStudioOpen.value = false
-        _isIbqHubOpen.value = false
-        _isSpecialtyTracksOpen.value = false
-        _isGrandTestHubOpen.value = false
+        closeAllOverlayScreens()
         _isPlansOpen.value = true
     }
 
@@ -1963,17 +1926,7 @@ class MainViewModel(
             showMessage("Admin Console is restricted to the app owner.")
             return
         }
-        _subjectChaptersNav.value = null
-        _isSettingsOpen.value = false
-        _isProfileOpen.value = false
-        _isPlansOpen.value = false
-        _isNotificationsOpen.value = false
-        _isDoubtBoxOpen.value = false
-        _isClinicalToolsOpen.value = false
-        _isEcgStudioOpen.value = false
-        _isIbqHubOpen.value = false
-        _isSpecialtyTracksOpen.value = false
-        _isGrandTestHubOpen.value = false
+        closeAllOverlayScreens()
         _isAdminOpen.value = true
         refreshAdminDashboard()
     }
@@ -1983,18 +1936,7 @@ class MainViewModel(
     }
 
     fun openClinicalTools(initialSection: Int = 0) {
-        _subjectChaptersNav.value = null
-        _isSettingsOpen.value = false
-        _isProfileOpen.value = false
-        _isPlansOpen.value = false
-        _isAdminOpen.value = false
-        _isNotificationsOpen.value = false
-        _isDoubtBoxOpen.value = false
-        _isGrandTestHubOpen.value = false
-        _isFlashcardStudioOpen.value = false
-        _isEcgStudioOpen.value = false
-        _isIbqHubOpen.value = false
-        _isSpecialtyTracksOpen.value = false
+        closeAllOverlayScreens()
         _clinicalToolsInitialSection.value = initialSection.coerceIn(0, 4)
         _isClinicalToolsOpen.value = true
     }
@@ -2004,18 +1946,7 @@ class MainViewModel(
     }
 
     fun openEcgStudio() {
-        _subjectChaptersNav.value = null
-        _isSettingsOpen.value = false
-        _isProfileOpen.value = false
-        _isPlansOpen.value = false
-        _isAdminOpen.value = false
-        _isNotificationsOpen.value = false
-        _isDoubtBoxOpen.value = false
-        _isGrandTestHubOpen.value = false
-        _isFlashcardStudioOpen.value = false
-        _isClinicalToolsOpen.value = false
-        _isIbqHubOpen.value = false
-        _isSpecialtyTracksOpen.value = false
+        closeAllOverlayScreens()
         _isEcgStudioOpen.value = true
     }
 
@@ -2024,18 +1955,7 @@ class MainViewModel(
     }
 
     fun openIbqHub(initialCategory: IbqCategory = IbqCategory.ALL) {
-        _subjectChaptersNav.value = null
-        _isSettingsOpen.value = false
-        _isProfileOpen.value = false
-        _isPlansOpen.value = false
-        _isAdminOpen.value = false
-        _isNotificationsOpen.value = false
-        _isDoubtBoxOpen.value = false
-        _isGrandTestHubOpen.value = false
-        _isFlashcardStudioOpen.value = false
-        _isClinicalToolsOpen.value = false
-        _isEcgStudioOpen.value = false
-        _isSpecialtyTracksOpen.value = false
+        closeAllOverlayScreens()
         _ibqHubInitialCategory.value = initialCategory
         _isIbqHubOpen.value = true
     }
@@ -2045,18 +1965,7 @@ class MainViewModel(
     }
 
     fun openSpecialtyTracks(initialTrack: SpecialtyTrack = SpecialtyTrack.CARDIOLOGY) {
-        _subjectChaptersNav.value = null
-        _isSettingsOpen.value = false
-        _isProfileOpen.value = false
-        _isPlansOpen.value = false
-        _isAdminOpen.value = false
-        _isNotificationsOpen.value = false
-        _isDoubtBoxOpen.value = false
-        _isGrandTestHubOpen.value = false
-        _isFlashcardStudioOpen.value = false
-        _isClinicalToolsOpen.value = false
-        _isEcgStudioOpen.value = false
-        _isIbqHubOpen.value = false
+        closeAllOverlayScreens()
         _specialtyTrackInitial.value = initialTrack
         _isSpecialtyTracksOpen.value = true
     }
@@ -2078,18 +1987,7 @@ class MainViewModel(
     }
 
     fun openFlashcardStudio() {
-        _subjectChaptersNav.value = null
-        _isSettingsOpen.value = false
-        _isProfileOpen.value = false
-        _isPlansOpen.value = false
-        _isAdminOpen.value = false
-        _isNotificationsOpen.value = false
-        _isDoubtBoxOpen.value = false
-        _isGrandTestHubOpen.value = false
-        _isClinicalToolsOpen.value = false
-        _isEcgStudioOpen.value = false
-        _isIbqHubOpen.value = false
-        _isSpecialtyTracksOpen.value = false
+        closeAllOverlayScreens()
         _isFlashcardStudioOpen.value = true
     }
 
@@ -2340,15 +2238,7 @@ class MainViewModel(
             )
             return
         }
-        _isSettingsOpen.value = false
-        _isProfileOpen.value = false
-        _isPlansOpen.value = false
-        _isAdminOpen.value = false
-        _isClinicalToolsOpen.value = false
-        _isEcgStudioOpen.value = false
-        _isIbqHubOpen.value = false
-        _isSpecialtyTracksOpen.value = false
-        _isGrandTestHubOpen.value = false
+        closeAllOverlayScreens()
         _chaptersHighYieldOnly.value = false
         _subjectChaptersNav.value = SubjectChaptersNavState(
             subjectCode = subjectCode,
@@ -4585,17 +4475,7 @@ class MainViewModel(
     // ------------------------------------------------------------------------
 
     fun openNotifications() {
-        _subjectChaptersNav.value = null
-        _isSettingsOpen.value = false
-        _isProfileOpen.value = false
-        _isPlansOpen.value = false
-        _isAdminOpen.value = false
-        _isDoubtBoxOpen.value = false
-        _isClinicalToolsOpen.value = false
-        _isEcgStudioOpen.value = false
-        _isIbqHubOpen.value = false
-        _isSpecialtyTracksOpen.value = false
-        _isGrandTestHubOpen.value = false
+        closeAllOverlayScreens()
         _isNotificationsOpen.value = true
         val newestAnnMs = _announcements.value.maxOfOrNull { it.createdAtMs } ?: System.currentTimeMillis()
         settings.markAnnouncementsSeenUpTo(maxOf(newestAnnMs, System.currentTimeMillis()))
@@ -4644,17 +4524,7 @@ class MainViewModel(
     }
 
     fun openDoubtBox(highlightDoubtId: String? = null) {
-        _subjectChaptersNav.value = null
-        _isSettingsOpen.value = false
-        _isProfileOpen.value = false
-        _isPlansOpen.value = false
-        _isAdminOpen.value = false
-        _isNotificationsOpen.value = false
-        _isClinicalToolsOpen.value = false
-        _isEcgStudioOpen.value = false
-        _isIbqHubOpen.value = false
-        _isSpecialtyTracksOpen.value = false
-        _isGrandTestHubOpen.value = false
+        closeAllOverlayScreens()
         _highlightedDoubtId.value = highlightDoubtId?.takeIf { it.isNotBlank() }
         _isDoubtBoxOpen.value = true
     }
@@ -5377,17 +5247,7 @@ class MainViewModel(
             showMessage("Weekly All-India Grand Test is currently dormant.")
             return
         }
-        _subjectChaptersNav.value = null
-        _isSettingsOpen.value = false
-        _isProfileOpen.value = false
-        _isPlansOpen.value = false
-        _isAdminOpen.value = false
-        _isNotificationsOpen.value = false
-        _isDoubtBoxOpen.value = false
-        _isClinicalToolsOpen.value = false
-        _isEcgStudioOpen.value = false
-        _isIbqHubOpen.value = false
-        _isSpecialtyTracksOpen.value = false
+        closeAllOverlayScreens()
         _isGrandTestHubOpen.value = true
         val targetId = _selectedGrandTestId.value
             ?: _publicGrandTests.value.firstOrNull { it.parsedStatus == GrandTestStatus.LIVE }?.effectiveTestId

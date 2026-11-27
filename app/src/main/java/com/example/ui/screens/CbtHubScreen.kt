@@ -223,14 +223,14 @@ fun CbtHubScreen(
                                 Icon(
                                     imageVector = Icons.Filled.EmojiEvents,
                                     contentDescription = null,
-                                    tint = AcidLime,
+                                    tint = editorial.acidLimeForeground,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Text(
                                     text = "WEEKLY ALL-INDIA GRAND TEST",
                                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                                     fontWeight = FontWeight.Bold,
-                                    color = AcidLime
+                                    color = editorial.acidLimeForeground
                                 )
                             }
                             Text(

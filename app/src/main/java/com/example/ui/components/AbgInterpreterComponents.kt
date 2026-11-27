@@ -149,7 +149,7 @@ fun AbgInterpreterWorkspace(
                         Icon(
                             imageVector = Icons.Filled.Biotech,
                             contentDescription = null,
-                            tint = editorial.acidLime,
+                            tint = editorial.acidLimeForeground,
                             modifier = Modifier.size(20.dp)
                         )
                         Column {

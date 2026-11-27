@@ -174,7 +174,7 @@ fun ClinicalToolsScreen(
                                 Icon(
                                     imageVector = Icons.Filled.MonitorHeart,
                                     contentDescription = null,
-                                    tint = editorial.acidLime,
+                                    tint = editorial.acidLimeForeground,
                                     modifier = Modifier.size(22.dp)
                                 )
                                 Column {

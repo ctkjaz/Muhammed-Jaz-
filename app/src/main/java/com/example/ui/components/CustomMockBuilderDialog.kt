@@ -120,7 +120,7 @@ fun CustomMockBuilderDialog(
                         Icon(
                             imageVector = Icons.Filled.Tune,
                             contentDescription = null,
-                            tint = editorial.acidLime,
+                            tint = editorial.acidLimeForeground,
                             modifier = Modifier.size(22.dp)
                         )
                         Column {
@@ -233,7 +233,7 @@ fun CustomMockBuilderDialog(
                         Text(
                             text = if (config.selectedSubjectCodes.isEmpty()) "All Selected" else "${config.selectedSubjectCodes.size} Selected",
                             style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                            color = editorial.acidLime,
+                            color = editorial.acidLimeForeground,
                             fontWeight = FontWeight.Bold
                         )
                     }

@@ -509,7 +509,7 @@ fun EcgStripCard(
                     Icon(
                         imageVector = if (urgency == EcgUrgency.STAT) Icons.Filled.WarningAmber else Icons.Filled.MonitorHeart,
                         contentDescription = null,
-                        tint = if (urgency == EcgUrgency.STAT) editorial.wrongText else editorial.acidLime,
+                        tint = if (urgency == EcgUrgency.STAT) editorial.wrongText else editorial.acidLimeForeground,
                         modifier = Modifier.size(20.dp)
                     )
                     Column(modifier = Modifier.weight(1f)) {

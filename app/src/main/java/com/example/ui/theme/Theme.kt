@@ -38,7 +38,10 @@ data class EditorialColors(
     val reviewText: Color,
     val accentDustyRoseText: Color,
     val unvisitedSwatch: Color
-)
+) {
+    /** High-contrast foreground accent safe for text/icons on card surfaces in both Light and Dark themes. */
+    val acidLimeForeground: Color get() = if (isDark) acidLime else accentDustyRoseText
+}
 
 private val LightEditorialColors = EditorialColors(
     isDark = false,

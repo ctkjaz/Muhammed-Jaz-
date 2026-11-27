@@ -199,7 +199,7 @@ fun IbqHubScreen(
                                         text = "CLINICAL VISUAL SPOTTER BANK",
                                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                                         fontWeight = FontWeight.Bold,
-                                        color = editorial.acidLime
+                                        color = editorial.acidLimeForeground
                                     )
                                     Text(
                                         text = "Visuals are auto-mixed into daily & 25Q drills",
@@ -403,7 +403,7 @@ fun IbqHubScreen(
                                         Icon(
                                             imageVector = Icons.Filled.MonitorHeart,
                                             contentDescription = null,
-                                            tint = editorial.acidLime,
+                                            tint = editorial.acidLimeForeground,
                                             modifier = Modifier.size(20.dp)
                                         )
                                         Column {
@@ -423,7 +423,7 @@ fun IbqHubScreen(
                                         text = "OPEN →",
                                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
                                         fontWeight = FontWeight.Bold,
-                                        color = editorial.acidLime
+                                        color = editorial.acidLimeForeground
                                     )
                                 }
                             }
@@ -635,7 +635,7 @@ private fun IbqGalleryCard(
                         Text(
                             text = "UNSEEN",
                             style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                            color = editorial.acidLime,
+                            color = editorial.acidLimeForeground,
                             fontWeight = FontWeight.Bold
                         )
                     }
