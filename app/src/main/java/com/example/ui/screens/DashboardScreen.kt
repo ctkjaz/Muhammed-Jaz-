@@ -60,8 +60,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.filled.Biotech
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.MedicalServices
+import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
@@ -151,6 +153,8 @@ fun DashboardScreen(
     onAnswerQotd: (Int) -> Unit = {},
     onUpdateDailyGoal: ((Int) -> Unit)? = null,
     gamificationState: GamificationState = GamificationState(),
+    onOpenAbgInterpreter: () -> Unit = {},
+    onOpenEcgStudio: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (!state.isLoaded) {
@@ -791,7 +795,7 @@ fun DashboardScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "6 Calcs · 36 Labs",
+                                    text = "6 Calcs · ABG · Labs",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -834,6 +838,81 @@ fun DashboardScreen(
                                 )
                                 Text(
                                     text = if (srsDueCount > 0) "Tap to drill now" else "1d · 3d · 7d · 14d",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Card(
+                            onClick = onOpenAbgInterpreter,
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                            border = BorderStroke(1.dp, editorial.borderSubtle),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("dashboard_abg_interpreter_card")
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Biotech,
+                                    contentDescription = null,
+                                    tint = editorial.acidLime,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "ABG Interpreter",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Winter's · 12 Cases",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Card(
+                            onClick = onOpenEcgStudio,
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                            border = BorderStroke(1.dp, editorial.borderSubtle),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("dashboard_ecg_studio_card")
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.MonitorHeart,
+                                    contentDescription = null,
+                                    tint = editorial.acidLime,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "ECG Studio",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "14 ICU Strips · Zoom",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

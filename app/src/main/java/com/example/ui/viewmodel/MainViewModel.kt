@@ -553,6 +553,12 @@ class MainViewModel(
     private val _isClinicalToolsOpen = MutableStateFlow(false)
     val isClinicalToolsOpen: StateFlow<Boolean> = _isClinicalToolsOpen.asStateFlow()
 
+    private val _clinicalToolsInitialSection = MutableStateFlow(0)
+    val clinicalToolsInitialSection: StateFlow<Int> = _clinicalToolsInitialSection.asStateFlow()
+
+    private val _isEcgStudioOpen = MutableStateFlow(false)
+    val isEcgStudioOpen: StateFlow<Boolean> = _isEcgStudioOpen.asStateFlow()
+
     private val _isFlashcardStudioOpen = MutableStateFlow(false)
     val isFlashcardStudioOpen: StateFlow<Boolean> = _isFlashcardStudioOpen.asStateFlow()
 
@@ -1845,6 +1851,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isEcgStudioOpen.value = false
         _isFlashcardStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _selectedTab.value = tab
@@ -1858,6 +1865,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isEcgStudioOpen.value = false
         _isFlashcardStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _isSettingsOpen.value = true
@@ -1875,6 +1883,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isEcgStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _isProfileOpen.value = true
     }
@@ -1894,6 +1903,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isEcgStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _isPlansOpen.value = true
     }
@@ -1913,6 +1923,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isEcgStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _isPlansOpen.value = true
     }
@@ -1934,6 +1945,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isEcgStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _isAdminOpen.value = true
         refreshAdminDashboard()
@@ -1943,7 +1955,7 @@ class MainViewModel(
         _isAdminOpen.value = false
     }
 
-    fun openClinicalTools() {
+    fun openClinicalTools(initialSection: Int = 0) {
         _subjectChaptersNav.value = null
         _isSettingsOpen.value = false
         _isProfileOpen.value = false
@@ -1953,11 +1965,43 @@ class MainViewModel(
         _isDoubtBoxOpen.value = false
         _isGrandTestHubOpen.value = false
         _isFlashcardStudioOpen.value = false
+        _isEcgStudioOpen.value = false
+        _clinicalToolsInitialSection.value = initialSection.coerceIn(0, 4)
         _isClinicalToolsOpen.value = true
     }
 
     fun closeClinicalTools() {
         _isClinicalToolsOpen.value = false
+    }
+
+    fun openEcgStudio() {
+        _subjectChaptersNav.value = null
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = false
+        _isPlansOpen.value = false
+        _isAdminOpen.value = false
+        _isNotificationsOpen.value = false
+        _isDoubtBoxOpen.value = false
+        _isGrandTestHubOpen.value = false
+        _isFlashcardStudioOpen.value = false
+        _isClinicalToolsOpen.value = false
+        _isEcgStudioOpen.value = true
+    }
+
+    fun closeEcgStudio() {
+        _isEcgStudioOpen.value = false
+    }
+
+    fun recordClinicalModulePracticeAnswer(caseId: String, isCorrect: Boolean) {
+        val gamResult = GamificationLogic.recordQuestionAnswer(
+            current = settings.gamificationState.value,
+            questionId = "clinical_$caseId",
+            isCorrect = isCorrect,
+            lifetimeAnsweredCount = mainState.value.overall.totalAttempts + 1,
+            longestStreakDays = settings.studyGoalState.value.longestStreakDays
+        )
+        applyGamificationResult(gamResult, announceMilestones = true)
+        recordDailyStudyProgress(answeredDelta = 1)
     }
 
     fun openFlashcardStudio() {
@@ -1970,6 +2014,7 @@ class MainViewModel(
         _isDoubtBoxOpen.value = false
         _isGrandTestHubOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isEcgStudioOpen.value = false
         _isFlashcardStudioOpen.value = true
     }
 
@@ -2158,6 +2203,7 @@ class MainViewModel(
         _isPlansOpen.value = false
         _isAdminOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isEcgStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _chaptersHighYieldOnly.value = false
         _subjectChaptersNav.value = SubjectChaptersNavState(
@@ -4386,6 +4432,7 @@ class MainViewModel(
         _isAdminOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isEcgStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _isNotificationsOpen.value = true
         val newestAnnMs = _announcements.value.maxOfOrNull { it.createdAtMs } ?: System.currentTimeMillis()
@@ -4442,6 +4489,7 @@ class MainViewModel(
         _isAdminOpen.value = false
         _isNotificationsOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isEcgStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _highlightedDoubtId.value = highlightDoubtId?.takeIf { it.isNotBlank() }
         _isDoubtBoxOpen.value = true
@@ -5173,6 +5221,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isEcgStudioOpen.value = false
         _isGrandTestHubOpen.value = true
         val targetId = _selectedGrandTestId.value
             ?: _publicGrandTests.value.firstOrNull { it.parsedStatus == GrandTestStatus.LIVE }?.effectiveTestId

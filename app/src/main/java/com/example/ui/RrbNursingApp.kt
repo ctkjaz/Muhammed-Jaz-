@@ -133,6 +133,7 @@ import com.example.ui.screens.BookmarksScreen
 import com.example.ui.screens.CbtExamScreen
 import com.example.ui.screens.CbtHubScreen
 import com.example.ui.screens.ClinicalToolsScreen
+import com.example.ui.screens.EcgLearningStudioScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.DeviceLockSupportDialog
 import com.example.ui.screens.DoubtBoxScreen
@@ -343,6 +344,8 @@ fun RrbNursingApp(vm: MainViewModel) {
         val flagQuestionTarget by vm.flagQuestionTarget.collectAsStateWithLifecycle()
         val isFlagBusy by vm.isFlagBusy.collectAsStateWithLifecycle()
         val isClinicalToolsOpen by vm.isClinicalToolsOpen.collectAsStateWithLifecycle()
+        val clinicalToolsInitialSection by vm.clinicalToolsInitialSection.collectAsStateWithLifecycle()
+        val isEcgStudioOpen by vm.isEcgStudioOpen.collectAsStateWithLifecycle()
         val isFlashcardStudioOpen by vm.isFlashcardStudioOpen.collectAsStateWithLifecycle()
         val masteredFlashcardIds by vm.masteredFlashcardIds.collectAsStateWithLifecycle()
         val dailyFocusProgress by vm.dailyFocusProgress.collectAsStateWithLifecycle()
@@ -518,7 +521,7 @@ fun RrbNursingApp(vm: MainViewModel) {
 
         val inActiveSession = practiceSession != null || cbtSession != null
         val inSubScreen = isSettingsOpen || isProfileOpen || isPlansOpen || isAdminOpen ||
-            isNotificationsOpen || isDoubtBoxOpen || isClinicalToolsOpen || isFlashcardStudioOpen || isGrandTestHubOpen || subjectChaptersNav != null
+            isNotificationsOpen || isDoubtBoxOpen || isClinicalToolsOpen || isEcgStudioOpen || isFlashcardStudioOpen || isGrandTestHubOpen || subjectChaptersNav != null
         val shouldKeepScreenOn = keepScreenOn && inActiveSession
 
         DisposableEffect(context, shouldKeepScreenOn) {
@@ -1003,8 +1006,18 @@ fun RrbNursingApp(vm: MainViewModel) {
                                 isClinicalToolsOpen -> {
                                     ClinicalToolsScreen(
                                         onBack = vm::closeClinicalTools,
+                                        initialSection = clinicalToolsInitialSection,
                                         dailyFocusProgress = dailyFocusProgress,
-                                        onFocusSessionCompleted = vm::recordFocusSessionCompleted
+                                        onFocusSessionCompleted = vm::recordFocusSessionCompleted,
+                                        onOpenEcgStudio = vm::openEcgStudio,
+                                        onAbgPracticeAnswered = vm::recordClinicalModulePracticeAnswer
+                                    )
+                                }
+
+                                isEcgStudioOpen -> {
+                                    EcgLearningStudioScreen(
+                                        onBack = vm::closeEcgStudio,
+                                        onPracticeAnswer = vm::recordClinicalModulePracticeAnswer
                                     )
                                 }
 
@@ -1237,7 +1250,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             examRoadmap = examRoadmap,
                                             srsDueCount = srsNotebookSummary.dueEntries.size,
                                             onSetTargetExamDate = vm::setTargetExamDate,
-                                            onOpenClinicalTools = vm::openClinicalTools,
+                                            onOpenClinicalTools = { vm.openClinicalTools(0) },
                                             onStartSrsDueDrill = vm::startSrsDueDrill,
                                             grandTestEnabled = grandTestEnabled,
                                             liveGrandTest = liveGrandTest,
@@ -1254,7 +1267,9 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             qotdCompletion = qotdCompletion,
                                             onAnswerQotd = vm::answerQuestionOfTheDay,
                                             onUpdateDailyGoal = vm::setDailyGoalQuestions,
-                                            gamificationState = gamificationState
+                                            gamificationState = gamificationState,
+                                            onOpenAbgInterpreter = { vm.openClinicalTools(1) },
+                                            onOpenEcgStudio = vm::openEcgStudio
                                         )
 
                                         MainTab.SUBJECTS -> SubjectsHubScreen(

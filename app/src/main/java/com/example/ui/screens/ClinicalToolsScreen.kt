@@ -20,8 +20,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.MedicalInformation
+import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Card
@@ -34,6 +36,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +56,7 @@ import com.example.data.model.LabValueCategory
 import com.example.data.model.MnemonicCategory
 import com.example.data.model.NormalLabValue
 import com.example.data.model.NormalLabValuesCatalog
+import com.example.ui.components.AbgInterpreterWorkspace
 import com.example.ui.components.ClinicalMnemonicCard
 import com.example.ui.components.FocusStudyTimerCard
 import com.example.ui.components.MonochromeFilterPill
@@ -74,13 +78,19 @@ private enum class ClinicalCalcType(val label: String) {
 fun ClinicalToolsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    initialSection: Int = 0,
     dailyFocusProgress: DailyFocusProgress = DailyFocusProgress(),
-    onFocusSessionCompleted: (FocusTimerPreset) -> Unit = {}
+    onFocusSessionCompleted: (FocusTimerPreset) -> Unit = {},
+    onOpenEcgStudio: (() -> Unit)? = null,
+    onAbgPracticeAnswered: ((String, Boolean) -> Unit)? = null
 ) {
     BackHandler(onBack = onBack)
     val editorial = MaterialTheme.editorialColors
-    // 0 = Calculators, 1 = Normal Lab Values, 2 = High-Yield Mnemonics, 3 = Focus Timer
-    var activeSection by remember { mutableIntStateOf(0) }
+    // 0 = Calcs, 1 = ABG, 2 = Labs, 3 = Mnemonics, 4 = Focus Timer
+    var activeSection by remember { mutableIntStateOf(initialSection.coerceIn(0, 4)) }
+    LaunchedEffect(initialSection) {
+        activeSection = initialSection.coerceIn(0, 4)
+    }
     var activeCalc by remember { mutableStateOf(ClinicalCalcType.IV_DRIP) }
     var labQuery by remember { mutableStateOf("") }
     var labCategory by remember { mutableStateOf<LabValueCategory?>(null) }
@@ -137,15 +147,69 @@ fun ClinicalToolsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            if (onOpenEcgStudio != null) {
+                item(key = "ecg_studio_launcher_banner") {
+                    Card(
+                        onClick = onOpenEcgStudio,
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                        border = BorderStroke(1.dp, editorial.acidLime),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("clinical_tools_open_ecg_btn")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.MonitorHeart,
+                                    contentDescription = null,
+                                    tint = editorial.acidLime,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Column {
+                                    Text(
+                                        text = "ECG Learning Studio",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "14 calibrated ICU strips · Zoomable grid · Interpret & Reveal",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = "Open ECG Studio",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
             item(key = "tools_section_switch") {
                 SegmentedPillBar(
-                    options = listOf(0, 1, 2, 3),
+                    options = listOf(0, 1, 2, 3, 4),
                     selected = activeSection,
                     labelOf = {
                         when (it) {
                             0 -> "Calcs"
-                            1 -> "Labs"
-                            2 -> "Mnemonics"
+                            1 -> "ABG"
+                            2 -> "Labs"
+                            3 -> "Tricks"
                             else -> "Focus"
                         }
                     },
@@ -184,6 +248,12 @@ fun ClinicalToolsScreen(
                     }
                 }
             } else if (activeSection == 1) {
+                item(key = "abg_interpreter_workspace") {
+                    AbgInterpreterWorkspace(
+                        onPracticeCaseAnswered = onAbgPracticeAnswered
+                    )
+                }
+            } else if (activeSection == 2) {
                 item(key = "lab_search") {
                     OutlinedTextField(
                         value = labQuery,
@@ -223,7 +293,7 @@ fun ClinicalToolsScreen(
                 items(items = filteredLabs, key = { it.name }) { entry ->
                     LabValueCard(entry)
                 }
-            } else if (activeSection == 2) {
+            } else if (activeSection == 3) {
                 item(key = "mnemonic_search") {
                     OutlinedTextField(
                         value = mnemonicQuery,
