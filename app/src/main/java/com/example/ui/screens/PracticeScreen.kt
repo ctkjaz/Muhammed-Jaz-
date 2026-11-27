@@ -39,6 +39,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.QuestionAnswer
 import androidx.compose.material.icons.filled.StickyNote2
 import androidx.compose.material.icons.filled.Timer
@@ -125,6 +126,8 @@ fun PracticeScreen(
     questionNotes: Map<String, QuestionNote> = emptyMap(),
     onSaveQuestionNote: (String, String) -> Unit = { _, _ -> },
     onDeleteQuestionNote: (String) -> Unit = {},
+    isCurrentInSrs: Boolean = false,
+    onQueueToSrs: (String) -> Unit = {},
     onExit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -410,6 +413,21 @@ fun PracticeScreen(
                                         imageVector = Icons.Filled.QuestionAnswer,
                                         contentDescription = "Ask a doubt on this question",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { onQueueToSrs(q.id) },
+                                    modifier = Modifier.testTag("practice_srs_queue_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Psychology,
+                                        contentDescription = if (isCurrentInSrs) "Refresh question in SRS review queue" else "Add question to SRS review queue",
+                                        tint = if (isCurrentInSrs) {
+                                            if (editorial.isDark) AcidLime else PureBlack
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }

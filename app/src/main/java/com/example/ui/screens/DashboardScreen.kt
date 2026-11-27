@@ -62,6 +62,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.filled.Biotech
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Psychology
@@ -156,6 +157,7 @@ fun DashboardScreen(
     gamificationState: GamificationState = GamificationState(),
     onOpenAbgInterpreter: () -> Unit = {},
     onOpenEcgStudio: () -> Unit = {},
+    onOpenSpecialtyTracks: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (!state.isLoaded) {
@@ -1401,6 +1403,13 @@ fun DashboardScreen(
             item {
                 val pyqCount = stagePool.count { it.question.isPyqTagged }
                 val shortcuts = buildList {
+                    add(
+                        Triple(
+                            "Specialty Tracks",
+                            "Cardiology · ICU · OBG · Peds",
+                            Icons.Filled.LocalHospital
+                        ) to onOpenSpecialtyTracks
+                    )
                     if (imageSpotterCount > 0) {
                         add(
                             Triple(

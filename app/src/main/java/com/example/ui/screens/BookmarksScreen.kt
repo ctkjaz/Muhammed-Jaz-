@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
@@ -82,6 +83,8 @@ fun BookmarksScreen(
     onResetSrsCard: (String) -> Unit = {},
     onMarkSrsMastered: (String) -> Unit = {},
     onRemoveSrsCard: (String) -> Unit = {},
+    onQueueQuestionToSrs: (String) -> Unit = {},
+    onQueueAllBookmarkedToSrs: () -> Unit = {},
     questionNotes: Map<String, QuestionNote> = emptyMap(),
     onSaveQuestionNote: (String, String) -> Unit = { _, _ -> },
     onDeleteQuestionNote: (String) -> Unit = {},
@@ -379,6 +382,54 @@ fun BookmarksScreen(
                             )
                         }
                     } else {
+                        if (activeTab == DeckTab.BOOKMARKS) {
+                            item(key = "deck_bookmarks_srs_banner") {
+                                Card(
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                                    border = BorderStroke(1.dp, editorial.acidLime.copy(alpha = 0.55f)),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Psychology,
+                                            contentDescription = null,
+                                            tint = if (editorial.isDark) editorial.acidLime else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text(
+                                                text = "Spaced Repetition Sync",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "Add saved MCQs to Box 1d for scheduled 1d→14d recall.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        OutlinedButton(
+                                            onClick = onQueueAllBookmarkedToSrs,
+                                            shape = RoundedCornerShape(10.dp),
+                                            border = BorderStroke(1.dp, editorial.acidLime.copy(alpha = 0.75f)),
+                                            modifier = Modifier
+                                                .heightIn(min = 48.dp)
+                                                .testTag("deck_queue_bookmarks_srs_btn")
+                                        ) {
+                                            Text("Queue All", fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         itemsIndexed(activeList, key = { _, item -> item.id }) { idx, item ->
                             QuestionSummaryCard(
                                 item = item,

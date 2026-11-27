@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -31,7 +32,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -45,6 +49,7 @@ import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
 import com.example.data.model.SubjectCatalog
 import com.example.data.subscription.EntitlementEvaluator
+import com.example.ui.components.CustomMockBuilderDialog
 import com.example.ui.components.SegmentedPillBar
 import com.example.ui.theme.AcidLime
 import com.example.ui.theme.MonoFontFamily
@@ -64,6 +69,7 @@ fun CbtHubScreen(
     onStartStandardMock: (Int, Int?, String, Boolean) -> Unit,
     onStartNorcetMainsMock: (Int, Int, String) -> Unit,
     onStartCustomCbt: (List<QuestionItem>, String, Int?) -> Unit,
+    onStartConfiguredCustomCbt: ((List<QuestionItem>, String, Boolean, Int?, Double) -> Unit)? = null,
     onPracticePredictedBank: (List<QuestionItem>, String) -> Unit,
     onOpenTimedPracticeConfig: () -> Unit,
     grandTestEnabled: Boolean = false,
@@ -72,6 +78,7 @@ fun CbtHubScreen(
     modifier: Modifier = Modifier
 ) {
     val editorial = MaterialTheme.editorialColors
+    var showCustomBuilder by remember { mutableStateOf(false) }
     val activeExam = state.activeExam
     val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExam?.id)
     val isPureNursing = PlatformCatalogDefaults.examIsPureNursing(activeExam?.id)
@@ -256,6 +263,66 @@ fun CbtHubScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
+                        }
+                    }
+                }
+            }
+
+            // Custom Mock Test Builder Card (Phase 5)
+            item(key = "cbt_custom_mock_builder_card") {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = editorial.cardSurface),
+                    border = BorderStroke(1.dp, editorial.acidLime.copy(alpha = 0.6f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Tune,
+                                contentDescription = null,
+                                tint = if (editorial.isDark) editorial.acidLime else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "CUSTOM MOCK BUILDER",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                fontWeight = FontWeight.Bold,
+                                color = if (editorial.isDark) editorial.acidLime else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Text(
+                            text = "Build Your Own CBT Exam",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Pick exact question count (15–100), subjects, Fresh/Mistake/Hard filter, Visual IBQs, countdown timer & negative marking.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(
+                            onClick = { showCustomBuilder = true },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = editorial.acidLime,
+                                contentColor = editorial.onAcidLime
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .testTag("cbt_custom_builder_btn")
+                        ) {
+                            Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Build Custom Mock", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -711,6 +778,23 @@ fun CbtHubScreen(
                     }
                 }
             }
+        }
+
+        if (showCustomBuilder) {
+            CustomMockBuilderDialog(
+                availableQuestions = stagePool,
+                defaultSecondsPerQuestion = secondsPerQuestion,
+                defaultNegativePenalty = activeExam?.negativeMarks ?: 0.33,
+                onDismiss = { showCustomBuilder = false },
+                onLaunchCustomMock = { items, title, hasCountdown, durationMinutes, negativeMarks ->
+                    showCustomBuilder = false
+                    if (onStartConfiguredCustomCbt != null) {
+                        onStartConfiguredCustomCbt(items, title, hasCountdown, durationMinutes, negativeMarks)
+                    } else {
+                        onStartCustomCbt(items, title, durationMinutes)
+                    }
+                }
+            )
         }
     }
 }

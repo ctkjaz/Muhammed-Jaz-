@@ -149,6 +149,7 @@ import com.example.ui.screens.PracticeScreen
 import com.example.ui.screens.ProfileDrawerContent
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.SettingsScreen
+import com.example.ui.screens.SpecialtyTracksScreen
 import com.example.ui.screens.StatsScreen
 import com.example.ui.screens.SubjectsHubScreen
 import com.example.ui.theme.RrbNursingTheme
@@ -349,6 +350,8 @@ fun RrbNursingApp(vm: MainViewModel) {
         val isEcgStudioOpen by vm.isEcgStudioOpen.collectAsStateWithLifecycle()
         val isIbqHubOpen by vm.isIbqHubOpen.collectAsStateWithLifecycle()
         val ibqHubInitialCategory by vm.ibqHubInitialCategory.collectAsStateWithLifecycle()
+        val isSpecialtyTracksOpen by vm.isSpecialtyTracksOpen.collectAsStateWithLifecycle()
+        val specialtyTrackInitial by vm.specialtyTrackInitial.collectAsStateWithLifecycle()
         val isFlashcardStudioOpen by vm.isFlashcardStudioOpen.collectAsStateWithLifecycle()
         val masteredFlashcardIds by vm.masteredFlashcardIds.collectAsStateWithLifecycle()
         val dailyFocusProgress by vm.dailyFocusProgress.collectAsStateWithLifecycle()
@@ -524,7 +527,7 @@ fun RrbNursingApp(vm: MainViewModel) {
 
         val inActiveSession = practiceSession != null || cbtSession != null
         val inSubScreen = isSettingsOpen || isProfileOpen || isPlansOpen || isAdminOpen ||
-            isNotificationsOpen || isDoubtBoxOpen || isClinicalToolsOpen || isEcgStudioOpen || isIbqHubOpen || isFlashcardStudioOpen || isGrandTestHubOpen || subjectChaptersNav != null
+            isNotificationsOpen || isDoubtBoxOpen || isClinicalToolsOpen || isEcgStudioOpen || isIbqHubOpen || isSpecialtyTracksOpen || isFlashcardStudioOpen || isGrandTestHubOpen || subjectChaptersNav != null
         val shouldKeepScreenOn = keepScreenOn && inActiveSession
 
         DisposableEffect(context, shouldKeepScreenOn) {
@@ -918,6 +921,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         questionNotes = questionNotes,
                                         onSaveQuestionNote = vm::saveQuestionNote,
                                         onDeleteQuestionNote = vm::deleteQuestionNote,
+                                        isCurrentInSrs = currentQ != null && currentQ.id in srsCards,
+                                        onQueueToSrs = vm::queueQuestionToSrs,
                                         onExit = vm::exitPracticeOrCbt
                                     )
                                 }
@@ -1037,6 +1042,24 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         onBack = vm::closeIbqHub,
                                         onStartPractice = { list, title -> vm.startPractice(list, title) },
                                         onOpenEcgStudio = vm::openEcgStudio
+                                    )
+                                }
+
+                                isSpecialtyTracksOpen -> {
+                                    val unifiedPool = remember(state.stageQuestions, state.questions, state.crossExamQuestions) {
+                                        val primary = state.stageQuestions.ifEmpty { state.questions }
+                                        (primary + state.crossExamQuestions).distinctBy { it.id }
+                                    }
+                                    SpecialtyTracksScreen(
+                                        allQuestions = unifiedPool,
+                                        initialTrack = specialtyTrackInitial,
+                                        onBack = vm::closeSpecialtyTracks,
+                                        onStartPractice = { list, title -> vm.startPractice(list, title) },
+                                        onOpenEcgStudio = vm::openEcgStudio,
+                                        onOpenAbgInterpreter = { vm.openClinicalTools(1) },
+                                        onOpenClinicalCalcs = { vm.openClinicalTools(0) },
+                                        onOpenIbqHubCategory = { cat -> vm.openIbqHub(cat) },
+                                        onOpenFlashcardStudio = vm::openFlashcardStudio
                                     )
                                 }
 
@@ -1291,7 +1314,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onUpdateDailyGoal = vm::setDailyGoalQuestions,
                                             gamificationState = gamificationState,
                                             onOpenAbgInterpreter = { vm.openClinicalTools(1) },
-                                            onOpenEcgStudio = vm::openEcgStudio
+                                            onOpenEcgStudio = vm::openEcgStudio,
+                                            onOpenSpecialtyTracks = { vm.openSpecialtyTracks() }
                                         )
 
                                         MainTab.SUBJECTS -> SubjectsHubScreen(
@@ -1319,6 +1343,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onStartCbtCustom = { list, title -> vm.startCbtCustom(list, title) },
                                             onOpenImporter = vm::openImporter,
                                             onOpenIbqHub = { vm.openIbqHub() },
+                                            onOpenSpecialtyTracks = { vm.openSpecialtyTracks() },
                                             subscription = subscriptionState
                                         )
 
@@ -1330,6 +1355,15 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onStartStandardMock = vm::startCbtStandardMock,
                                             onStartNorcetMainsMock = vm::startNorcetMainsMock,
                                             onStartCustomCbt = { list, title, mins -> vm.startCbtCustom(list, title, mins) },
+                                            onStartConfiguredCustomCbt = { list, title, hasTimer, mins, neg ->
+                                                vm.startCbtCustom(
+                                                    items = list,
+                                                    title = title,
+                                                    durationMinutes = mins,
+                                                    hasCountdownOverride = hasTimer,
+                                                    negativeMarksOverride = neg
+                                                )
+                                            },
                                             onPracticePredictedBank = { list, title -> vm.startPractice(list, title) },
                                             onOpenTimedPracticeConfig = { vm.openTimedPracticeConfig() },
                                             grandTestEnabled = grandTestEnabled,
@@ -1362,6 +1396,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onResetSrsCard = vm::resetSrsCard,
                                             onMarkSrsMastered = vm::markSrsCardMastered,
                                             onRemoveSrsCard = vm::removeSrsCard,
+                                            onQueueQuestionToSrs = vm::queueQuestionToSrs,
+                                            onQueueAllBookmarkedToSrs = vm::queueAllBookmarkedToSrs,
                                             questionNotes = questionNotes,
                                             onSaveQuestionNote = vm::saveQuestionNote,
                                             onDeleteQuestionNote = vm::deleteQuestionNote

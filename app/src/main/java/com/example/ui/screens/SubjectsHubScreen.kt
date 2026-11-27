@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -88,6 +89,7 @@ fun SubjectsHubScreen(
     onOpenImporter: () -> Unit,
     modifier: Modifier = Modifier,
     onOpenIbqHub: () -> Unit = {},
+    onOpenSpecialtyTracks: () -> Unit = {},
     subscription: SubscriptionUiState = SubscriptionUiState()
 ) {
     val editorial = MaterialTheme.editorialColors
@@ -130,53 +132,84 @@ fun SubjectsHubScreen(
                 )
             }
 
-            if (totalIbqCount > 0) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Surface(
-                    onClick = onOpenIbqHub,
+                    onClick = onOpenSpecialtyTracks,
                     shape = RoundedCornerShape(14.dp),
                     color = editorial.cardSurface,
-                    border = BorderStroke(1.dp, editorial.borderSubtle),
+                    border = BorderStroke(1.dp, editorial.acidLime.copy(alpha = 0.55f)),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("subjects_ibq_hub_banner")
+                        .weight(1f)
+                        .heightIn(min = 60.dp)
+                        .testTag("subjects_specialty_tracks_banner")
                 ) {
                     Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.LocalHospital,
+                            contentDescription = null,
+                            tint = if (editorial.isDark) editorial.acidLime else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Specialty Tracks (4)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = "Cardio · ICU · OBG · Peds",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+                if (totalIbqCount > 0) {
+                    Surface(
+                        onClick = onOpenIbqHub,
+                        shape = RoundedCornerShape(14.dp),
+                        color = editorial.cardSurface,
+                        border = BorderStroke(1.dp, editorial.borderSubtle),
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .weight(1f)
+                            .heightIn(min = 60.dp)
+                            .testTag("subjects_ibq_hub_banner")
                     ) {
                         Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.weight(1f)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Image,
                                 contentDescription = null,
-                                tint = editorial.acidLime,
+                                tint = if (editorial.isDark) editorial.acidLime else MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(18.dp)
                             )
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Image-Based Questions Hub ($totalIbqCount)",
+                                    text = "IBQ Hub ($totalIbqCount)",
                                     style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
                                 )
                                 Text(
-                                    text = "ECG · Airway/OT · OBG/CTG · CXR · Devices",
+                                    text = "ECG · CTG · CXR · OT",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
                                 )
                             }
                         }
-                        Text(
-                            text = "OPEN →",
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                            fontWeight = FontWeight.Bold,
-                            color = editorial.acidLime
-                        )
                     }
                 }
             }

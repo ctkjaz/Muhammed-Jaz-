@@ -65,6 +65,7 @@ import com.example.data.model.Flashcard
 import com.example.data.model.FocusTimerLogic
 import com.example.data.model.IbqCategory
 import com.example.data.model.IbqHubLogic
+import com.example.data.model.SpecialtyTrack
 import com.example.data.model.FocusTimerPreset
 import com.example.data.model.GamificationLogic
 import com.example.data.model.GamificationState
@@ -566,6 +567,12 @@ class MainViewModel(
 
     private val _ibqHubInitialCategory = MutableStateFlow(IbqCategory.ALL)
     val ibqHubInitialCategory: StateFlow<IbqCategory> = _ibqHubInitialCategory.asStateFlow()
+
+    private val _isSpecialtyTracksOpen = MutableStateFlow(false)
+    val isSpecialtyTracksOpen: StateFlow<Boolean> = _isSpecialtyTracksOpen.asStateFlow()
+
+    private val _specialtyTrackInitial = MutableStateFlow(SpecialtyTrack.CARDIOLOGY)
+    val specialtyTrackInitial: StateFlow<SpecialtyTrack> = _specialtyTrackInitial.asStateFlow()
 
     private val _isFlashcardStudioOpen = MutableStateFlow(false)
     val isFlashcardStudioOpen: StateFlow<Boolean> = _isFlashcardStudioOpen.asStateFlow()
@@ -1861,6 +1868,7 @@ class MainViewModel(
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
         _isIbqHubOpen.value = false
+        _isSpecialtyTracksOpen.value = false
         _isFlashcardStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _selectedTab.value = tab
@@ -1876,6 +1884,7 @@ class MainViewModel(
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
         _isIbqHubOpen.value = false
+        _isSpecialtyTracksOpen.value = false
         _isFlashcardStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _isSettingsOpen.value = true
@@ -1895,6 +1904,7 @@ class MainViewModel(
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
         _isIbqHubOpen.value = false
+        _isSpecialtyTracksOpen.value = false
         _isGrandTestHubOpen.value = false
         _isProfileOpen.value = true
     }
@@ -1916,6 +1926,7 @@ class MainViewModel(
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
         _isIbqHubOpen.value = false
+        _isSpecialtyTracksOpen.value = false
         _isGrandTestHubOpen.value = false
         _isPlansOpen.value = true
     }
@@ -1937,6 +1948,7 @@ class MainViewModel(
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
         _isIbqHubOpen.value = false
+        _isSpecialtyTracksOpen.value = false
         _isGrandTestHubOpen.value = false
         _isPlansOpen.value = true
     }
@@ -1960,6 +1972,7 @@ class MainViewModel(
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
         _isIbqHubOpen.value = false
+        _isSpecialtyTracksOpen.value = false
         _isGrandTestHubOpen.value = false
         _isAdminOpen.value = true
         refreshAdminDashboard()
@@ -1981,6 +1994,7 @@ class MainViewModel(
         _isFlashcardStudioOpen.value = false
         _isEcgStudioOpen.value = false
         _isIbqHubOpen.value = false
+        _isSpecialtyTracksOpen.value = false
         _clinicalToolsInitialSection.value = initialSection.coerceIn(0, 4)
         _isClinicalToolsOpen.value = true
     }
@@ -2001,6 +2015,7 @@ class MainViewModel(
         _isFlashcardStudioOpen.value = false
         _isClinicalToolsOpen.value = false
         _isIbqHubOpen.value = false
+        _isSpecialtyTracksOpen.value = false
         _isEcgStudioOpen.value = true
     }
 
@@ -2020,12 +2035,34 @@ class MainViewModel(
         _isFlashcardStudioOpen.value = false
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
+        _isSpecialtyTracksOpen.value = false
         _ibqHubInitialCategory.value = initialCategory
         _isIbqHubOpen.value = true
     }
 
     fun closeIbqHub() {
         _isIbqHubOpen.value = false
+    }
+
+    fun openSpecialtyTracks(initialTrack: SpecialtyTrack = SpecialtyTrack.CARDIOLOGY) {
+        _subjectChaptersNav.value = null
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = false
+        _isPlansOpen.value = false
+        _isAdminOpen.value = false
+        _isNotificationsOpen.value = false
+        _isDoubtBoxOpen.value = false
+        _isGrandTestHubOpen.value = false
+        _isFlashcardStudioOpen.value = false
+        _isClinicalToolsOpen.value = false
+        _isEcgStudioOpen.value = false
+        _isIbqHubOpen.value = false
+        _specialtyTrackInitial.value = initialTrack
+        _isSpecialtyTracksOpen.value = true
+    }
+
+    fun closeSpecialtyTracks() {
+        _isSpecialtyTracksOpen.value = false
     }
 
     fun recordClinicalModulePracticeAnswer(caseId: String, isCorrect: Boolean) {
@@ -2052,6 +2089,7 @@ class MainViewModel(
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
         _isIbqHubOpen.value = false
+        _isSpecialtyTracksOpen.value = false
         _isFlashcardStudioOpen.value = true
     }
 
@@ -2122,6 +2160,36 @@ class MainViewModel(
         val updated = SpacedRepetitionLogic.removeCard(settings.srsCards.value, questionId)
         settings.setSrsCards(updated)
         showMessage("Removed from SRS Mistake Notebook.")
+    }
+
+    fun queueQuestionToSrs(questionId: String) {
+        if (questionId.isBlank()) return
+        val updated = SpacedRepetitionLogic.enqueueManualReview(settings.srsCards.value, questionId)
+        settings.setSrsCards(updated)
+        showMessage("Added to SRS review queue (due now).")
+    }
+
+    fun queueAllBookmarkedToSrs() {
+        val bookmarkedIds = (mainState.value.questions + mainState.value.crossExamQuestions)
+            .asSequence()
+            .filter { it.isBookmarked }
+            .map { it.id }
+            .distinct()
+            .toList()
+        if (bookmarkedIds.isEmpty()) {
+            showMessage("No bookmarked questions to queue for SRS.")
+            return
+        }
+        val (updated, addedCount) = SpacedRepetitionLogic.enqueueBulkManualReview(
+            existing = settings.srsCards.value,
+            questionIds = bookmarkedIds
+        )
+        settings.setSrsCards(updated)
+        if (addedCount == 0) {
+            showMessage("All ${bookmarkedIds.size} bookmarked questions are already due in SRS.")
+        } else {
+            showMessage("Added $addedCount bookmarked question${if (addedCount == 1) "" else "s"} to SRS review queue.")
+        }
     }
 
     fun answerQuestionOfTheDay(selectedIndex: Int) {
@@ -2279,6 +2347,7 @@ class MainViewModel(
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
         _isIbqHubOpen.value = false
+        _isSpecialtyTracksOpen.value = false
         _isGrandTestHubOpen.value = false
         _chaptersHighYieldOnly.value = false
         _subjectChaptersNav.value = SubjectChaptersNavState(
@@ -3226,7 +3295,9 @@ class MainViewModel(
         isOfficialFullMock: Boolean = false,
         sectionSize: Int = 0,
         sectionDurationMinutes: Int = 0,
-        sectionLabels: List<String> = emptyList()
+        sectionLabels: List<String> = emptyList(),
+        hasCountdownOverride: Boolean? = null,
+        negativeMarksOverride: Double? = null
     ) {
         if (items.isEmpty()) {
             showMessage("No questions available for this CBT test.")
@@ -3258,7 +3329,7 @@ class MainViewModel(
         _practiceSession.value = null
         val activeExam = mainState.value.activeExam
         val useSectionLock = sectionSize > 0 && sectionDurationMinutes > 0 && items.size > sectionSize
-        val hasCountdown = isOfficialFullMock || useSectionLock || settings.useTimeLimit.value
+        val hasCountdown = hasCountdownOverride ?: (isOfficialFullMock || useSectionLock || settings.useTimeLimit.value)
         val sectionDurationSec = if (useSectionLock) sectionDurationMinutes * 60 else 0
         val totalSections = if (useSectionLock) ((items.size + sectionSize - 1) / sectionSize) else 1
         val totalSec = if (hasCountdown) {
@@ -3281,7 +3352,8 @@ class MainViewModel(
         val initialStatuses = items.indices.associateWith { i ->
             if (i == 0) CbtPaletteStatus.NOT_ANSWERED else CbtPaletteStatus.NOT_VISITED
         }
-        val activeNeg = activeExam?.negativeMarks
+        val activeNeg = negativeMarksOverride
+            ?: activeExam?.negativeMarks
             ?: PlatformCatalogDefaults.negativeMarksForExam(settings.activeExamId.value)
         _cbtSession.value = CbtSessionState(
             title = title,
@@ -4522,6 +4594,7 @@ class MainViewModel(
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
         _isIbqHubOpen.value = false
+        _isSpecialtyTracksOpen.value = false
         _isGrandTestHubOpen.value = false
         _isNotificationsOpen.value = true
         val newestAnnMs = _announcements.value.maxOfOrNull { it.createdAtMs } ?: System.currentTimeMillis()
@@ -4580,6 +4653,7 @@ class MainViewModel(
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
         _isIbqHubOpen.value = false
+        _isSpecialtyTracksOpen.value = false
         _isGrandTestHubOpen.value = false
         _highlightedDoubtId.value = highlightDoubtId?.takeIf { it.isNotBlank() }
         _isDoubtBoxOpen.value = true
@@ -5313,6 +5387,7 @@ class MainViewModel(
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
         _isIbqHubOpen.value = false
+        _isSpecialtyTracksOpen.value = false
         _isGrandTestHubOpen.value = true
         val targetId = _selectedGrandTestId.value
             ?: _publicGrandTests.value.firstOrNull { it.parsedStatus == GrandTestStatus.LIVE }?.effectiveTestId

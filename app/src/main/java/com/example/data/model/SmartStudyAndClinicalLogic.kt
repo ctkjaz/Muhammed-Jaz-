@@ -117,6 +117,50 @@ object SpacedRepetitionLogic {
         return updated
     }
 
+    fun enqueueManualReview(
+        existing: Map<String, SrsCardState>,
+        questionId: String,
+        nowMs: Long = System.currentTimeMillis()
+    ): Map<String, SrsCardState> {
+        if (questionId.isBlank()) return existing
+        val updated = existing.toMutableMap()
+        val current = existing[questionId]
+        // Place bookmarked / low-confidence MCQ directly into Box 1 (due immediately)
+        updated[questionId] = SrsCardState(
+            questionId = questionId,
+            stage = SrsStage.BOX_1D,
+            nextReviewAtMs = nowMs,
+            lastReviewedAtMs = current?.lastReviewedAtMs ?: 0L,
+            consecutiveCorrect = 0
+        )
+        return updated
+    }
+
+    fun enqueueBulkManualReview(
+        existing: Map<String, SrsCardState>,
+        questionIds: Collection<String>,
+        nowMs: Long = System.currentTimeMillis()
+    ): Pair<Map<String, SrsCardState>, Int> {
+        val updated = existing.toMutableMap()
+        var newlyQueuedOrReset = 0
+        questionIds.forEach { qId ->
+            if (qId.isBlank()) return@forEach
+            val prev = updated[qId]
+            val alreadyDue = prev != null && isDue(prev, nowMs)
+            if (!alreadyDue) {
+                updated[qId] = SrsCardState(
+                    questionId = qId,
+                    stage = SrsStage.BOX_1D,
+                    nextReviewAtMs = nowMs,
+                    lastReviewedAtMs = prev?.lastReviewedAtMs ?: 0L,
+                    consecutiveCorrect = 0
+                )
+                newlyQueuedOrReset++
+            }
+        }
+        return updated to newlyQueuedOrReset
+    }
+
     fun removeCard(
         existing: Map<String, SrsCardState>,
         questionId: String
