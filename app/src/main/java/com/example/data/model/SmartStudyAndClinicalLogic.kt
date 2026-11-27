@@ -99,6 +99,24 @@ object SpacedRepetitionLogic {
         nowMs: Long = System.currentTimeMillis()
     ): Map<String, SrsCardState> = recordWrong(existing, questionId, nowMs)
 
+    fun markMastered(
+        existing: Map<String, SrsCardState>,
+        questionId: String,
+        nowMs: Long = System.currentTimeMillis()
+    ): Map<String, SrsCardState> {
+        if (questionId.isBlank()) return existing
+        val current = existing[questionId]
+        val updated = existing.toMutableMap()
+        updated[questionId] = SrsCardState(
+            questionId = questionId,
+            stage = SrsStage.MASTERED,
+            nextReviewAtMs = nowMs + (SrsStage.MASTERED.intervalDays.toLong() * ONE_DAY_MS),
+            lastReviewedAtMs = nowMs,
+            consecutiveCorrect = maxOf(current?.consecutiveCorrect ?: 0, 4)
+        )
+        return updated
+    }
+
     fun removeCard(
         existing: Map<String, SrsCardState>,
         questionId: String

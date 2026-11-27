@@ -190,6 +190,55 @@ class ClinEdgeAiTutorService {
         emit(AiStreamEvent.Completed(finalText))
     }.flowOn(Dispatchers.IO)
 
+    fun explainOptionByOptionEvents(
+        question: Question,
+        selectedOptionIndex: Int?,
+        activeExamName: String
+    ): Flow<AiStreamEvent> = flow {
+        val cacheKey = "options|${question.id}|${selectedOptionIndex ?: -1}|$activeExamName"
+        val cached = explanationCache[cacheKey]
+        if (!cached.isNullOrBlank()) {
+            emit(AiStreamEvent.Completed(cached))
+            return@flow
+        }
+
+        val optionLetters = listOf("A", "B", "C", "D", "E", "F")
+        val optionsBlock = question.options.mapIndexed { idx, opt ->
+            val letter = optionLetters.getOrElse(idx) { "${idx + 1}" }
+            val marker = buildString {
+                if (idx == question.correctIndex) append(" [CORRECT KEY]")
+                if (selectedOptionIndex != null && idx == selectedOptionIndex) append(" [USER PICK]")
+            }
+            "$letter) $opt$marker"
+        }.joinToString("\n")
+
+        val prompt = buildString {
+            appendLine("Exam: $activeExamName | Subject: ${question.subject}")
+            appendLine("Question: ${question.questionText}")
+            appendLine(optionsBlock)
+            if (question.explanation.isNotBlank()) {
+                appendLine("Reference note: ${question.explanation.take(350)}")
+            }
+            appendLine()
+            appendLine("Provide a clean option-by-option clinical rationale for EVERY option (A, B, C, D) in max 220 words:")
+            appendLine("- For the CORRECT option: state why it is the exact priority/right clinical choice.")
+            appendLine("- For EACH INCORRECT distractor: explain why it is wrong here AND briefly note when it WOULD be right in another clinical context (if applicable).")
+            appendLine("- Finish with 1 short 'Nursing Priority / Exam Pearl' bullet. Keep it crisp and textbook-grounded.")
+        }
+
+        val finalText = executeFastStreamWithFallback(
+            prompt = prompt,
+            primaryModel = primaryTutorModel,
+            fallbackModel = fallbackTutorModel,
+            onStatus = { status -> emit(AiStreamEvent.Status(status)) },
+            onPartial = { partial -> emit(AiStreamEvent.Partial(partial)) }
+        )
+        if (finalText.isNotBlank()) {
+            explanationCache[cacheKey] = finalText
+        }
+        emit(AiStreamEvent.Completed(finalText))
+    }.flowOn(Dispatchers.IO)
+
     fun draftAdminDoubtReplyEvents(
         doubt: CloudDoubt
     ): Flow<AiStreamEvent> = flow {

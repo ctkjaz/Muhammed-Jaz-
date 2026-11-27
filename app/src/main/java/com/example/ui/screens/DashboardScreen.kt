@@ -69,14 +69,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.example.data.grandtest.CloudGrandTest
+import com.example.data.model.DailyFeaturedQuestion
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.ExamCountdownLogic
 import com.example.data.model.ExamRoadmapSummary
 import com.example.data.model.ExamStage
 import com.example.data.model.PlatformCatalogDefaults
+import com.example.data.model.QotdCompletionState
 import com.example.data.model.QuestionItem
 import com.example.data.model.SmartStudyPlanSummary
+import com.example.data.model.StudyGoalLogic
 import com.example.data.notifications.CloudAnnouncement
 import com.example.data.notifications.DailyReminderSettingsState
 import com.example.data.notifications.EngagementLogic
@@ -84,7 +87,10 @@ import com.example.data.subscription.EntitlementEvaluator
 import com.example.data.subscription.PlanTier
 import com.example.data.subscription.SubscriptionUiState
 import com.example.ui.components.AcidLimeProgressBar
+import com.example.ui.components.DailyGoalQuickEditorDialog
+import com.example.ui.components.DashboardLoadingSkeleton
 import com.example.ui.components.DifficultyFilterBar
+import com.example.ui.components.QuestionOfTheDayCard
 import com.example.ui.components.SegmentedPillBar
 import com.example.ui.components.SmartWeakTopicDashboardCard
 import com.example.ui.theme.MonoFontFamily
@@ -138,9 +144,19 @@ fun DashboardScreen(
     onStartImageSpotterDrill: () -> Unit = {},
     onOpenFlashcardStudio: () -> Unit = {},
     masteredFlashcardCount: Int = 0,
+    qotdQuestion: DailyFeaturedQuestion? = null,
+    qotdCompletion: QotdCompletionState = QotdCompletionState(),
+    onAnswerQotd: (Int) -> Unit = {},
+    onUpdateDailyGoal: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    if (!state.isLoaded) {
+        DashboardLoadingSkeleton(modifier = modifier)
+        return
+    }
     var showExamDateDialog by remember { mutableStateOf(false) }
+    var showDailyGoalDialog by remember { mutableStateOf(false) }
+    val todayDateKey = remember { StudyGoalLogic.todayDateKey() }
     val editorial = MaterialTheme.editorialColors
     val stagePool = state.stageQuestions.ifEmpty { state.questions }
     val diffFiltered = remember(stagePool, difficultyFilter) {
@@ -607,7 +623,13 @@ fun DashboardScreen(
                                 )
                             }
                             TextButton(
-                                onClick = onAdjustDailyGoal,
+                                onClick = {
+                                    if (onUpdateDailyGoal != null) {
+                                        showDailyGoalDialog = true
+                                    } else {
+                                        onAdjustDailyGoal()
+                                    }
+                                },
                                 modifier = Modifier.testTag("dashboard_adjust_goal_btn")
                             ) {
                                 Text(
@@ -618,6 +640,18 @@ fun DashboardScreen(
                             }
                         }
                     }
+                }
+            }
+
+            // 2.0 Question of the Day (Curated High-Yield Clinical MCQ with Full Per-Option Rationales)
+            if (qotdQuestion != null) {
+                item(key = "dashboard_qotd") {
+                    QuestionOfTheDayCard(
+                        question = qotdQuestion,
+                        completion = qotdCompletion,
+                        todayDateKey = todayDateKey,
+                        onSelectOption = onAnswerQotd
+                    )
                 }
             }
 
@@ -1338,6 +1372,17 @@ fun DashboardScreen(
                 }
             }
         }
+    }
+
+    if (showDailyGoalDialog && onUpdateDailyGoal != null) {
+        DailyGoalQuickEditorDialog(
+            currentGoal = targetGoal,
+            onSaveGoal = { updatedTarget ->
+                onUpdateDailyGoal(updatedTarget)
+                showDailyGoalDialog = false
+            },
+            onDismiss = { showDailyGoalDialog = false }
+        )
     }
 
     if (showExamDateDialog) {

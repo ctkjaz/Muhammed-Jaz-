@@ -170,14 +170,14 @@ fun ClinEdgeRootApp(
     auth: FirebaseAuth = Firebase.auth
 ) {
     val context = LocalContext.current
-    val initialTheme = remember(context) { SettingsPreferences(context).themePreference.value }
+    val sharedSettings = remember(context) { SettingsPreferences.getInstance(context) }
+    val initialTheme = remember(sharedSettings) { sharedSettings.themePreference.value }
     val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
     val user = currentUser
 
     if (user == null) {
-        val settings = remember(context) { SettingsPreferences(context) }
-        val forcedNotice = remember(user) { settings.getForcedSignOutNotice() }
-        val skipAuto = remember(user) { settings.consumeSkipAutoSignInOnce() }
+        val forcedNotice = remember(user) { sharedSettings.getForcedSignOutNotice() }
+        val skipAuto = remember(user) { sharedSettings.consumeSkipAutoSignInOnce() }
         val systemDark = isSystemInDarkTheme()
         val isDark = when (initialTheme) {
             ThemePreference.SYSTEM -> systemDark
@@ -224,7 +224,7 @@ private fun AuthenticatedClinEdgeApp(
                 val firestore = FirebaseFirestore.getInstance(databaseId)
                 val localDb = AppDatabase.getInstance(app)
                 val repository = NursingPrepRepository(app, localDb.questionDao())
-                val settings = SettingsPreferences(app)
+                val settings = SettingsPreferences.getInstance(app)
                 val cloudSync = CloudSyncRepository(firestore)
                 val backupStorage = BackupStorageManager(app)
                 val subscriptionRepo = SubscriptionRepository(firestore)
@@ -358,53 +358,11 @@ fun RrbNursingApp(vm: MainViewModel) {
         val targetExamDateIso by vm.targetExamDateIso.collectAsStateWithLifecycle()
         val srsCards by vm.srsCards.collectAsStateWithLifecycle()
         val questionNotes by vm.questionNotes.collectAsStateWithLifecycle()
-        val srsNotebookSummary = remember(state.questions, srsCards) {
-            SpacedRepetitionLogic.buildSummary(
-                questions = state.questions,
-                storedCards = srsCards
-            )
-        }
-        val examReadiness = remember(
-            state.overall,
-            state.subjectStats,
-            state.stageSubjectStats,
-            state.activeExamSupportsStages,
-            state.mockHistory,
-            srsCards,
-            studyGoal
-        ) {
-            val activeSubjects = if (state.activeExamSupportsStages) {
-                state.stageSubjectStats.ifEmpty { state.subjectStats }
-            } else {
-                state.subjectStats
-            }
-            ExamReadinessEngine.compute(
-                totalQuestions = state.overall.totalQuestions,
-                attemptedUnique = state.overall.attemptedUnique,
-                totalAttempts = state.overall.totalAttempts,
-                accuracyPercent = state.overall.accuracyPercent,
-                subjectStats = activeSubjects,
-                mockHistory = state.mockHistory,
-                srsCards = srsCards,
-                currentStreakDays = studyGoal.effectiveCurrentStreak(),
-                dailyGoalMetToday = studyGoal.isGoalMetToday()
-            )
-        }
-        val smartStudyPlan = remember(state.stageQuestions, state.questions, srsCards, studyGoal.dailyGoalQuestions) {
-            SmartWeakTopicPlanner.buildPlan(
-                questions = state.stageQuestions.ifEmpty { state.questions },
-                srsCards = srsCards,
-                dailyGoalQuestions = studyGoal.dailyGoalQuestions
-            )
-        }
-        val examRoadmap = remember(targetExamDateIso, state.questions.size, state.overall.attemptedUnique, studyGoal.dailyGoalQuestions) {
-            ExamCountdownLogic.computeRoadmap(
-                targetDateIso = targetExamDateIso,
-                totalBankCount = state.questions.size,
-                attemptedCount = state.overall.attemptedUnique,
-                currentDailyGoal = studyGoal.dailyGoalQuestions
-            )
-        }
+        val qotdCompletion by vm.qotdCompletion.collectAsStateWithLifecycle()
+        val srsNotebookSummary by vm.srsNotebookSummary.collectAsStateWithLifecycle()
+        val examReadiness by vm.examReadiness.collectAsStateWithLifecycle()
+        val smartStudyPlan by vm.smartStudyPlan.collectAsStateWithLifecycle()
+        val examRoadmap by vm.examRoadmap.collectAsStateWithLifecycle()
         val signedInAccount = vm.signedInAccount
 
         val snackbarHostState = remember { SnackbarHostState() }
@@ -948,6 +906,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                         },
                                         canUseAiTutor = subscriptionState.hasAnyActivePaidOrTrial || subscriptionState.isAdmin,
                                         onExplainWithAi = vm::openAiTutorForQuestion,
+                                        onExplainOptionsWithAi = vm::openAiOptionBreakdown,
                                         onFlagQuestion = vm::openFlagQuestionSheet,
                                         questionNotes = questionNotes,
                                         onSaveQuestionNote = vm::saveQuestionNote,
@@ -1289,7 +1248,11 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             },
                                             onStartImageSpotterDrill = vm::startImageBasedSpotterDrill,
                                             onOpenFlashcardStudio = vm::openFlashcardStudio,
-                                            masteredFlashcardCount = masteredFlashcardIds.size
+                                            masteredFlashcardCount = masteredFlashcardIds.size,
+                                            qotdQuestion = vm.todayQuestionOfTheDay,
+                                            qotdCompletion = qotdCompletion,
+                                            onAnswerQotd = vm::answerQuestionOfTheDay,
+                                            onUpdateDailyGoal = vm::setDailyGoalQuestions
                                         )
 
                                         MainTab.SUBJECTS -> SubjectsHubScreen(
@@ -1355,6 +1318,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onOpenPdfExport = { sourceKey -> vm.openPdfExport(defaultSource = sourceKey, defaultLimit = 0) },
                                             onToggleBookmark = vm::toggleBookmark,
                                             onResetSrsCard = vm::resetSrsCard,
+                                            onMarkSrsMastered = vm::markSrsCardMastered,
                                             onRemoveSrsCard = vm::removeSrsCard,
                                             questionNotes = questionNotes,
                                             onSaveQuestionNote = vm::saveQuestionNote,

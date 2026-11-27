@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -79,6 +80,7 @@ fun BookmarksScreen(
     onOpenPdfExport: (String) -> Unit,
     onToggleBookmark: (String) -> Unit,
     onResetSrsCard: (String) -> Unit = {},
+    onMarkSrsMastered: (String) -> Unit = {},
     onRemoveSrsCard: (String) -> Unit = {},
     questionNotes: Map<String, QuestionNote> = emptyMap(),
     onSaveQuestionNote: (String, String) -> Unit = { _, _ -> },
@@ -313,6 +315,7 @@ fun BookmarksScreen(
                                     onPracticeDeck(listOf(entry.item), "SRS Review · ${entry.item.question.subject}")
                                 },
                                 onToggleBookmark = { onToggleBookmark(entry.item.id) },
+                                onMarkMastered = { onMarkSrsMastered(entry.item.id) },
                                 onResetToBox1 = { onResetSrsCard(entry.item.id) },
                                 onRemoveFromSrs = { onRemoveSrsCard(entry.item.id) }
                             )
@@ -549,6 +552,7 @@ private fun SrsMistakeRowCard(
     entry: SrsNotebookEntry,
     onPracticeSingle: () -> Unit,
     onToggleBookmark: () -> Unit,
+    onMarkMastered: () -> Unit,
     onResetToBox1: () -> Unit,
     onRemoveFromSrs: () -> Unit
 ) {
@@ -631,12 +635,38 @@ private fun SrsMistakeRowCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Streak: ${entry.card.consecutiveCorrect}x right",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Streak: ${entry.card.consecutiveCorrect}x right",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (entry.item.wrongCount > 1) {
+                        Text(
+                            text = "· Missed ${entry.item.wrongCount}x",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                            fontWeight = FontWeight.Bold,
+                            color = editorial.wrongText
+                        )
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (entry.card.stage != SrsStage.MASTERED) {
+                        IconButton(
+                            onClick = onMarkMastered,
+                            modifier = Modifier.testTag("srs_mark_mastered_${entry.item.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = "Mark concept as mastered",
+                                tint = editorial.correctText,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
                     IconButton(onClick = onToggleBookmark) {
                         Icon(
                             imageVector = if (entry.item.isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,

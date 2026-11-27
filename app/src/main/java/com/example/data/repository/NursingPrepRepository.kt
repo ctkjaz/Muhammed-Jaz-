@@ -214,10 +214,17 @@ class NursingPrepRepository(
     suspend fun ensureSeeded(
         currentSeedVersion: Int = 0,
         onSeededVersionUpdated: (Int) -> Unit = {}
-    ) = withContext(Dispatchers.IO) {
+    ): Boolean = withContext(Dispatchers.IO) {
+        val builtInCount = dao.getBuiltInCount()
+        val rrbLinkCount = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_RRB_NURSING)
+        // Fast warm-start path: skip redundant catalog write transactions when already seeded.
+        if (currentSeedVersion >= CURRENT_SEED_VERSION && builtInCount > 0 && rrbLinkCount > 0) {
+            return@withContext false
+        }
+
         ensureCatalogSeeded()
-        val needsQuestions = dao.getBuiltInCount() == 0 || currentSeedVersion < CURRENT_SEED_VERSION
-        val needsRrbLinks = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_RRB_NURSING) == 0
+        val needsQuestions = builtInCount == 0 || currentSeedVersion < CURRENT_SEED_VERSION
+        val needsRrbLinks = rrbLinkCount == 0
         val needsNorcetLinks = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_AIIMS_NORCET) == 0
         val needsPgimerLinks = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_PGIMER_NURSING) == 0
         val needsAllIndiaPyqLinks = dao.getLinkCountForExam(PlatformCatalogDefaults.EXAM_ESIC_NURSING) == 0
@@ -401,7 +408,9 @@ class NursingPrepRepository(
                 }
             }
             onSeededVersionUpdated(CURRENT_SEED_VERSION)
+            return@withContext true
         }
+        false
     }
 
     suspend fun linkQuestionToExam(

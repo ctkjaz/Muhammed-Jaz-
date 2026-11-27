@@ -52,9 +52,12 @@ import com.example.data.model.CategoryStat
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.DifficultyFilter
 import com.example.data.model.Exam
+import com.example.data.model.DailyFeaturedQuestion
 import com.example.data.model.DailyFocusProgress
 import com.example.data.model.ExamCountdownLogic
 import com.example.data.model.ExamQuestionLink
+import com.example.data.model.ExamReadinessEngine
+import com.example.data.model.ExamReadinessSummary
 import com.example.data.model.ExamRoadmapSummary
 import com.example.data.model.ExamSection
 import com.example.data.model.ExamStage
@@ -66,17 +69,23 @@ import com.example.data.model.MockSelectionLogic
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.PracticePathway
 import com.example.data.model.Profession
+import com.example.data.model.QotdCompletionState
 import com.example.data.model.Question
 import com.example.data.model.QuestionDifficulty
 import com.example.data.model.QuestionItem
 import com.example.data.model.QuestionNote
 import com.example.data.model.QuestionNotesLogic
+import com.example.data.model.QuestionOfTheDayCatalog
 import com.example.data.model.QuestionSourceType
 import com.example.data.model.SessionCheckResult
+import com.example.data.model.SmartStudyPlanSummary
 import com.example.data.model.SmartWeakTopicPlanner
 import com.example.data.model.SpacedRepetitionLogic
 import com.example.data.model.SrsCardState
 import com.example.data.model.SrsNotebookSummary
+import com.example.data.model.StartupLaunchMode
+import com.example.data.model.StartupProfiler
+import com.example.data.model.StartupTimingReport
 import com.example.data.model.StudyGoalLogic
 import com.example.data.model.SubjectCatalog
 import com.example.data.model.SubjectPracticeLogic
@@ -844,6 +853,100 @@ class MainViewModel(
         initialValue = DashboardDerivedState()
     )
 
+    // Phase 0: Offload heavy analytics & SRS summaries off the UI main thread onto Dispatchers.Default
+    val srsNotebookSummary: StateFlow<SrsNotebookSummary> = combine(
+        mainState,
+        srsCards
+    ) { st, cards ->
+        if (!st.isLoaded || st.questions.isEmpty()) SrsNotebookSummary()
+        else SpacedRepetitionLogic.buildSummary(questions = st.questions, storedCards = cards)
+    }.flowOn(Dispatchers.Default).stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = SrsNotebookSummary()
+    )
+
+    val examReadiness: StateFlow<ExamReadinessSummary> = combine(
+        mainState,
+        srsCards,
+        studyGoalState
+    ) { st, cards, goal ->
+        val activeSubjects = if (st.activeExamSupportsStages) {
+            st.stageSubjectStats.ifEmpty { st.subjectStats }
+        } else {
+            st.subjectStats
+        }
+        ExamReadinessEngine.compute(
+            totalQuestions = st.overall.totalQuestions,
+            attemptedUnique = st.overall.attemptedUnique,
+            totalAttempts = st.overall.totalAttempts,
+            accuracyPercent = st.overall.accuracyPercent,
+            subjectStats = activeSubjects,
+            mockHistory = st.mockHistory,
+            srsCards = cards,
+            currentStreakDays = goal.effectiveCurrentStreak(),
+            dailyGoalMetToday = goal.isGoalMetToday()
+        )
+    }.flowOn(Dispatchers.Default).stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = ExamReadinessEngine.compute(
+            totalQuestions = 0,
+            attemptedUnique = 0,
+            totalAttempts = 0,
+            accuracyPercent = 0,
+            subjectStats = emptyList(),
+            mockHistory = emptyList(),
+            srsCards = emptyMap(),
+            currentStreakDays = 0,
+            dailyGoalMetToday = false
+        )
+    )
+
+    val smartStudyPlan: StateFlow<SmartStudyPlanSummary?> = combine(
+        mainState,
+        srsCards,
+        studyGoalState
+    ) { st, cards, goal ->
+        val pool = st.stageQuestions.ifEmpty { st.questions }
+        if (!st.isLoaded || pool.isEmpty()) null
+        else SmartWeakTopicPlanner.buildPlan(
+            questions = pool,
+            srsCards = cards,
+            dailyGoalQuestions = goal.dailyGoalQuestions
+        )
+    }.flowOn(Dispatchers.Default).stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    val examRoadmap: StateFlow<ExamRoadmapSummary> = combine(
+        targetExamDateIso,
+        mainState,
+        studyGoalState
+    ) { dateIso, st, goal ->
+        ExamCountdownLogic.computeRoadmap(
+            targetDateIso = dateIso,
+            totalBankCount = st.questions.size,
+            attemptedCount = st.overall.attemptedUnique,
+            currentDailyGoal = goal.dailyGoalQuestions
+        )
+    }.flowOn(Dispatchers.Default).stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = ExamRoadmapSummary()
+    )
+
+    // Phase 0 & 1: Startup instrumentation + Question of the Day state
+    private val startupProfiler = StartupProfiler()
+    private val _startupTimingReport = MutableStateFlow<StartupTimingReport?>(null)
+    val startupTimingReport: StateFlow<StartupTimingReport?> = _startupTimingReport.asStateFlow()
+
+    val qotdCompletion: StateFlow<QotdCompletionState> = settings.qotdCompletion
+    val todayQuestionOfTheDay: DailyFeaturedQuestion
+        get() = QuestionOfTheDayCatalog.questionForDate(StudyGoalLogic.todayDateKey())
+
     private val _selectedTab = MutableStateFlow(MainTab.DASHBOARD)
     val selectedTab: StateFlow<MainTab> = _selectedTab.asStateFlow()
 
@@ -892,6 +995,7 @@ class MainViewModel(
     private var pendingSessionClaimRetry = false
 
     init {
+        startupProfiler.mark("vm_init")
         viewModelScope.launch {
             val previousUid = settings.getLastSignedInUid()
             if (previousUid.isNotBlank() && previousUid != currentUserId) {
@@ -905,31 +1009,52 @@ class MainViewModel(
                 settings.setProfileName(signedInAccount.displayName)
             }
 
-            repository.ensureSeeded(settings.getSeededVersion()) { newVer ->
+            // Phase 0: Critical local path only — fast warm check skips redundant catalog writes
+            startupProfiler.mark("seed_start")
+            val didColdSeed = repository.ensureSeeded(settings.getSeededVersion()) { newVer ->
                 settings.setSeededVersion(newVer)
             }
-            _flashcards.value = repository.loadFlashcards()
+            startupProfiler.setLaunchMode(
+                if (didColdSeed) StartupLaunchMode.COLD_SEED else StartupLaunchMode.WARM_CACHE
+            )
+            startupProfiler.mark("seed_done")
             _isSeeded.value = true
+            startupProfiler.mark("first_data_ready")
+            val report = startupProfiler.buildReport()
+            _startupTimingReport.value = report
+            Log.i("ClinEdgeStartup", report.formatLogLine())
 
-            if (currentUserId.isNotBlank()) {
-                val allowed = initializeSingleDeviceSession()
-                if (allowed && !isSigningOut) {
-                    performBidirectionalSync(showFeedbackToast = false)
-                    initializeSubscriptionAndOta()
-                    startRealtimeCloudObservers()
+            // Non-blocking background fan-out: load secondary local assets, cloud sync, updates & notifications in parallel
+            launch(Dispatchers.IO) {
+                _flashcards.value = repository.loadFlashcards()
+            }
+            launch(Dispatchers.IO) {
+                refreshBackupFolderSummary()
+            }
+            launch(Dispatchers.IO) {
+                appContext?.let { ctx ->
+                    ClinEdgeNotificationManager.ensureChannelsCreated(ctx)
+                    ClinEdgeNotificationManager.scheduleCloudAlertSync(ctx)
+                    if (settings.dailyReminderEnabled.value) {
+                        ClinEdgeNotificationManager.scheduleDailyReminder(
+                            context = ctx,
+                            hour = settings.dailyReminderHour.value,
+                            minute = settings.dailyReminderMinute.value
+                        )
+                    }
                 }
             }
-            refreshBackupFolderSummary()
-            checkForAppUpdates(userInitiated = false)
-            appContext?.let { ctx ->
-                ClinEdgeNotificationManager.ensureChannelsCreated(ctx)
-                ClinEdgeNotificationManager.scheduleCloudAlertSync(ctx)
-                if (settings.dailyReminderEnabled.value) {
-                    ClinEdgeNotificationManager.scheduleDailyReminder(
-                        context = ctx,
-                        hour = settings.dailyReminderHour.value,
-                        minute = settings.dailyReminderMinute.value
-                    )
+            launch {
+                checkForAppUpdates(userInitiated = false)
+            }
+            if (currentUserId.isNotBlank()) {
+                launch {
+                    val allowed = initializeSingleDeviceSession()
+                    if (allowed && !isSigningOut) {
+                        launch { performBidirectionalSync(showFeedbackToast = false) }
+                        launch { initializeSubscriptionAndOta() }
+                        startRealtimeCloudObservers()
+                    }
                 }
             }
         }
@@ -1851,10 +1976,34 @@ class MainViewModel(
         showMessage("Card reset to Box 1d (Due Now).")
     }
 
+    fun markSrsCardMastered(questionId: String) {
+        val updated = SpacedRepetitionLogic.markMastered(settings.srsCards.value, questionId)
+        settings.setSrsCards(updated)
+        showMessage("Marked as Mastered in Mistake Notebook!")
+    }
+
     fun removeSrsCard(questionId: String) {
         val updated = SpacedRepetitionLogic.removeCard(settings.srsCards.value, questionId)
         settings.setSrsCards(updated)
         showMessage("Removed from SRS Mistake Notebook.")
+    }
+
+    fun answerQuestionOfTheDay(selectedIndex: Int) {
+        val todayKey = StudyGoalLogic.todayDateKey()
+        val qotd = QuestionOfTheDayCatalog.questionForDate(todayKey)
+        if (settings.qotdCompletion.value.isAnsweredFor(todayKey, qotd.id)) return
+        if (selectedIndex !in qotd.options.indices) return
+
+        val isCorrect = selectedIndex == qotd.correctIndex
+        settings.setQotdCompletion(
+            QotdCompletionState(
+                dateKey = todayKey,
+                questionId = qotd.id,
+                selectedIndex = selectedIndex,
+                isCorrect = isCorrect
+            )
+        )
+        recordDailyStudyProgress(answeredDelta = 1)
     }
 
     fun saveQuestionNote(questionId: String, rawNote: String) {
@@ -4510,7 +4659,21 @@ class MainViewModel(
         aiTutorLastFollowUp = null
         aiTutorLastExplanation = null
         _aiTutorQuestion.value = item.question
-        runAiTutorStream(followUpPrompt = null)
+        runAiTutorStream(followUpPrompt = null, optionByOptionMode = false)
+    }
+
+    fun openAiOptionBreakdown(item: QuestionItem, selectedOptionIndex: Int?) {
+        val sub = subscriptionState.value
+        if (!sub.hasAnyActivePaidOrTrial && !sub.isAdmin) {
+            showMessage("AI Option-by-Option Breakdown is included with Free Trial & Pro plans.")
+            openPlans()
+            return
+        }
+        aiTutorSelectedOptionIndex = selectedOptionIndex
+        aiTutorLastFollowUp = null
+        aiTutorLastExplanation = null
+        _aiTutorQuestion.value = item.question
+        runAiTutorStream(followUpPrompt = null, optionByOptionMode = true)
     }
 
     fun askAiTutorFollowUp(prompt: String) {
@@ -4535,32 +4698,44 @@ class MainViewModel(
         aiTutorLastExplanation = null
     }
 
-    private fun runAiTutorStream(followUpPrompt: String?) {
+    private fun runAiTutorStream(
+        followUpPrompt: String?,
+        optionByOptionMode: Boolean = false
+    ) {
         val question = _aiTutorQuestion.value ?: return
         aiTutorJob?.cancel()
-        val label = if (followUpPrompt.isNullOrBlank()) {
-            "Clinical Concept & Option Elimination"
-        } else {
-            followUpPrompt.take(70)
+        val label = when {
+            optionByOptionMode -> "Option-by-Option Distractor Breakdown"
+            followUpPrompt.isNullOrBlank() -> "Clinical Concept & Option Elimination"
+            else -> followUpPrompt.take(70)
         }
         _aiTutorState.value = AiTutorUiState.Loading(
-            promptLabel = if (followUpPrompt.isNullOrBlank()) {
-                "Analyzing clinical priority & distractors..."
-            } else {
-                "Answering follow-up..."
+            promptLabel = when {
+                optionByOptionMode -> "Comparing all answer options..."
+                followUpPrompt.isNullOrBlank() -> "Analyzing clinical priority & distractors..."
+                else -> "Answering follow-up..."
             }
         )
         val examName = PlatformCatalogDefaults.examById(activeExamId.value)?.shortName ?: "Nursing Officer"
         aiTutorJob = viewModelScope.launch {
             try {
                 var latestText = ""
-                aiTutorService.explainMcqEvents(
-                    question = question,
-                    selectedOptionIndex = aiTutorSelectedOptionIndex,
-                    activeExamName = examName,
-                    followUpPrompt = followUpPrompt,
-                    previousExplanation = aiTutorLastExplanation
-                ).collect { event ->
+                val stream = if (optionByOptionMode && followUpPrompt.isNullOrBlank()) {
+                    aiTutorService.explainOptionByOptionEvents(
+                        question = question,
+                        selectedOptionIndex = aiTutorSelectedOptionIndex,
+                        activeExamName = examName
+                    )
+                } else {
+                    aiTutorService.explainMcqEvents(
+                        question = question,
+                        selectedOptionIndex = aiTutorSelectedOptionIndex,
+                        activeExamName = examName,
+                        followUpPrompt = followUpPrompt,
+                        previousExplanation = aiTutorLastExplanation
+                    )
+                }
+                stream.collect { event ->
                     when (event) {
                         is AiStreamEvent.Status -> {
                             if (latestText.isBlank()) {

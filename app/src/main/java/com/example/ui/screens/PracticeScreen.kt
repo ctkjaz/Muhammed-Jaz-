@@ -78,6 +78,7 @@ import com.example.ui.components.DifficultyBadge
 import com.example.ui.components.ImageBasedQuestionBadge
 import com.example.ui.components.MetricTile
 import com.example.ui.components.MonochromeFilterPill
+import com.example.ui.components.PracticeOptionRationalesSection
 import com.example.ui.components.PyqSourceBadge
 import com.example.ui.components.QuestionNoteBannerCard
 import com.example.ui.components.QuestionNoteEditorDialog
@@ -119,6 +120,7 @@ fun PracticeScreen(
     onAskDoubt: (QuestionItem) -> Unit = {},
     canUseAiTutor: Boolean = false,
     onExplainWithAi: (QuestionItem, Int?) -> Unit = { _, _ -> },
+    onExplainOptionsWithAi: (QuestionItem, Int?) -> Unit = onExplainWithAi,
     onFlagQuestion: (QuestionItem) -> Unit = {},
     questionNotes: Map<String, QuestionNote> = emptyMap(),
     onSaveQuestionNote: (String, String) -> Unit = { _, _ -> },
@@ -606,6 +608,12 @@ fun PracticeScreen(
                                     color = editorial.correctText
                                 )
                             }
+                            PracticeOptionRationalesSection(
+                                question = q,
+                                selectedIndex = chosen,
+                                canUseAiTutor = canUseAiTutor,
+                                onRequestAiOptionBreakdown = { onExplainOptionsWithAi(currentItem, chosen) }
+                            )
                             HorizontalDivider(color = editorial.borderSubtle)
                             Button(
                                 onClick = { onExplainWithAi(currentItem, chosen) },

@@ -9,8 +9,10 @@ import com.example.data.model.DailyFocusProgress
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.FocusTimerLogic
 import com.example.data.model.PlatformCatalogDefaults
+import com.example.data.model.QotdCompletionState
 import com.example.data.model.QuestionNote
 import com.example.data.model.QuestionNotesLogic
+import com.example.data.model.QuestionOfTheDayCatalog
 import com.example.data.model.RapidRecallCatalog
 import com.example.data.model.SpacedRepetitionLogic
 import com.example.data.model.SrsCardState
@@ -173,6 +175,17 @@ class SettingsPreferences(context: Context) {
         FocusTimerLogic.deserializeProgress(prefs.getString(KEY_DAILY_FOCUS_PROGRESS, null))
     )
     val dailyFocusProgress: StateFlow<DailyFocusProgress> = _dailyFocusProgress.asStateFlow()
+
+    private val _qotdCompletion = MutableStateFlow(
+        QuestionOfTheDayCatalog.deserializeCompletion(prefs.getString(KEY_QOTD_COMPLETION, null))
+    )
+    val qotdCompletion: StateFlow<QotdCompletionState> = _qotdCompletion.asStateFlow()
+
+    fun setQotdCompletion(state: QotdCompletionState) {
+        val serialized = QuestionOfTheDayCatalog.serializeCompletion(state)
+        prefs.edit().putString(KEY_QOTD_COMPLETION, serialized).apply()
+        _qotdCompletion.value = state
+    }
 
     private fun readDailyFreeQuotaUsed(): Int {
         val today = StudyGoalLogic.todayDateKey()
@@ -661,9 +674,25 @@ class SettingsPreferences(context: Context) {
         private const val KEY_BACKGROUND_PUSH_ENABLED = "background_push_enabled"
         private const val KEY_LAST_BACKGROUND_SYNC_MS = "last_background_sync_ms"
         private const val KEY_NOTIF_PERMISSION_PROMPTED = "notif_permission_prompted"
+        private const val KEY_QOTD_COMPLETION = "qotd_completion_state"
 
         const val DEFAULT_REMINDER_HOUR = 20
         const val DEFAULT_REMINDER_MINUTE = 0
+
+        @Volatile
+        private var sharedInstance: SettingsPreferences? = null
+
+        /**
+         * Shared process-scoped singleton so startup composables and ViewModels never
+         * re-read SharedPreferences or re-parse JSON maps multiple times on launch.
+         */
+        fun getInstance(context: Context): SettingsPreferences {
+            return sharedInstance ?: synchronized(this) {
+                sharedInstance ?: SettingsPreferences(context.applicationContext).also {
+                    sharedInstance = it
+                }
+            }
+        }
 
         fun calculateSuggestedMinutes(questionCount: Int, secondsPerQuestion: Int): Int {
             if (questionCount <= 0 || secondsPerQuestion <= 0) return 0
