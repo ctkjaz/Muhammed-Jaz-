@@ -42,12 +42,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.model.CategoryStat
+import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.ExamReadinessSummary
+import com.example.data.model.GamificationState
 import com.example.data.model.QuestionItem
 import com.example.data.model.ResultShareFormatter
 import com.example.data.model.SubjectStat
 import com.example.ui.components.AcidLimeProgressBar
 import com.example.ui.components.ExamReadinessCard
+import com.example.ui.components.GamificationHubCard
 import com.example.ui.components.MetricTile
 import com.example.ui.components.QuestionSummaryCard
 import com.example.ui.components.sharePlainText
@@ -75,7 +78,9 @@ fun StatsScreen(
     modifier: Modifier = Modifier,
     readiness: ExamReadinessSummary? = null,
     streakDays: Int = 0,
-    onPracticeSubject: ((String) -> Unit)? = null
+    onPracticeSubject: ((String) -> Unit)? = null,
+    gamificationState: GamificationState = GamificationState(),
+    studyGoal: DailyStudyGoalState = DailyStudyGoalState()
 ) {
     var confirmReset by remember { mutableStateOf(false) }
     val editorial = MaterialTheme.editorialColors
@@ -206,6 +211,13 @@ fun StatsScreen(
                         }
                     )
                 }
+            }
+
+            item(key = "gamification_milestones_hub") {
+                GamificationHubCard(
+                    gamification = gamificationState,
+                    studyGoal = studyGoal
+                )
             }
 
             // Accuracy Per Question Category

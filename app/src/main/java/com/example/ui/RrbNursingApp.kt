@@ -359,6 +359,7 @@ fun RrbNursingApp(vm: MainViewModel) {
         val srsCards by vm.srsCards.collectAsStateWithLifecycle()
         val questionNotes by vm.questionNotes.collectAsStateWithLifecycle()
         val qotdCompletion by vm.qotdCompletion.collectAsStateWithLifecycle()
+        val gamificationState by vm.gamificationState.collectAsStateWithLifecycle()
         val srsNotebookSummary by vm.srsNotebookSummary.collectAsStateWithLifecycle()
         val examReadiness by vm.examReadiness.collectAsStateWithLifecycle()
         val smartStudyPlan by vm.smartStudyPlan.collectAsStateWithLifecycle()
@@ -1252,7 +1253,8 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             qotdQuestion = vm.todayQuestionOfTheDay,
                                             qotdCompletion = qotdCompletion,
                                             onAnswerQotd = vm::answerQuestionOfTheDay,
-                                            onUpdateDailyGoal = vm::setDailyGoalQuestions
+                                            onUpdateDailyGoal = vm::setDailyGoalQuestions,
+                                            gamificationState = gamificationState
                                         )
 
                                         MainTab.SUBJECTS -> SubjectsHubScreen(
@@ -1308,7 +1310,9 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             streakDays = studyGoal.effectiveCurrentStreak(),
                                             onPracticeSubject = { subjectCode ->
                                                 vm.openSubjectChapters(subjectCode)
-                                            }
+                                            },
+                                            gamificationState = gamificationState,
+                                            studyGoal = studyGoal
                                         )
 
                                         MainTab.DECK -> BookmarksScreen(

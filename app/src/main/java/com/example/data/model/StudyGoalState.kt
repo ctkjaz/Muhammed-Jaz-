@@ -30,6 +30,11 @@ data class DailyStudyGoalState(
     fun isGoalMetToday(todayKey: String = StudyGoalLogic.todayDateKey()): Boolean =
         effectiveTodayCount(todayKey) >= dailyGoalQuestions.coerceAtLeast(1)
 
+    fun canRecoverStreakToday(
+        todayKey: String = StudyGoalLogic.todayDateKey(),
+        twoDaysAgoKey: String = StudyGoalLogic.twoDaysAgoDateKey()
+    ): Boolean = lastGoalMetDate == twoDaysAgoKey && currentStreakDays > 0 && lastGoalMetDate != todayKey
+
     fun progressFraction(todayKey: String = StudyGoalLogic.todayDateKey()): Float =
         (effectiveTodayCount(todayKey).toFloat() / dailyGoalQuestions.coerceAtLeast(1).toFloat())
             .coerceIn(0f, 1f)
@@ -37,7 +42,8 @@ data class DailyStudyGoalState(
 
 data class StudyActivityResult(
     val updatedState: DailyStudyGoalState,
-    val justMetDailyGoal: Boolean
+    val justMetDailyGoal: Boolean,
+    val usedStreakRecovery: Boolean = false
 )
 
 object StudyGoalLogic {
@@ -54,9 +60,17 @@ object StudyGoalLogic {
     }
 
     fun yesterdayDateKey(nowMs: Long = System.currentTimeMillis()): String {
+        return daysAgoDateKey(1, nowMs)
+    }
+
+    fun twoDaysAgoDateKey(nowMs: Long = System.currentTimeMillis()): String {
+        return daysAgoDateKey(2, nowMs)
+    }
+
+    fun daysAgoDateKey(daysAgo: Int, nowMs: Long = System.currentTimeMillis()): String {
         val cal = Calendar.getInstance()
         cal.timeInMillis = nowMs
-        cal.add(Calendar.DAY_OF_YEAR, -1)
+        cal.add(Calendar.DAY_OF_YEAR, -daysAgo)
         val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         return formatter.format(cal.time)
     }
@@ -70,7 +84,9 @@ object StudyGoalLogic {
         current: DailyStudyGoalState,
         answeredDelta: Int,
         todayKey: String = todayDateKey(),
-        yesterdayKey: String = yesterdayDateKey()
+        yesterdayKey: String = yesterdayDateKey(),
+        twoDaysAgoKey: String = twoDaysAgoDateKey(),
+        allowStreakRecovery: Boolean = false
     ): StudyActivityResult {
         val safeGoal = current.dailyGoalQuestions.coerceIn(MIN_DAILY_GOAL, MAX_DAILY_GOAL)
         val priorTodayCount = if (current.todayStudyDate == todayKey) {
@@ -84,10 +100,13 @@ object StudyGoalLogic {
         val nowMetToday = newTodayCount >= safeGoal
 
         return if (nowMetToday && !alreadyMetToday) {
-            val continuingStreak = if (current.lastGoalMetDate == yesterdayKey) {
-                current.currentStreakDays.coerceIn(0, MAX_COUNT_BOUND)
-            } else {
-                0
+            val recoveredWithShield = allowStreakRecovery &&
+                current.lastGoalMetDate == twoDaysAgoKey &&
+                current.currentStreakDays > 0
+            val continuingStreak = when {
+                current.lastGoalMetDate == yesterdayKey -> current.currentStreakDays.coerceIn(0, MAX_COUNT_BOUND)
+                recoveredWithShield -> current.currentStreakDays.coerceIn(0, MAX_COUNT_BOUND)
+                else -> 0
             }
             val newStreak = (continuingStreak + 1).coerceIn(1, MAX_COUNT_BOUND)
             val newLongest = maxOf(current.longestStreakDays.coerceIn(0, MAX_COUNT_BOUND), newStreak)
@@ -100,11 +119,15 @@ object StudyGoalLogic {
                     longestStreakDays = newLongest,
                     lastGoalMetDate = todayKey
                 ),
-                justMetDailyGoal = true
+                justMetDailyGoal = true,
+                usedStreakRecovery = recoveredWithShield
             )
         } else {
-            val activeStreak = when (current.lastGoalMetDate) {
-                todayKey, yesterdayKey -> current.currentStreakDays.coerceIn(0, MAX_COUNT_BOUND)
+            val activeStreak = when {
+                current.lastGoalMetDate == todayKey || current.lastGoalMetDate == yesterdayKey ->
+                    current.currentStreakDays.coerceIn(0, MAX_COUNT_BOUND)
+                allowStreakRecovery && current.lastGoalMetDate == twoDaysAgoKey ->
+                    current.currentStreakDays.coerceIn(0, MAX_COUNT_BOUND)
                 else -> 0
             }
             val safeLongest = maxOf(current.longestStreakDays.coerceIn(0, MAX_COUNT_BOUND), activeStreak)
@@ -117,7 +140,8 @@ object StudyGoalLogic {
                     longestStreakDays = safeLongest,
                     lastGoalMetDate = current.lastGoalMetDate
                 ),
-                justMetDailyGoal = false
+                justMetDailyGoal = false,
+                usedStreakRecovery = false
             )
         }
     }

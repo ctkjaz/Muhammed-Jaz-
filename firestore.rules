@@ -65,6 +65,22 @@ service cloud.firestore {
              (!('lastGoalMetDate' in data) || (data.lastGoalMetDate is string && data.lastGoalMetDate.size() <= 16)) &&
              (!('todayStudyDate' in data) || (data.todayStudyDate is string && data.todayStudyDate.size() <= 16)) &&
              (!('todayAnsweredCount' in data) || (data.todayAnsweredCount is int && data.todayAnsweredCount >= 0 && data.todayAnsweredCount <= 10000)) &&
+             (!('totalXp' in data) || (data.totalXp is int && data.totalXp >= 0 && data.totalXp <= 10000000)) &&
+             (!('weeklyXp' in data) || (data.weeklyXp is int && data.weeklyXp >= 0 && data.weeklyXp <= 100000)) &&
+             (!('weeklyKey' in data) || (data.weeklyKey is string && data.weeklyKey.size() <= 16)) &&
+             (!('weeklyQuestions' in data) || (data.weeklyQuestions is int && data.weeklyQuestions >= 0 && data.weeklyQuestions <= 10000)) &&
+             (!('weeklyCorrect' in data) || (data.weeklyCorrect is int && data.weeklyCorrect >= 0 && data.weeklyCorrect <= 10000)) &&
+             (!('weeklySessions' in data) || (data.weeklySessions is int && data.weeklySessions >= 0 && data.weeklySessions <= 1000)) &&
+             (!('weeklyClaimedIds' in data) || (data.weeklyClaimedIds is list && data.weeklyClaimedIds.size() <= 10 && (data.weeklyClaimedIds.size() == 0 || data.weeklyClaimedIds[0] is string))) &&
+             (!('unlockedBadgeIds' in data) || (data.unlockedBadgeIds is list && data.unlockedBadgeIds.size() <= 32 && (data.unlockedBadgeIds.size() == 0 || data.unlockedBadgeIds[0] is string))) &&
+             (!('streakShields' in data) || (data.streakShields is int && data.streakShields >= 0 && data.streakShields <= 2)) &&
+             (!('lastShieldEarnedStreak' in data) || (data.lastShieldEarnedStreak is int && data.lastShieldEarnedStreak >= 0 && data.lastShieldEarnedStreak <= 10000)) &&
+             (!('lastStreakRecoveryDate' in data) || (data.lastStreakRecoveryDate is string && data.lastStreakRecoveryDate.size() <= 16)) &&
+             (!('qotdAnsweredCount' in data) || (data.qotdAnsweredCount is int && data.qotdAnsweredCount >= 0 && data.qotdAnsweredCount <= 100000)) &&
+             (!('completedSessionsCount' in data) || (data.completedSessionsCount is int && data.completedSessionsCount >= 0 && data.completedSessionsCount <= 100000)) &&
+             (!('focusSprintsCount' in data) || (data.focusSprintsCount is int && data.focusSprintsCount >= 0 && data.focusSprintsCount <= 100000)) &&
+             (!('srsMasteredCount' in data) || (data.srsMasteredCount is int && data.srsMasteredCount >= 0 && data.srsMasteredCount <= 100000)) &&
+             (!('bestSessionAccuracy' in data) || (data.bestSessionAccuracy is int && data.bestSessionAccuracy >= 0 && data.bestSessionAccuracy <= 100)) &&
              (!('phoneNumber' in data) || (data.phoneNumber is string && data.phoneNumber.size() <= 20)) &&
              (!('activeSessionId' in data) || (data.activeSessionId is string && data.activeSessionId.size() <= 64)) &&
              (!('activeDeviceName' in data) || (data.activeDeviceName is string && data.activeDeviceName.size() <= 64)) &&
@@ -578,6 +594,12 @@ service cloud.firestore {
                          'secondsPerQuestion', 'keepScreenOn', 'onboardingCompleted',
                          'dailyGoalQuestions', 'currentStreakDays', 'longestStreakDays',
                          'lastGoalMetDate', 'todayStudyDate', 'todayAnsweredCount',
+                         'totalXp', 'weeklyXp', 'weeklyKey', 'weeklyQuestions',
+                         'weeklyCorrect', 'weeklySessions', 'weeklyClaimedIds',
+                         'unlockedBadgeIds', 'streakShields', 'lastShieldEarnedStreak',
+                         'lastStreakRecoveryDate', 'qotdAnsweredCount',
+                         'completedSessionsCount', 'focusSprintsCount',
+                         'srsMasteredCount', 'bestSessionAccuracy',
                          'activeSessionId', 'activeDeviceName', 'sessionUpdatedAt',
                          'createdAt', 'updatedAt'
                        ]) &&
@@ -588,14 +610,21 @@ service cloud.firestore {
                        isValidUserProfile(incoming(), userId) &&
                        incoming().userId == existing().userId &&
                        incoming().createdAt == existing().createdAt && (
-                         // Action 1: Update learner profile, contact info, study preferences & daily goal streak
+                         // Action 1: Update learner profile, contact info, study preferences, daily goal & gamification
                          incoming().diff(existing()).affectedKeys().hasOnly([
                            'email', 'lastDeviceHash', 'displayName', 'role', 'targetYear',
                            'focusSubject', 'phoneNumber', 'activeExamId', 'themePreference',
                            'negativeMarking', 'useTimeLimit', 'secondsPerQuestion',
                            'keepScreenOn', 'onboardingCompleted', 'dailyGoalQuestions',
                            'currentStreakDays', 'longestStreakDays', 'lastGoalMetDate',
-                           'todayStudyDate', 'todayAnsweredCount', 'updatedAt'
+                           'todayStudyDate', 'todayAnsweredCount',
+                           'totalXp', 'weeklyXp', 'weeklyKey', 'weeklyQuestions',
+                           'weeklyCorrect', 'weeklySessions', 'weeklyClaimedIds',
+                           'unlockedBadgeIds', 'streakShields', 'lastShieldEarnedStreak',
+                           'lastStreakRecoveryDate', 'qotdAnsweredCount',
+                           'completedSessionsCount', 'focusSprintsCount',
+                           'srsMasteredCount', 'bestSessionAccuracy',
+                           'updatedAt'
                          ]) ||
                          // Action 2: Claim or refresh single-device active session lock
                          incoming().diff(existing()).affectedKeys().hasOnly([

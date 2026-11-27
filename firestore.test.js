@@ -1352,5 +1352,90 @@ test("15. GrandTests & Entries: admin toggle + draft privacy + 1 immutable attem
   await assertSucceeds(adminDb.collection("grandTests").doc("gt_draft_1").delete());
 });
 
+test("User profile Phase 2 gamification fields: valid create/update succeed; bounds & cross-user tamper fail", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const created = new Date(Date.now() - 8000);
+
+  // Valid Kotlin-mirrored create including gamification fields
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).set({
+      ...validProfilePayload(ALICE_UID, created),
+      totalXp: 420,
+      weeklyXp: 150,
+      weeklyKey: "2026-W48",
+      weeklyQuestions: 32,
+      weeklyCorrect: 26,
+      weeklySessions: 2,
+      weeklyClaimedIds: ["weekly_3_sessions"],
+      unlockedBadgeIds: ["first_steps", "mock_finisher"],
+      streakShields: 1,
+      lastShieldEarnedStreak: 7,
+      lastStreakRecoveryDate: "",
+      qotdAnsweredCount: 3,
+      completedSessionsCount: 2,
+      focusSprintsCount: 1,
+      srsMasteredCount: 2,
+      bestSessionAccuracy: 85,
+    })
+  );
+
+  // Valid owner update of gamification progress
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      totalXp: 545,
+      weeklyXp: 275,
+      weeklyQuestions: 45,
+      weeklyCorrect: 38,
+      unlockedBadgeIds: ["first_steps", "mock_finisher", "sharpshooter"],
+      streakShields: 2,
+      lastShieldEarnedStreak: 14,
+      lastStreakRecoveryDate: "2026-11-27",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Reject negative totalXp
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      totalXp: -50,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Reject streakShields > 2 (max 2 banked)
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      streakShields: 3,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Reject bestSessionAccuracy > 100
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      bestSessionAccuracy: 105,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Reject oversized badge list (>32)
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      unlockedBadgeIds: Array.from({ length: 33 }, (_, i) => `badge_${i}`),
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Reject cross-user tamper on Alice's XP
+  await assertFails(
+    bobDb.collection("users").doc(ALICE_UID).update({
+      totalXp: 99999,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+});
+
+
 
 

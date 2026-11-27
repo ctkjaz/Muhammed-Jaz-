@@ -6,6 +6,8 @@ import com.example.data.local.MockHistoryEntity
 import com.example.data.local.QuestionProgressEntity
 import com.example.data.local.SettingsPreferences
 import com.example.data.model.AccountSessionLogic
+import com.example.data.model.GamificationLogic
+import com.example.data.model.GamificationState
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.Question
 import com.google.firebase.Firebase
@@ -262,7 +264,8 @@ class CloudSyncRepository(
         todayStudyDate: String,
         todayAnsweredCount: Int,
         email: String = "",
-        lastDeviceHash: String = ""
+        lastDeviceHash: String = "",
+        gamificationState: GamificationState? = null
     ): Result<Unit> {
         val docPath = "users/$userId"
         return try {
@@ -304,7 +307,8 @@ class CloudSyncRepository(
                     initialActiveSessionId = safeSessionId,
                     initialActiveDeviceName = safeDevice,
                     email = email,
-                    lastDeviceHash = lastDeviceHash
+                    lastDeviceHash = lastDeviceHash,
+                    gamificationState = gamificationState
                 )
             }
         } catch (e: CancellationException) {
@@ -338,7 +342,8 @@ class CloudSyncRepository(
         initialActiveSessionId: String = "",
         initialActiveDeviceName: String = "",
         email: String = "",
-        lastDeviceHash: String = ""
+        lastDeviceHash: String = "",
+        gamificationState: GamificationState? = null
     ): Result<Unit> {
         val docPath = "users/$userId"
         return try {
@@ -366,6 +371,33 @@ class CloudSyncRepository(
             val safeTodayDate = com.example.data.model.StudyGoalLogic.sanitizeDateKey(todayStudyDate)
             val safeTodayCount = todayAnsweredCount.coerceIn(0, com.example.data.model.StudyGoalLogic.MAX_COUNT_BOUND)
 
+            val gamificationPayload: Map<String, Any> = gamificationState?.let { g ->
+                mapOf(
+                    "totalXp" to g.totalXp.coerceIn(0, GamificationLogic.MAX_TOTAL_XP),
+                    "weeklyXp" to g.weeklyXp.coerceIn(0, GamificationLogic.MAX_WEEKLY_XP),
+                    "weeklyKey" to GamificationLogic.sanitizeWeekKey(g.weeklyKey),
+                    "weeklyQuestions" to g.weeklyQuestions.coerceIn(0, GamificationLogic.MAX_WEEKLY_QUESTIONS),
+                    "weeklyCorrect" to g.weeklyCorrect.coerceIn(0, GamificationLogic.MAX_WEEKLY_QUESTIONS),
+                    "weeklySessions" to g.weeklySessions.coerceIn(0, GamificationLogic.MAX_WEEKLY_SESSIONS),
+                    "weeklyClaimedIds" to g.weeklyClaimedIds
+                        .filter { it in GamificationLogic.VALID_CHALLENGE_IDS }
+                        .distinct()
+                        .take(GamificationLogic.MAX_WEEKLY_CLAIMED_COUNT),
+                    "unlockedBadgeIds" to g.unlockedBadgeIds
+                        .filter { it in GamificationLogic.VALID_BADGE_IDS }
+                        .distinct()
+                        .take(GamificationLogic.MAX_BADGES_COUNT),
+                    "streakShields" to g.streakShields.coerceIn(0, GamificationLogic.MAX_STREAK_SHIELDS),
+                    "lastShieldEarnedStreak" to g.lastShieldEarnedStreak.coerceIn(0, com.example.data.model.StudyGoalLogic.MAX_COUNT_BOUND),
+                    "lastStreakRecoveryDate" to com.example.data.model.StudyGoalLogic.sanitizeDateKey(g.lastStreakRecoveryDate),
+                    "qotdAnsweredCount" to g.qotdAnsweredCount.coerceIn(0, GamificationLogic.MAX_COUNTER_BOUND),
+                    "completedSessionsCount" to g.completedSessionsCount.coerceIn(0, GamificationLogic.MAX_COUNTER_BOUND),
+                    "focusSprintsCount" to g.focusSprintsCount.coerceIn(0, GamificationLogic.MAX_COUNTER_BOUND),
+                    "srsMasteredCount" to g.srsMasteredCount.coerceIn(0, GamificationLogic.MAX_COUNTER_BOUND),
+                    "bestSessionAccuracy" to g.bestSessionAccuracy.coerceIn(0, 100)
+                )
+            } ?: emptyMap()
+
             val docRef = userDoc(uid)
             val exists = docRef.get().await().exists()
             if (exists) {
@@ -390,6 +422,7 @@ class CloudSyncRepository(
                     "todayAnsweredCount" to safeTodayCount,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
+                updatePayload.putAll(gamificationPayload)
                 if (safeEmail.isNotBlank()) updatePayload["email"] = safeEmail
                 if (safeDeviceHash.isNotBlank()) updatePayload["lastDeviceHash"] = safeDeviceHash
                 docRef.update(updatePayload).await()
@@ -417,6 +450,7 @@ class CloudSyncRepository(
                     "createdAt" to FieldValue.serverTimestamp(),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
+                createPayload.putAll(gamificationPayload)
                 if (safeEmail.isNotBlank()) createPayload["email"] = safeEmail
                 if (safeDeviceHash.isNotBlank()) createPayload["lastDeviceHash"] = safeDeviceHash
                 val cleanSessionId = initialActiveSessionId.trim().take(AccountSessionLogic.MAX_SESSION_ID_LENGTH)

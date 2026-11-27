@@ -75,6 +75,7 @@ import com.example.data.model.DifficultyFilter
 import com.example.data.model.ExamCountdownLogic
 import com.example.data.model.ExamRoadmapSummary
 import com.example.data.model.ExamStage
+import com.example.data.model.GamificationState
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.QotdCompletionState
 import com.example.data.model.QuestionItem
@@ -87,6 +88,7 @@ import com.example.data.subscription.EntitlementEvaluator
 import com.example.data.subscription.PlanTier
 import com.example.data.subscription.SubscriptionUiState
 import com.example.ui.components.AcidLimeProgressBar
+import com.example.ui.components.CompactGamificationBannerCard
 import com.example.ui.components.DailyGoalQuickEditorDialog
 import com.example.ui.components.DashboardLoadingSkeleton
 import com.example.ui.components.DifficultyFilterBar
@@ -148,6 +150,7 @@ fun DashboardScreen(
     qotdCompletion: QotdCompletionState = QotdCompletionState(),
     onAnswerQotd: (Int) -> Unit = {},
     onUpdateDailyGoal: ((Int) -> Unit)? = null,
+    gamificationState: GamificationState = GamificationState(),
     modifier: Modifier = Modifier
 ) {
     if (!state.isLoaded) {
@@ -641,6 +644,15 @@ fun DashboardScreen(
                         }
                     }
                 }
+            }
+
+            // 2.0a Compact Gamification Progress Banner (XP, Rank, Shield & Next Weekly Challenge)
+            item(key = "dashboard_gamification_overview") {
+                CompactGamificationBannerCard(
+                    gamification = gamificationState,
+                    studyGoal = studyGoal,
+                    onOpenHub = { onSelectTab(MainTab.STATS) }
+                )
             }
 
             // 2.0 Question of the Day (Curated High-Yield Clinical MCQ with Full Per-Option Rationales)

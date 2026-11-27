@@ -8,6 +8,8 @@ import com.example.data.model.AccountSessionLogic
 import com.example.data.model.DailyFocusProgress
 import com.example.data.model.DailyStudyGoalState
 import com.example.data.model.FocusTimerLogic
+import com.example.data.model.GamificationLogic
+import com.example.data.model.GamificationState
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.QotdCompletionState
 import com.example.data.model.QuestionNote
@@ -187,6 +189,17 @@ class SettingsPreferences(context: Context) {
         _qotdCompletion.value = state
     }
 
+    private val _gamificationState = MutableStateFlow(
+        GamificationLogic.deserialize(prefs.getString(KEY_GAMIFICATION_STATE, null))
+    )
+    val gamificationState: StateFlow<GamificationState> = _gamificationState.asStateFlow()
+
+    fun setGamificationState(state: GamificationState) {
+        val serialized = GamificationLogic.serialize(state)
+        prefs.edit().putString(KEY_GAMIFICATION_STATE, serialized).apply()
+        _gamificationState.value = state
+    }
+
     private fun readDailyFreeQuotaUsed(): Int {
         val today = StudyGoalLogic.todayDateKey()
         val storedDate = prefs.getString(KEY_FREE_QUOTA_DATE, "") ?: ""
@@ -338,6 +351,7 @@ class SettingsPreferences(context: Context) {
     fun resetGoalStateForAccountSwitch() {
         setOnboardingCompleted(false)
         setStudyGoalState(DailyStudyGoalState())
+        setGamificationState(GamificationState())
         setPhoneNumber("")
     }
 
@@ -566,6 +580,7 @@ class SettingsPreferences(context: Context) {
         keepScreenOn: Boolean,
         onboardingCompleted: Boolean? = null,
         mergedGoalState: DailyStudyGoalState? = null,
+        mergedGamificationState: GamificationState? = null,
         phoneNumber: String? = null
     ) {
         val cleanName = displayName.take(MAX_PROFILE_NAME_LENGTH)
@@ -576,6 +591,7 @@ class SettingsPreferences(context: Context) {
         val cleanSec = secondsPerQuestion.coerceIn(MIN_SECONDS_PER_QUESTION, MAX_SECONDS_PER_QUESTION)
         val resolvedOnboarding = onboardingCompleted ?: _onboardingCompleted.value
         val resolvedGoal = mergedGoalState ?: _studyGoalState.value
+        val resolvedGamification = mergedGamificationState ?: _gamificationState.value
         val resolvedPhone = phoneNumber?.let { AccountSessionLogic.sanitizePhoneNumber(it) } ?: _phoneNumber.value
 
         prefs.edit()
@@ -597,6 +613,7 @@ class SettingsPreferences(context: Context) {
             .putInt(KEY_CURRENT_STREAK_DAYS, resolvedGoal.currentStreakDays)
             .putInt(KEY_LONGEST_STREAK_DAYS, resolvedGoal.longestStreakDays)
             .putString(KEY_LAST_GOAL_MET_DATE, resolvedGoal.lastGoalMetDate)
+            .putString(KEY_GAMIFICATION_STATE, GamificationLogic.serialize(resolvedGamification))
             .apply()
 
         _profileName.value = cleanName
@@ -612,6 +629,7 @@ class SettingsPreferences(context: Context) {
         _keepScreenOn.value = keepScreenOn
         _onboardingCompleted.value = resolvedOnboarding
         _studyGoalState.value = resolvedGoal
+        _gamificationState.value = resolvedGamification
     }
 
     companion object {
@@ -675,6 +693,7 @@ class SettingsPreferences(context: Context) {
         private const val KEY_LAST_BACKGROUND_SYNC_MS = "last_background_sync_ms"
         private const val KEY_NOTIF_PERMISSION_PROMPTED = "notif_permission_prompted"
         private const val KEY_QOTD_COMPLETION = "qotd_completion_state"
+        private const val KEY_GAMIFICATION_STATE = "gamification_state_v1"
 
         const val DEFAULT_REMINDER_HOUR = 20
         const val DEFAULT_REMINDER_MINUTE = 0

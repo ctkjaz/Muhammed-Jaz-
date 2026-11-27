@@ -64,6 +64,9 @@ import com.example.data.model.ExamStage
 import com.example.data.model.Flashcard
 import com.example.data.model.FocusTimerLogic
 import com.example.data.model.FocusTimerPreset
+import com.example.data.model.GamificationLogic
+import com.example.data.model.GamificationState
+import com.example.data.model.GamificationUpdateResult
 import com.example.data.model.MockHistory
 import com.example.data.model.MockSelectionLogic
 import com.example.data.model.PlatformCatalogDefaults
@@ -944,6 +947,7 @@ class MainViewModel(
     val startupTimingReport: StateFlow<StartupTimingReport?> = _startupTimingReport.asStateFlow()
 
     val qotdCompletion: StateFlow<QotdCompletionState> = settings.qotdCompletion
+    val gamificationState: StateFlow<GamificationState> = settings.gamificationState
     val todayQuestionOfTheDay: DailyFeaturedQuestion
         get() = QuestionOfTheDayCatalog.questionForDate(StudyGoalLogic.todayDateKey())
 
@@ -1232,7 +1236,8 @@ class MainViewModel(
             todayStudyDate = goal.todayStudyDate,
             todayAnsweredCount = goal.todayAnsweredCount,
             email = signedInAccount.email,
-            lastDeviceHash = deviceIdentity.deviceHash
+            lastDeviceHash = deviceIdentity.deviceHash,
+            gamificationState = settings.gamificationState.value
         )
     }
 
@@ -1675,6 +1680,41 @@ class MainViewModel(
             val resolvedPhone = remote.phoneNumber.takeIf { it.isNotBlank() }
                 ?: settings.phoneNumber.value
 
+            val hasRemoteGamification = remote.totalXp > 0L ||
+                remote.weeklyXp > 0L ||
+                remote.weeklyQuestions > 0L ||
+                remote.unlockedBadgeIds.isNotEmpty() ||
+                remote.streakShields > 0L ||
+                remote.lastShieldEarnedStreak > 0L ||
+                remote.qotdAnsweredCount > 0L ||
+                remote.completedSessionsCount > 0L
+            val mergedGamification = if (hasRemoteGamification) {
+                val remoteGam = GamificationState(
+                    totalXp = remote.totalXp.toInt().coerceIn(0, GamificationLogic.MAX_TOTAL_XP),
+                    weeklyXp = remote.weeklyXp.toInt().coerceIn(0, GamificationLogic.MAX_WEEKLY_XP),
+                    weeklyKey = GamificationLogic.sanitizeWeekKey(remote.weeklyKey),
+                    weeklyQuestions = remote.weeklyQuestions.toInt().coerceIn(0, GamificationLogic.MAX_WEEKLY_QUESTIONS),
+                    weeklyCorrect = remote.weeklyCorrect.toInt().coerceIn(0, GamificationLogic.MAX_WEEKLY_QUESTIONS),
+                    weeklySessions = remote.weeklySessions.toInt().coerceIn(0, GamificationLogic.MAX_WEEKLY_SESSIONS),
+                    weeklyClaimedIds = remote.weeklyClaimedIds,
+                    unlockedBadgeIds = remote.unlockedBadgeIds,
+                    streakShields = remote.streakShields.toInt().coerceIn(0, GamificationLogic.MAX_STREAK_SHIELDS),
+                    lastShieldEarnedStreak = remote.lastShieldEarnedStreak.toInt().coerceIn(0, StudyGoalLogic.MAX_COUNT_BOUND),
+                    lastStreakRecoveryDate = StudyGoalLogic.sanitizeDateKey(remote.lastStreakRecoveryDate),
+                    qotdAnsweredCount = remote.qotdAnsweredCount.toInt().coerceIn(0, GamificationLogic.MAX_COUNTER_BOUND),
+                    completedSessionsCount = remote.completedSessionsCount.toInt().coerceIn(0, GamificationLogic.MAX_COUNTER_BOUND),
+                    focusSprintsCount = remote.focusSprintsCount.toInt().coerceIn(0, GamificationLogic.MAX_COUNTER_BOUND),
+                    srsMasteredCount = remote.srsMasteredCount.toInt().coerceIn(0, GamificationLogic.MAX_COUNTER_BOUND),
+                    bestSessionAccuracy = remote.bestSessionAccuracy.toInt().coerceIn(0, 100)
+                )
+                GamificationLogic.mergeWithCloud(
+                    local = settings.gamificationState.value,
+                    remote = remoteGam
+                )
+            } else {
+                settings.gamificationState.value
+            }
+
             settings.applySyncedProfile(
                 displayName = resolvedName,
                 role = remote.role,
@@ -1688,6 +1728,7 @@ class MainViewModel(
                 keepScreenOn = remote.keepScreenOn,
                 onboardingCompleted = resolvedOnboarding,
                 mergedGoalState = mergedGoal,
+                mergedGamificationState = mergedGamification,
                 phoneNumber = resolvedPhone
             )
         } finally {
@@ -1763,7 +1804,8 @@ class MainViewModel(
             initialActiveSessionId = localSessionId,
             initialActiveDeviceName = currentDeviceName,
             email = signedInAccount.email,
-            lastDeviceHash = deviceIdentity.deviceHash
+            lastDeviceHash = deviceIdentity.deviceHash,
+            gamificationState = settings.gamificationState.value
         )
         result.onSuccess { markSynced() }.onFailure { recordSyncFailure(it) }
     }
@@ -1953,7 +1995,13 @@ class MainViewModel(
         )
         settings.setDailyFocusProgress(updated)
         if (!preset.isBreak) {
-            showMessage("Focus sprint complete! +${preset.durationMinutes} min logged today.")
+            val gamResult = GamificationLogic.recordFocusSprintCompleted(
+                current = settings.gamificationState.value,
+                lifetimeAnsweredCount = mainState.value.overall.totalAttempts,
+                longestStreakDays = settings.studyGoalState.value.longestStreakDays
+            )
+            applyGamificationResult(gamResult, announceMilestones = false)
+            showMessage("Focus sprint complete! +${preset.durationMinutes} min · +${gamResult.xpAwarded} XP")
         }
     }
 
@@ -1979,7 +2027,13 @@ class MainViewModel(
     fun markSrsCardMastered(questionId: String) {
         val updated = SpacedRepetitionLogic.markMastered(settings.srsCards.value, questionId)
         settings.setSrsCards(updated)
-        showMessage("Marked as Mastered in Mistake Notebook!")
+        val gamResult = GamificationLogic.recordSrsCardMastered(
+            current = settings.gamificationState.value,
+            lifetimeAnsweredCount = mainState.value.overall.totalAttempts,
+            longestStreakDays = settings.studyGoalState.value.longestStreakDays
+        )
+        applyGamificationResult(gamResult, announceMilestones = false)
+        showMessage("Marked as Mastered! +${gamResult.xpAwarded} XP")
     }
 
     fun removeSrsCard(questionId: String) {
@@ -2003,6 +2057,13 @@ class MainViewModel(
                 isCorrect = isCorrect
             )
         )
+        val gamResult = GamificationLogic.recordQotdCompleted(
+            current = settings.gamificationState.value,
+            isCorrect = isCorrect,
+            lifetimeAnsweredCount = mainState.value.overall.totalAttempts + 1,
+            longestStreakDays = settings.studyGoalState.value.longestStreakDays
+        )
+        applyGamificationResult(gamResult, announceMilestones = true)
         recordDailyStudyProgress(answeredDelta = 1)
     }
 
@@ -2492,17 +2553,61 @@ class MainViewModel(
         startPractice(items = picked, title = drillTitle)
     }
 
+    private fun applyGamificationResult(
+        result: GamificationUpdateResult,
+        announceMilestones: Boolean
+    ) {
+        val changed = result.updatedState != settings.gamificationState.value
+        if (changed) {
+            settings.setGamificationState(result.updatedState)
+            scheduleProfileCloudPush()
+        }
+        if (!announceMilestones) return
+        when {
+            result.leveledUpTo != null -> {
+                val rank = GamificationLogic.rankTitleForLevel(result.leveledUpTo)
+                showMessage("Level Up! Level ${result.leveledUpTo} · $rank")
+            }
+            result.earnedStreakShield -> {
+                showMessage("7-Day Milestone! +${GamificationLogic.XP_STREAK_7DAY_BONUS} XP & +1 free Streak Shield earned!")
+            }
+            result.newlyUnlockedBadges.isNotEmpty() -> {
+                val badge = result.newlyUnlockedBadges.first()
+                showMessage("Badge unlocked: ${badge.title}!")
+            }
+            result.newlyClaimedChallenges.isNotEmpty() -> {
+                val ch = result.newlyClaimedChallenges.first()
+                showMessage("Weekly Challenge complete: ${ch.title} (+${ch.rewardXp} XP)!")
+            }
+        }
+    }
+
     private fun recordDailyStudyProgress(answeredDelta: Int) {
         if (answeredDelta <= 0) return
+        val canUseShield = settings.gamificationState.value.streakShields > 0
         val result = StudyGoalLogic.recordStudyActivity(
             current = settings.studyGoalState.value,
-            answeredDelta = answeredDelta
+            answeredDelta = answeredDelta,
+            allowStreakRecovery = canUseShield
         )
         settings.setStudyGoalState(result.updatedState)
-        scheduleProfileCloudPush()
-        if (result.justMetDailyGoal) {
+
+        if (result.justMetDailyGoal || result.usedStreakRecovery) {
+            val gamResult = GamificationLogic.recordDailyGoalAndStreakEvent(
+                current = settings.gamificationState.value,
+                justMetDailyGoal = result.justMetDailyGoal,
+                usedStreakRecovery = result.usedStreakRecovery,
+                currentStreakDays = result.updatedState.currentStreakDays,
+                longestStreakDays = result.updatedState.longestStreakDays,
+                lifetimeAnsweredCount = mainState.value.overall.totalAttempts + answeredDelta
+            )
+            applyGamificationResult(gamResult, announceMilestones = false)
             val days = result.updatedState.currentStreakDays
-            showMessage("Daily goal complete! $days-day study streak!")
+            val shieldNote = if (result.usedStreakRecovery) " (Streak Shield saved your streak!)" else ""
+            val bonusNote = if (gamResult.xpAwarded > 0) " +${gamResult.xpAwarded} XP" else ""
+            showMessage("Daily goal complete! $days-day streak$shieldNote$bonusNote")
+        } else {
+            scheduleProfileCloudPush()
         }
     }
 
@@ -2629,6 +2734,14 @@ class MainViewModel(
         if (!sub.hasPremiumForExam(activeExamId)) {
             settings.incrementDailyFreeQuotaUsed()
         }
+        val practiceGam = GamificationLogic.recordQuestionAnswer(
+            current = settings.gamificationState.value,
+            questionId = qItem.id,
+            isCorrect = isCorrect,
+            lifetimeAnsweredCount = mainState.value.overall.totalAttempts + 1,
+            longestStreakDays = settings.studyGoalState.value.longestStreakDays
+        )
+        applyGamificationResult(practiceGam, announceMilestones = true)
         recordDailyStudyProgress(answeredDelta = 1)
 
         // Update Spaced Repetition (SRS) Mistake Notebook card state
@@ -2673,7 +2786,24 @@ class MainViewModel(
     }
 
     fun submitTimedPractice() {
+        val currentSess = _practiceSession.value
         stopActiveTimer()
+        if (currentSess != null && !currentSess.isSubmittedSummary &&
+            currentSess.selectedAnswers.size >= GamificationLogic.SESSION_BONUS_MIN_QUESTIONS
+        ) {
+            val rightCount = currentSess.questions.count { q ->
+                currentSess.selectedAnswers[q.id] == q.question.correctIndex
+            }
+            val acc = ((rightCount.toFloat() / currentSess.selectedAnswers.size.coerceAtLeast(1)) * 100f).toInt()
+            val gamResult = GamificationLogic.recordTimedPracticeCompleted(
+                current = settings.gamificationState.value,
+                answeredCount = currentSess.selectedAnswers.size,
+                accuracyPercent = acc,
+                lifetimeAnsweredCount = mainState.value.overall.totalAttempts,
+                longestStreakDays = settings.studyGoalState.value.longestStreakDays
+            )
+            applyGamificationResult(gamResult, announceMilestones = true)
+        }
         _practiceSession.update { sess ->
             sess?.copy(
                 showCompletionPrompt = false,
@@ -3269,6 +3399,14 @@ class MainViewModel(
         )
 
         if (batchResults.isNotEmpty()) {
+            val batchGam = GamificationLogic.recordBatchSessionCompleted(
+                current = settings.gamificationState.value,
+                results = batchResults,
+                accuracyPercent = acc,
+                lifetimeAnsweredCount = mainState.value.overall.totalAttempts + batchResults.size,
+                longestStreakDays = settings.studyGoalState.value.longestStreakDays
+            )
+            applyGamificationResult(batchGam, announceMilestones = true)
             recordDailyStudyProgress(answeredDelta = batchResults.size)
             var updatedSrs = settings.srsCards.value
             batchResults.forEach { (qId, isRight) ->
