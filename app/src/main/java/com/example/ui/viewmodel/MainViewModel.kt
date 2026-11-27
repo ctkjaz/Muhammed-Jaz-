@@ -63,6 +63,7 @@ import com.example.data.model.ExamRoadmapSummary
 import com.example.data.model.ExamSection
 import com.example.data.model.ExamStage
 import com.example.data.model.Flashcard
+import com.example.data.model.UnfoldingClinicalCasesCatalog
 import com.example.data.model.FocusTimerLogic
 import com.example.data.model.IbqCategory
 import com.example.data.model.IbqHubLogic
@@ -591,6 +592,11 @@ class MainViewModel(
 
     private val _isFlashcardStudioOpen = MutableStateFlow(false)
     val isFlashcardStudioOpen: StateFlow<Boolean> = _isFlashcardStudioOpen.asStateFlow()
+
+    private val _isClinicalCasesOpen = MutableStateFlow(false)
+    val isClinicalCasesOpen: StateFlow<Boolean> = _isClinicalCasesOpen.asStateFlow()
+
+    val completedClinicalCaseIds: StateFlow<Set<String>> = settings.completedClinicalCaseIds
 
     // ------------------------------------------------------------------------
     // v2.5: WEEKLY ALL-INDIA GRAND TEST & PERCENTILE (DORMANT BY DEFAULT)
@@ -1953,6 +1959,7 @@ class MainViewModel(
         _isIbqHubOpen.value = false
         _isSpecialtyTracksOpen.value = false
         _isFlashcardStudioOpen.value = false
+        _isClinicalCasesOpen.value = false
         _isGrandTestHubOpen.value = false
     }
 
@@ -2079,6 +2086,40 @@ class MainViewModel(
 
     fun closeFlashcardStudio() {
         _isFlashcardStudioOpen.value = false
+    }
+
+    fun openClinicalCases() {
+        closeAllOverlayScreens()
+        _isClinicalCasesOpen.value = true
+    }
+
+    fun closeClinicalCases() {
+        _isClinicalCasesOpen.value = false
+    }
+
+    fun recordClinicalCaseCompleted(caseId: String, correctStages: Int, totalStages: Int) {
+        val alreadyCompleted = caseId in settings.completedClinicalCaseIds.value
+        val xpAwarded = UnfoldingClinicalCasesCatalog.xpForCaseCompletion(
+            correctStages = correctStages,
+            totalStages = totalStages,
+            alreadyCompleted = alreadyCompleted
+        )
+        settings.markClinicalCaseCompleted(caseId)
+        if (xpAwarded > 0) {
+            val gamResult = GamificationLogic.recordClinicalCaseCompleted(
+                current = settings.gamificationState.value,
+                xpAwarded = xpAwarded,
+                correctStages = correctStages,
+                totalStages = totalStages,
+                lifetimeAnsweredCount = mainState.value.overall.totalAttempts + totalStages,
+                longestStreakDays = settings.studyGoalState.value.longestStreakDays
+            )
+            applyGamificationResult(gamResult, announceMilestones = false)
+            recordDailyStudyProgress(answeredDelta = totalStages)
+            showMessage("Clinical Case Mastered! +$xpAwarded XP awarded")
+        } else {
+            showMessage("Case replay complete ($correctStages/$totalStages stages correct)")
+        }
     }
 
     fun setFlashcardMastered(cardId: String, mastered: Boolean) {

@@ -347,6 +347,9 @@ class NursingPrepRepository(
             val clinicalSpotterQuestions = ClinicalSpotterCatalog.builtinSpotterQuestions()
             insertQuestionBatch(clinicalSpotterQuestions, baseSortOrder = 29000)
 
+            val norcetPyqExpansion = loadAssetQuestions("norcet_pyq_expansion.json")
+            insertQuestionBatch(norcetPyqExpansion, baseSortOrder = 32000)
+
             if (needsQuestions || needsRrbLinks) {
                 val rrbBaseLinks = rrbQuestions.mapIndexed { index, q ->
                     ExamQuestionLinkEntity(
@@ -376,6 +379,17 @@ class NursingPrepRepository(
                         examShift = q.examShift
                     )
                 }
+                val expansionNorcetLinks = norcetPyqExpansion.mapIndexed { index, q ->
+                    ExamQuestionLinkEntity(
+                        examId = PlatformCatalogDefaults.EXAM_AIIMS_NORCET,
+                        questionId = q.id,
+                        sectionId = PlatformCatalogDefaults.sectionIdForNorcetSubject(q.subject),
+                        sortOrder = 1000 + index,
+                        isPyqForExam = true,
+                        examYear = q.examYear,
+                        examShift = q.examShift
+                    )
+                }
                 val sharedNorcetLinks = rrbQuestions
                     .filter { PlatformCatalogDefaults.isNorcetSharedSubject(it.subject) }
                     .mapIndexed { index, q ->
@@ -389,7 +403,7 @@ class NursingPrepRepository(
                             examShift = ""
                         )
                     }
-                (dedicatedNorcetLinks + sharedNorcetLinks).chunked(500).forEach { chunk ->
+                (dedicatedNorcetLinks + expansionNorcetLinks + sharedNorcetLinks).chunked(500).forEach { chunk ->
                     dao.upsertExamQuestionLinks(chunk)
                 }
             }
@@ -547,7 +561,7 @@ class NursingPrepRepository(
     }
 
     companion object {
-        const val CURRENT_SEED_VERSION = 12
+        const val CURRENT_SEED_VERSION = 13
     }
 
     suspend fun loadFlashcards(): List<Flashcard> = withContext(Dispatchers.IO) {

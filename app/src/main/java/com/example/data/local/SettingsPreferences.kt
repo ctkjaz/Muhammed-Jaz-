@@ -19,6 +19,7 @@ import com.example.data.model.RapidRecallCatalog
 import com.example.data.model.SpacedRepetitionLogic
 import com.example.data.model.SrsCardState
 import com.example.data.model.StudyGoalLogic
+import com.example.data.model.UnfoldingClinicalCasesCatalog
 import kotlin.math.ceil
 
 enum class ThemePreference {
@@ -200,6 +201,27 @@ class SettingsPreferences(context: Context) {
         _gamificationState.value = state
     }
 
+    private val _completedClinicalCaseIds = MutableStateFlow(
+        UnfoldingClinicalCasesCatalog.deserializeCompletedCaseIds(
+            prefs.getString(KEY_COMPLETED_CLINICAL_CASES, null)
+        )
+    )
+    val completedClinicalCaseIds: StateFlow<Set<String>> = _completedClinicalCaseIds.asStateFlow()
+
+    fun markClinicalCaseCompleted(caseId: String) {
+        val clean = caseId.trim()
+        if (clean.isEmpty()) return
+        val updated = _completedClinicalCaseIds.value + clean
+        val serialized = UnfoldingClinicalCasesCatalog.serializeCompletedCaseIds(updated)
+        prefs.edit().putString(KEY_COMPLETED_CLINICAL_CASES, serialized).apply()
+        _completedClinicalCaseIds.value = updated
+    }
+
+    fun clearCompletedClinicalCases() {
+        prefs.edit().remove(KEY_COMPLETED_CLINICAL_CASES).apply()
+        _completedClinicalCaseIds.value = emptySet()
+    }
+
     private fun readDailyFreeQuotaUsed(): Int {
         val today = StudyGoalLogic.todayDateKey()
         val storedDate = prefs.getString(KEY_FREE_QUOTA_DATE, "") ?: ""
@@ -352,6 +374,7 @@ class SettingsPreferences(context: Context) {
         setOnboardingCompleted(false)
         setStudyGoalState(DailyStudyGoalState())
         setGamificationState(GamificationState())
+        clearCompletedClinicalCases()
         setPhoneNumber("")
     }
 
@@ -694,6 +717,7 @@ class SettingsPreferences(context: Context) {
         private const val KEY_NOTIF_PERMISSION_PROMPTED = "notif_permission_prompted"
         private const val KEY_QOTD_COMPLETION = "qotd_completion_state"
         private const val KEY_GAMIFICATION_STATE = "gamification_state_v1"
+        private const val KEY_COMPLETED_CLINICAL_CASES = "completed_clinical_cases_v1"
 
         const val DEFAULT_REMINDER_HOUR = 20
         const val DEFAULT_REMINDER_MINUTE = 0

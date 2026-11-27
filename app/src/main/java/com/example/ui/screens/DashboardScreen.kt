@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.QuestionAnswer
 import androidx.compose.material.icons.filled.Quiz
@@ -158,6 +159,8 @@ fun DashboardScreen(
     onOpenAbgInterpreter: () -> Unit = {},
     onOpenEcgStudio: () -> Unit = {},
     onOpenSpecialtyTracks: () -> Unit = {},
+    onOpenClinicalCases: () -> Unit = {},
+    completedClinicalCasesCount: Int = 0,
     modifier: Modifier = Modifier
 ) {
     if (!state.isLoaded) {
@@ -1404,6 +1407,18 @@ fun DashboardScreen(
             item(key = "dashboard_shortcuts") {
                 val pyqCount = state.stageSummary.pyqCount
                 val shortcuts = buildList {
+                    val totalCases = com.example.data.model.UnfoldingClinicalCasesCatalog.ALL_CASES.size
+                    add(
+                        Triple(
+                            "Unfolding Clinical Cases",
+                            if (completedClinicalCasesCount > 0) {
+                                "$completedClinicalCasesCount/$totalCases NORCET Mains mastered"
+                            } else {
+                                "$totalCases NORCET Mains Bedside Cases"
+                            },
+                            Icons.Filled.MonitorHeart
+                        ) to onOpenClinicalCases
+                    )
                     add(
                         Triple(
                             "Specialty Tracks",

@@ -86,6 +86,7 @@ fun SpecialtyTracksScreen(
     onOpenClinicalCalcs: () -> Unit,
     onOpenIbqHubCategory: (IbqCategory) -> Unit,
     onOpenFlashcardStudio: () -> Unit,
+    onOpenClinicalCases: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     BackHandler(onBack = onBack)
@@ -305,6 +306,14 @@ fun SpecialtyTracksScreen(
                                     )
                                 }
                             }
+
+                            LinkedToolActionRow(
+                                icon = Icons.Filled.MonitorHeart,
+                                title = "Unfolding NORCET Mains Clinical Cases",
+                                subtitle = "10 multi-step bedside scenarios with live evolving vitals & pearls",
+                                onClick = onOpenClinicalCases,
+                                testTag = "specialty_tool_clinical_cases"
+                            )
 
                             LinkedToolActionRow(
                                 icon = Icons.Filled.Style,

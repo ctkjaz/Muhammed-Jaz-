@@ -86,6 +86,7 @@ import com.example.ui.screens.SpecialtyTracksScreen
 import com.example.ui.screens.StatsScreen
 import com.example.ui.screens.SubjectChaptersScreen
 import com.example.ui.screens.SubjectsHubScreen
+import com.example.ui.screens.UnfoldingClinicalCasesScreen
 import com.example.ui.theme.editorialColors
 import com.example.ui.viewmodel.MainTab
 import com.example.ui.viewmodel.MainViewModel
@@ -441,6 +442,7 @@ internal fun ClinEdgeOverlayScreenHost(
     isIbqHubOpen: Boolean,
     isSpecialtyTracksOpen: Boolean,
     isFlashcardStudioOpen: Boolean,
+    isClinicalCasesOpen: Boolean,
     isGrandTestHubOpen: Boolean,
     isPlansOpen: Boolean,
     isSettingsOpen: Boolean,
@@ -465,6 +467,7 @@ internal fun ClinEdgeOverlayScreenHost(
         isIbqHubOpen -> IbqHubOverlayHost(vm = vm)
         isSpecialtyTracksOpen -> SpecialtyTracksOverlayHost(vm = vm)
         isFlashcardStudioOpen -> FlashcardStudioOverlayHost(vm = vm)
+        isClinicalCasesOpen -> UnfoldingClinicalCasesOverlayHost(vm = vm)
         isGrandTestHubOpen -> GrandTestOverlayHost(vm = vm)
         isPlansOpen -> PlansOverlayHost(vm = vm)
         isSettingsOpen -> SettingsOverlayHost(
@@ -643,7 +646,19 @@ private fun SpecialtyTracksOverlayHost(vm: MainViewModel) {
         onOpenAbgInterpreter = { vm.openClinicalTools(1) },
         onOpenClinicalCalcs = { vm.openClinicalTools(0) },
         onOpenIbqHubCategory = { cat -> vm.openIbqHub(cat) },
-        onOpenFlashcardStudio = vm::openFlashcardStudio
+        onOpenFlashcardStudio = vm::openFlashcardStudio,
+        onOpenClinicalCases = vm::openClinicalCases
+    )
+}
+
+@Composable
+private fun UnfoldingClinicalCasesOverlayHost(vm: MainViewModel) {
+    val completedCaseIds by vm.completedClinicalCaseIds.collectAsStateWithLifecycle()
+
+    UnfoldingClinicalCasesScreen(
+        completedCaseIds = completedCaseIds,
+        onCaseCompleted = vm::recordClinicalCaseCompleted,
+        onBack = vm::closeClinicalCases
     )
 }
 
@@ -921,6 +936,7 @@ private fun DashboardTabHost(vm: MainViewModel) {
     val publicGrandTests by vm.publicGrandTests.collectAsStateWithLifecycle()
     val smartStudyPlan by vm.smartStudyPlan.collectAsStateWithLifecycle()
     val masteredFlashcardIds by vm.masteredFlashcardIds.collectAsStateWithLifecycle()
+    val completedClinicalCaseIds by vm.completedClinicalCaseIds.collectAsStateWithLifecycle()
     val qotdCompletion by vm.qotdCompletion.collectAsStateWithLifecycle()
     val gamificationState by vm.gamificationState.collectAsStateWithLifecycle()
 
@@ -1005,7 +1021,9 @@ private fun DashboardTabHost(vm: MainViewModel) {
         gamificationState = gamificationState,
         onOpenAbgInterpreter = { vm.openClinicalTools(1) },
         onOpenEcgStudio = vm::openEcgStudio,
-        onOpenSpecialtyTracks = { vm.openSpecialtyTracks() }
+        onOpenSpecialtyTracks = { vm.openSpecialtyTracks() },
+        onOpenClinicalCases = vm::openClinicalCases,
+        completedClinicalCasesCount = completedClinicalCaseIds.size
     )
 }
 
@@ -1017,6 +1035,7 @@ private fun SubjectsTabHost(vm: MainViewModel) {
     val subjectSection by vm.subjectHubSection.collectAsStateWithLifecycle()
     val difficultyFilter by vm.difficultyFilter.collectAsStateWithLifecycle()
     val subscriptionState by vm.subscriptionState.collectAsStateWithLifecycle()
+    val completedClinicalCaseIds by vm.completedClinicalCaseIds.collectAsStateWithLifecycle()
 
     SubjectsHubScreen(
         state = state,
@@ -1044,6 +1063,8 @@ private fun SubjectsTabHost(vm: MainViewModel) {
         onOpenImporter = vm::openImporter,
         onOpenIbqHub = { vm.openIbqHub() },
         onOpenSpecialtyTracks = { vm.openSpecialtyTracks() },
+        onOpenClinicalCases = vm::openClinicalCases,
+        completedClinicalCasesCount = completedClinicalCaseIds.size,
         subscription = subscriptionState
     )
 }

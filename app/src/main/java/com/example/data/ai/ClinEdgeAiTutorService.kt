@@ -1,11 +1,13 @@
 package com.example.data.ai
 
 import android.util.Log
+import com.example.BuildConfig
 import com.example.data.model.Question
 import com.example.data.notifications.CloudDoubt
 import com.google.firebase.Firebase
 import com.google.firebase.ai.GenerativeModel
 import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.GenerativeBackend
 import com.google.firebase.ai.type.content
 import com.google.firebase.ai.type.generationConfig
 import com.google.firebase.appcheck.FirebaseAppCheck
@@ -29,10 +31,10 @@ private const val TAG = "ClinEdgeAiTutor"
 private const val PRIMARY_MODEL_NAME = "gemini-3.5-flash-lite"
 private const val FALLBACK_MODEL_NAME = "gemini-3.8-flash"
 
-private const val APP_CHECK_PREFLIGHT_TIMEOUT_MS = 12_000L
-private const val FIRST_TOKEN_WATCHDOG_MS = 14_000L
-private const val STREAM_TOTAL_TIMEOUT_MS = 35_000L
-private const val UNARY_FALLBACK_TIMEOUT_MS = 22_000L
+private const val APP_CHECK_PREFLIGHT_TIMEOUT_MS = 18_000L
+private const val FIRST_TOKEN_WATCHDOG_MS = 16_000L
+private const val STREAM_TOTAL_TIMEOUT_MS = 45_000L
+private const val UNARY_FALLBACK_TIMEOUT_MS = 35_000L
 private const val MAX_CACHE_ENTRIES = 40
 
 sealed interface AiTutorUiState {
@@ -55,9 +57,10 @@ sealed interface AiStreamEvent {
  *
  * Latency & reliability optimizations:
  * 1. Uses ultra-fast gemini-3.5-flash-lite as primary model (with gemini-3.8-flash fallback).
- * 2. Verifies/uses pre-warmed App Check token with an explicit 12s preflight timeout so
- *    reCAPTCHA network stalls fail fast with actionable diagnostics instead of hanging for 60s.
- * 3. Runs a 14s first-token watchdog on SSE streams; if a mobile carrier proxy buffers SSE,
+ * 2. Verifies/uses pre-warmed App Check token and automatically force-refreshes once if a
+ *    stale or rejected App Check token is detected, surfacing the real underlying attestation
+ *    error if force-refresh fails instead of masking it behind a generic 403/invalid token error.
+ * 3. Runs a 16s first-token watchdog on SSE streams; if a mobile carrier proxy buffers SSE,
  *    automatically falls back to a direct unary generateContent() call.
  * 4. Caches initial MCQ explanations in memory (LRU, 40 entries) for instant 0ms re-opens.
  */
@@ -112,7 +115,7 @@ class ClinEdgeAiTutorService {
         maxTokens: Int,
         temp: Float,
         system: com.google.firebase.ai.type.Content
-    ): GenerativeModel = Firebase.ai.generativeModel(
+    ): GenerativeModel = Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
         modelName = modelName,
         generationConfig = generationConfig {
             temperature = temp
@@ -263,8 +266,9 @@ class ClinEdgeAiTutorService {
     }.flowOn(Dispatchers.IO)
 
     /**
-     * Ensures App Check token is available with an explicit 12s cap, then streams from the
-     * fast primary model with a 14s first-token watchdog and direct unary fallback.
+     * Ensures a fresh App Check token is available (force-refreshing once on failure or invalid-token
+     * backend rejection), then streams from the fast primary model with a first-token watchdog and
+     * direct unary fallback.
      */
     private suspend fun executeFastStreamWithFallback(
         prompt: String,
@@ -273,29 +277,99 @@ class ClinEdgeAiTutorService {
         onStatus: suspend (String) -> Unit,
         onPartial: suspend (String) -> Unit
     ): String {
-        // Step 1: Fast App Check preflight (0ms if pre-warmed; capped at 12s if cold)
+        // Step 1: Verify App Check token (0ms if already pre-warmed; retries with forceRefresh=true if cold/stale)
         if (!isAppCheckTokenWarmedUp) {
-            onStatus("Verifying secure session (first-time check)...")
+            onStatus("Verifying secure session...")
         }
-        try {
-            withTimeout(APP_CHECK_PREFLIGHT_TIMEOUT_MS) {
-                FirebaseAppCheck.getInstance().getAppCheckToken(false).await()
+        val preflightError = ensureValidAppCheckToken(forceRefresh = false)
+        if (preflightError != null) {
+            // Try one forced refresh immediately to recover from a stale cached token or transient reCAPTCHA hiccup
+            onStatus("Refreshing security token...")
+            val refreshError = ensureValidAppCheckToken(forceRefresh = true)
+            if (refreshError != null) {
+                Log.e(TAG, "App Check token attestation failed even after force-refresh", refreshError)
+                throw buildAppCheckDiagnosticError(refreshError)
             }
-            markAppCheckWarmedUp()
-        } catch (e: TimeoutCancellationException) {
-            Log.e(TAG, "App Check attestation timed out after ${APP_CHECK_PREFLIGHT_TIMEOUT_MS}ms", e)
-            throw IllegalStateException(
-                "Security verification timed out on this network. Disable any VPN/ad-blocker or switch network and tap Retry.",
-                e
+        }
+
+        // Step 2: Run model request; if the backend still reports an invalid App Check token (e.g., cached
+        // token invalidated server-side), force-refresh App Check once and retry the generation.
+        return try {
+            executeModelWithFallback(
+                prompt = prompt,
+                primaryModel = primaryModel,
+                fallbackModel = fallbackModel,
+                onStatus = onStatus,
+                onPartial = onPartial
             )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // Log and continue — Firebase.ai will either succeed or return its exact backend reason
-            Log.w(TAG, "App Check preflight returned warning: ${e.message}")
+            if (!isAppCheckError(e)) {
+                throw mapFriendlyError(e)
+            }
+            Log.w(TAG, "AI call rejected App Check token (${e.message}); forcing App Check token refresh and retrying once.")
+            resetAppCheckWarmupState(e.message)
+            onStatus("Refreshing security token...")
+            val retryRefreshError = ensureValidAppCheckToken(forceRefresh = true)
+            if (retryRefreshError != null) {
+                Log.e(TAG, "Force-refresh after invalid App Check token failed", retryRefreshError)
+                throw buildAppCheckDiagnosticError(retryRefreshError)
+            }
+            try {
+                executeModelWithFallback(
+                    prompt = prompt,
+                    primaryModel = primaryModel,
+                    fallbackModel = fallbackModel,
+                    onStatus = onStatus,
+                    onPartial = onPartial
+                )
+            } catch (retryErr: CancellationException) {
+                throw retryErr
+            } catch (retryErr: Exception) {
+                if (isAppCheckError(retryErr)) {
+                    throw buildAppCheckDiagnosticError(retryErr)
+                }
+                throw mapFriendlyError(retryErr)
+            }
         }
+    }
 
-        // Step 2: Stream from ultra-fast primary model with first-token watchdog
+    private suspend fun ensureValidAppCheckToken(forceRefresh: Boolean): Exception? {
+        return try {
+            val tokenResult = withTimeout(APP_CHECK_PREFLIGHT_TIMEOUT_MS) {
+                FirebaseAppCheck.getInstance().getAppCheckToken(forceRefresh).await()
+            }
+            if (tokenResult.token.isBlank()) {
+                IllegalStateException("App Check returned an empty attestation token.")
+            } else {
+                markAppCheckWarmedUp()
+                null
+            }
+        } catch (e: CancellationException) {
+            if (e is TimeoutCancellationException) {
+                Log.e(TAG, "App Check attestation timed out after ${APP_CHECK_PREFLIGHT_TIMEOUT_MS}ms", e)
+                IllegalStateException(
+                    "Security verification timed out on this network. Disable any VPN/ad-blocker or switch network and tap Retry.",
+                    e
+                )
+            } else {
+                throw e
+            }
+        } catch (e: Exception) {
+            resetAppCheckWarmupState(e.message)
+            Log.w(TAG, "App Check getAppCheckToken(forceRefresh=$forceRefresh) failed: ${e.message}")
+            e
+        }
+    }
+
+    private suspend fun executeModelWithFallback(
+        prompt: String,
+        primaryModel: GenerativeModel,
+        fallbackModel: GenerativeModel,
+        onStatus: suspend (String) -> Unit,
+        onPartial: suspend (String) -> Unit
+    ): String {
         onStatus("Generating clinical breakdown...")
         return try {
             streamWithFirstTokenWatchdog(
@@ -306,7 +380,6 @@ class ClinEdgeAiTutorService {
         } catch (e: CancellationException) {
             throw e
         } catch (primaryErr: FirstTokenStalledException) {
-            // Mobile carrier/proxy stalled SSE — switch to direct unary call (no SSE buffering)
             Log.w(TAG, "Primary SSE stalled before first token; trying direct unary request", primaryErr)
             onStatus("Switching to fast direct response...")
             runUnaryWithFallback(prompt, primaryModel, fallbackModel)
@@ -403,8 +476,8 @@ class ClinEdgeAiTutorService {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            if (secondModel == null) {
-                throw mapFriendlyError(e)
+            if (secondModel == null || isAppCheckError(e)) {
+                throw e
             }
             Log.w(TAG, "Direct unary request failed on primary; trying backup model: ${e.message}")
         }
@@ -419,10 +492,29 @@ class ClinEdgeAiTutorService {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                throw mapFriendlyError(e)
+                throw e
             }
         }
         throw IllegalStateException("AI Tutor returned an empty response. Please tap Retry.")
+    }
+
+    private fun isAppCheckError(e: Throwable): Boolean {
+        val raw = e.message.orEmpty()
+        return raw.contains("App Check", ignoreCase = true) ||
+            raw.contains("attestation", ignoreCase = true) ||
+            raw.contains("recaptcha", ignoreCase = true) ||
+            raw.contains("403")
+    }
+
+    private fun buildAppCheckDiagnosticError(e: Exception): Exception {
+        val raw = e.message.orEmpty().trim()
+        val detail = if (raw.isNotBlank()) " ($raw)" else ""
+        val hint = if (BuildConfig.DEBUG) {
+            "App Check attestation failed$detail. Check your network/VPN, ensure Google Play Services is up to date, and verify reCAPTCHA Enterprise risk threshold (or debug token) in Firebase Console -> App Check."
+        } else {
+            "App verification failed$detail. Ensure Google Play Services is updated, disable any VPN/ad-blocker, and tap Retry."
+        }
+        return IllegalStateException(hint, e)
     }
 
     private fun mapFriendlyError(e: Exception): Exception {
@@ -434,11 +526,7 @@ class ClinEdgeAiTutorService {
         }
         val raw = e.message.orEmpty()
         return when {
-            raw.contains("App Check", ignoreCase = true) || raw.contains("403") ->
-                IllegalStateException(
-                    "App verification failed (App Check). Ensure Google Play Services is updated and disable VPN/ad-blockers, then tap Retry.",
-                    e
-                )
+            isAppCheckError(e) -> buildAppCheckDiagnosticError(e)
             raw.contains("Unable to resolve host", ignoreCase = true) ||
                 raw.contains("Failed to connect", ignoreCase = true) ->
                 IllegalStateException(

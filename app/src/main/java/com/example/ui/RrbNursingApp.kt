@@ -236,13 +236,14 @@ fun RrbNursingApp(vm: MainViewModel) {
         val isIbqHubOpen by vm.isIbqHubOpen.collectAsStateWithLifecycle()
         val isSpecialtyTracksOpen by vm.isSpecialtyTracksOpen.collectAsStateWithLifecycle()
         val isFlashcardStudioOpen by vm.isFlashcardStudioOpen.collectAsStateWithLifecycle()
+        val isClinicalCasesOpen by vm.isClinicalCasesOpen.collectAsStateWithLifecycle()
         val isGrandTestHubOpen by vm.isGrandTestHubOpen.collectAsStateWithLifecycle()
         val subjectChaptersNav by vm.subjectChaptersNav.collectAsStateWithLifecycle()
 
         val inSubScreen = isSettingsOpen || isProfileOpen || isPlansOpen || isAdminOpen ||
             isNotificationsOpen || isDoubtBoxOpen || isClinicalToolsOpen || isEcgStudioOpen ||
             isIbqHubOpen || isSpecialtyTracksOpen || isFlashcardStudioOpen ||
-            isGrandTestHubOpen || subjectChaptersNav != null
+            isClinicalCasesOpen || isGrandTestHubOpen || subjectChaptersNav != null
 
         val signedInAccount = vm.signedInAccount
         val snackbarHostState = remember { SnackbarHostState() }
@@ -519,6 +520,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     isIbqHubOpen = isIbqHubOpen,
                                     isSpecialtyTracksOpen = isSpecialtyTracksOpen,
                                     isFlashcardStudioOpen = isFlashcardStudioOpen,
+                                    isClinicalCasesOpen = isClinicalCasesOpen,
                                     isGrandTestHubOpen = isGrandTestHubOpen,
                                     isPlansOpen = isPlansOpen,
                                     isSettingsOpen = isSettingsOpen,

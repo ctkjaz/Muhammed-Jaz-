@@ -503,6 +503,36 @@ object GamificationLogic {
         )
     }
 
+    fun recordClinicalCaseCompleted(
+        current: GamificationState,
+        xpAwarded: Int,
+        correctStages: Int,
+        totalStages: Int,
+        lifetimeAnsweredCount: Int,
+        longestStreakDays: Int,
+        weekKey: String = currentIsoWeekKey()
+    ): GamificationUpdateResult {
+        val base = normalizeForWeek(current, weekKey)
+        val safeXp = xpAwarded.coerceIn(0, 200)
+        val safeTotal = totalStages.coerceAtLeast(0)
+        val safeCorrect = correctStages.coerceIn(0, safeTotal)
+        val progressed = base.copy(
+            totalXp = (base.totalXp + safeXp).coerceIn(0, MAX_TOTAL_XP),
+            weeklyXp = (base.weeklyXp + safeXp).coerceIn(0, MAX_WEEKLY_XP),
+            weeklyQuestions = (base.weeklyQuestions + safeTotal).coerceIn(0, MAX_WEEKLY_QUESTIONS),
+            weeklyCorrect = (base.weeklyCorrect + safeCorrect).coerceIn(0, MAX_WEEKLY_QUESTIONS),
+            weeklySessions = (base.weeklySessions + 1).coerceIn(0, MAX_WEEKLY_SESSIONS),
+            completedSessionsCount = (base.completedSessionsCount + 1).coerceIn(0, MAX_COUNTER_BOUND)
+        )
+        return finalizeWithChallengesAndBadges(
+            previous = base,
+            candidate = progressed,
+            baseXpAwarded = safeXp,
+            lifetimeAnsweredCount = lifetimeAnsweredCount,
+            longestStreakDays = longestStreakDays
+        )
+    }
+
     private fun finalizeWithChallengesAndBadges(
         previous: GamificationState,
         candidate: GamificationState,

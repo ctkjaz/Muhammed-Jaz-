@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LocalHospital
+import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -90,6 +91,8 @@ fun SubjectsHubScreen(
     modifier: Modifier = Modifier,
     onOpenIbqHub: () -> Unit = {},
     onOpenSpecialtyTracks: () -> Unit = {},
+    onOpenClinicalCases: () -> Unit = {},
+    completedClinicalCasesCount: Int = 0,
     subscription: SubscriptionUiState = SubscriptionUiState()
 ) {
     val editorial = MaterialTheme.editorialColors
@@ -207,6 +210,49 @@ fun SubjectsHubScreen(
                                 )
                             }
                         }
+                    }
+                }
+            }
+
+            val totalCases = com.example.data.model.UnfoldingClinicalCasesCatalog.ALL_CASES.size
+            Surface(
+                onClick = onOpenClinicalCases,
+                shape = RoundedCornerShape(14.dp),
+                color = editorial.cardSurface,
+                border = BorderStroke(1.dp, editorial.borderSubtle),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 54.dp)
+                    .testTag("subjects_clinical_cases_banner")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.MonitorHeart,
+                        contentDescription = null,
+                        tint = editorial.acidLimeForeground,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Unfolding NORCET Mains Clinical Cases ($totalCases)",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = if (completedClinicalCasesCount > 0) {
+                                "$completedClinicalCasesCount/$totalCases mastered · Evolving bedside vitals & priority nursing"
+                            } else {
+                                "STEMI · Sepsis · DKA · MgSO₄ · PPH · Trauma · NICU"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
                     }
                 }
             }
