@@ -3,6 +3,7 @@ package com.example.ui.viewmodel
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
@@ -72,8 +73,10 @@ import com.example.data.model.GamificationState
 import com.example.data.model.GamificationUpdateResult
 import com.example.data.model.MockHistory
 import com.example.data.model.MockSelectionLogic
+import com.example.data.model.PerformanceAggregationEngine
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.PracticePathway
+import com.example.data.model.PrecomputedPoolSummary
 import com.example.data.model.Profession
 import com.example.data.model.QotdCompletionState
 import com.example.data.model.Question
@@ -84,6 +87,7 @@ import com.example.data.model.QuestionNotesLogic
 import com.example.data.model.QuestionOfTheDayCatalog
 import com.example.data.model.QuestionSourceType
 import com.example.data.model.SessionCheckResult
+import com.example.data.model.SessionTimerState
 import com.example.data.model.SmartStudyPlanSummary
 import com.example.data.model.SmartWeakTopicPlanner
 import com.example.data.model.SpacedRepetitionLogic
@@ -129,12 +133,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -207,6 +215,7 @@ enum class CbtReviewFilter(val label: String) {
     SKIPPED("Skipped")
 }
 
+@Immutable
 data class PracticeSessionState(
     val title: String,
     val questions: List<QuestionItem>,
@@ -223,6 +232,7 @@ data class PracticeSessionState(
     val negativeMarks: Double = 0.33
 )
 
+@Immutable
 data class CbtSessionState(
     val title: String,
     val questions: List<QuestionItem>,
@@ -309,6 +319,7 @@ data class PdfExportConfigState(
     val isExporting: Boolean = false
 )
 
+@Immutable
 data class OverallStats(
     val totalQuestions: Int = 0,
     val attemptedUnique: Int = 0,
@@ -322,6 +333,7 @@ data class OverallStats(
     val customCount: Int = 0
 )
 
+@Immutable
 data class DashboardDerivedState(
     val activeExam: Exam? = PlatformCatalogDefaults.DEFAULT_EXAMS.first(),
     val activeExamSections: List<ExamSection> = PlatformCatalogDefaults.DEFAULT_SECTIONS,
@@ -334,6 +346,9 @@ data class DashboardDerivedState(
     val activeExamStage: ExamStage = ExamStage.PRELIMS,
     val stageQuestions: List<QuestionItem> = emptyList(),
     val stageSubjectStats: List<SubjectStat> = emptyList(),
+    val stageSummary: PrecomputedPoolSummary = PrecomputedPoolSummary(),
+    val stageMistakes: List<QuestionItem> = emptyList(),
+    val globalIbqCount: Int = 0,
     val prelimsQuestionCount: Int = 0,
     val mainsQuestionCount: Int = 0,
     val prelimsAttemptedCount: Int = 0,
@@ -666,18 +681,23 @@ class MainViewModel(
         initialValue = null
     )
 
+    /** O(1) bookmark lookup stream for PracticeScreen without touching 10k-item mainState lists. */
+    val bookmarkedIds: StateFlow<Set<String>> = repository.bookmarkedQuestionIds.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptySet()
+    )
+
     private val allPlatformQuestions: StateFlow<List<QuestionItem>> = repository.allQuestions.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.Eagerly,
+        started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
 
-    private val dedupedPlatformQuestions: StateFlow<List<QuestionItem>> = allPlatformQuestions
-        .map { items -> SubjectPracticeLogic.deduplicateQuestions(items) }
-        .flowOn(Dispatchers.Default)
+    private val dedupedPlatformQuestions: StateFlow<List<QuestionItem>> = repository.dedupedAllQuestions
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.Eagerly,
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
@@ -689,12 +709,13 @@ class MainViewModel(
 
     private val examCountsByExamId: StateFlow<Map<String, Int>> = allPlatformLinks
         .map { links ->
-            val counts = HashMap<String, Int>(8)
+            val counts = HashMap<String, Int>(16)
             for (link in links) {
                 counts[link.examId] = (counts[link.examId] ?: 0) + 1
             }
-            counts
+            counts as Map<String, Int>
         }
+        .distinctUntilChanged()
         .flowOn(Dispatchers.Default)
         .stateIn(
             scope = viewModelScope,
@@ -704,15 +725,15 @@ class MainViewModel(
 
     private val activeExamQuestions = activeExamId.flatMapLatest { examId ->
         repository.observeQuestionsForExam(examId)
-    }
+    }.conflate()
 
     private val activeExamHistory = activeExamId.flatMapLatest { examId ->
         repository.observeMockHistoryForExam(examId)
-    }
+    }.distinctUntilChanged()
 
     private val activeExamSections = activeExamId.flatMapLatest { examId ->
         repository.observeExamSections(examId)
-    }
+    }.distinctUntilChanged()
 
     private val _activeExamStage = MutableStateFlow(ExamStage.PRELIMS)
     val activeExamStage: StateFlow<ExamStage> = _activeExamStage.asStateFlow()
@@ -722,6 +743,34 @@ class MainViewModel(
 
     private val _subjectPracticeExamFilter = MutableStateFlow<String?>(null)
     val subjectPracticeExamFilter: StateFlow<String?> = _subjectPracticeExamFilter.asStateFlow()
+
+    private val _practiceSession = MutableStateFlow<PracticeSessionState?>(null)
+    val practiceSession: StateFlow<PracticeSessionState?> = _practiceSession.asStateFlow()
+
+    private val _cbtSession = MutableStateFlow<CbtSessionState?>(null)
+    val cbtSession: StateFlow<CbtSessionState?> = _cbtSession.asStateFlow()
+
+    /** Isolated 1-second session countdown flow — never recomposes full screen or app shell. */
+    private val _sessionTimerState = MutableStateFlow(SessionTimerState())
+    val sessionTimerState: StateFlow<SessionTimerState> = _sessionTimerState.asStateFlow()
+
+    /**
+     * Public boolean StateFlow indicating whether Practice or CBT is active.
+     * Collected by the root app shell so question taps & timer ticks inside sessions
+     * NEVER recompose the drawer, scaffold, or chrome!
+     */
+    val isInActiveSessionState: StateFlow<Boolean> = combine(
+        _practiceSession,
+        _cbtSession
+    ) { practice, cbt ->
+        practice != null || cbt != null
+    }.distinctUntilChanged().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = false
+    )
+
+    private val isInActiveSession: Flow<Boolean> = isInActiveSessionState
 
     private data class CatalogBundle(
         val activeExamId: String,
@@ -733,7 +782,8 @@ class MainViewModel(
         val examCounts: Map<String, Int>,
         val dedupedAllQuestions: List<QuestionItem>,
         val activeStage: ExamStage,
-        val subjectExamFilter: String?
+        val subjectExamFilter: String?,
+        val pathway: PracticePathway
     )
 
     private val catalogBundle = combine(
@@ -753,7 +803,8 @@ class MainViewModel(
             examCounts = emptyMap(),
             dedupedAllQuestions = emptyList(),
             activeStage = ExamStage.PRELIMS,
-            subjectExamFilter = null
+            subjectExamFilter = null,
+            pathway = PracticePathway.BY_EXAM
         )
     }.combine(allPlatformLinks) { bundle, links ->
         bundle.copy(links = links)
@@ -765,7 +816,20 @@ class MainViewModel(
         bundle.copy(activeStage = stage)
     }.combine(_subjectPracticeExamFilter) { bundle, filterId ->
         bundle.copy(subjectExamFilter = filterId)
-    }.flowOn(Dispatchers.Default)
+    }.combine(_practicePathway) { bundle, pathway ->
+        bundle.copy(pathway = pathway)
+    }.conflate().flowOn(Dispatchers.Default)
+
+    private data class RawDashboardInputs(
+        val items: List<QuestionItem>,
+        val history: List<MockHistory>,
+        val cards: List<Flashcard>,
+        val seeded: Boolean,
+        val catalog: CatalogBundle
+    )
+
+    private var cachedCrossSubjectStats: List<SubjectStat> = emptyList()
+    private var cachedCrossSubjectKey: String = ""
 
     val mainState: StateFlow<DashboardDerivedState> = combine(
         activeExamQuestions,
@@ -774,108 +838,136 @@ class MainViewModel(
         _isSeeded,
         catalogBundle
     ) { items, history, cards, seeded, catalog ->
-        val activeExam = catalog.exams.firstOrNull { it.id == catalog.activeExamId }
-            ?: catalog.exams.firstOrNull()
-            ?: PlatformCatalogDefaults.DEFAULT_EXAMS.first()
-        val supportsStages = PlatformCatalogDefaults.supportsStages(activeExam.id)
-        val prelimsItems = if (supportsStages) {
-            PlatformCatalogDefaults.filterQuestionsForExamStage(activeExam.id, ExamStage.PRELIMS, items)
-        } else {
-            emptyList()
+        RawDashboardInputs(items, history, cards, seeded, catalog)
+    }.conflate()
+        .combine(isInActiveSession) { inputs, inSession ->
+            inputs to inSession
         }
-        val mainsItems = if (supportsStages) {
-            PlatformCatalogDefaults.filterQuestionsForExamStage(activeExam.id, ExamStage.MAINS, items)
-        } else {
-            emptyList()
-        }
-        val stageItems = if (supportsStages) {
-            if (catalog.activeStage == ExamStage.MAINS) mainsItems else prelimsItems
-        } else {
-            items
-        }
+        // Zero-Lag Active Session Coalescing:
+        // While inside a live Practice or CBT session, skip heavy 10k-item Dashboard/Hub rebuilds.
+        // The instant the session ends, isInActiveSession flips to false and flushes fresh stats once.
+        .filter { (_, inSession) -> !inSession }
+        .conflate()
+        .map { (inputs, _) ->
+            val items = inputs.items
+            val history = inputs.history
+            val cards = inputs.cards
+            val seeded = inputs.seeded
+            val catalog = inputs.catalog
 
-        val statsPool = if (supportsStages) stageItems else items
-        var attemptedUnique = 0
-        var totalAttempts = 0
-        var totalCorrect = 0
-        var totalWrong = 0
-        var latestRight = 0
-        var latestWrong = 0
-        for (item in statsPool) {
-            val p = item.progress
-            if (p.attemptsCount > 0) attemptedUnique++
-            totalAttempts += p.attemptsCount
-            totalCorrect += p.correctCount
-            totalWrong += p.wrongCount
-            when (p.lastOutcome) {
-                "right" -> latestRight++
-                "wrong" -> latestWrong++
+            val activeExam = catalog.exams.firstOrNull { it.id == catalog.activeExamId }
+                ?: catalog.exams.firstOrNull()
+                ?: PlatformCatalogDefaults.DEFAULT_EXAMS.first()
+            val supportsStages = PlatformCatalogDefaults.supportsStages(activeExam.id)
+            val prelimsItems = if (supportsStages) {
+                PlatformCatalogDefaults.filterQuestionsForExamStage(activeExam.id, ExamStage.PRELIMS, items)
+            } else {
+                emptyList()
             }
-        }
-        var bookmarkCount = 0
-        var customCount = 0
-        for (item in items) {
-            if (item.isBookmarked) bookmarkCount++
-            if (item.question.isCustom) customCount++
-        }
-        val acc = if (totalAttempts > 0) ((totalCorrect.toFloat() / totalAttempts) * 100f).toInt() else 0
-        val netScore = latestRight - (latestWrong * activeExam.negativeMarks)
+            val mainsItems = if (supportsStages) {
+                PlatformCatalogDefaults.filterQuestionsForExamStage(activeExam.id, ExamStage.MAINS, items)
+            } else {
+                emptyList()
+            }
+            val stageItems = if (supportsStages) {
+                if (catalog.activeStage == ExamStage.MAINS) mainsItems else prelimsItems
+            } else {
+                items
+            }
 
-        val dedupedCrossExam = catalog.dedupedAllQuestions.ifEmpty { items }
-        val crossSubjectStats = SubjectPracticeLogic.computeCrossExamSubjectStats(
-            allQuestions = dedupedCrossExam,
-            allLinks = catalog.links,
-            examIdFilter = catalog.subjectExamFilter,
-            alreadyDeduplicated = catalog.dedupedAllQuestions.isNotEmpty(),
-            includeVirtualShared = true
-        )
-        val computedSubjectStats = repository.computeSubjectStats(stageItems)
-        val prelimsAttempted = if (supportsStages) prelimsItems.count { it.attemptsCount > 0 } else 0
-        val mainsAttempted = if (supportsStages) mainsItems.count { it.attemptsCount > 0 } else 0
+            val statsPool = if (supportsStages) stageItems else items
+            val poolSummary = PerformanceAggregationEngine.computePoolSummary(
+                stagePool = statsPool,
+                allExamItems = items
+            )
+            val stageMistakes = PerformanceAggregationEngine.extractStageMistakes(statsPool)
+            val acc = if (poolSummary.totalAttempts > 0) {
+                ((poolSummary.totalCorrect.toFloat() / poolSummary.totalAttempts) * 100f).toInt()
+            } else 0
+            val netScore = poolSummary.latestRight - (poolSummary.latestWrong * activeExam.negativeMarks)
 
-        DashboardDerivedState(
-            activeExam = activeExam,
-            activeExamSections = catalog.sections,
-            availableProfessions = catalog.professions,
-            availableExams = catalog.exams,
-            examQuestionCounts = catalog.examCounts,
-            topicsById = catalog.topics.associateBy { it.id },
-            questions = items,
-            activeExamSupportsStages = supportsStages,
-            activeExamStage = catalog.activeStage,
-            stageQuestions = stageItems,
-            stageSubjectStats = computedSubjectStats,
-            prelimsQuestionCount = prelimsItems.size,
-            mainsQuestionCount = mainsItems.size,
-            prelimsAttemptedCount = prelimsAttempted,
-            mainsAttemptedCount = mainsAttempted,
-            crossExamQuestions = dedupedCrossExam,
-            crossExamSubjectStats = crossSubjectStats,
-            crossExamLinks = catalog.links,
-            overall = OverallStats(
-                totalQuestions = statsPool.size,
-                attemptedUnique = attemptedUnique,
-                totalAttempts = totalAttempts,
-                totalCorrect = totalCorrect,
-                totalWrong = totalWrong,
-                accuracyPercent = acc,
-                netPracticeScore = netScore,
-                bookmarkCount = bookmarkCount,
-                mistakeCount = latestWrong,
-                customCount = customCount
-            ),
-            subjectStats = computedSubjectStats,
-            categoryStats = repository.computeCategoryStats(stageItems, activeExam.id),
-            lowestAccuracyQuestions = repository.findLowestAccuracyQuestions(stageItems),
-            flashcards = cards,
-            mockHistory = history,
-            isLoaded = seeded
+            val dedupedCrossExam = catalog.dedupedAllQuestions.ifEmpty { items }
+            val globalIbqCount = if (poolSummary.imageBasedCount > 0) {
+                poolSummary.imageBasedCount
+            } else {
+                dedupedCrossExam.count { it.question.isImageBased }
+            }
+
+            // Lazy Cross-Exam Stats: compute immediately when By-Subject pathway is active or cache is empty;
+            // reuse cached stats during single-exam navigation to cut background CPU in half.
+            val crossStatsKey = "${catalog.subjectExamFilter ?: "ALL"}|${dedupedCrossExam.size}|${poolSummary.totalAttempts}"
+            val crossSubjectStats = if (catalog.pathway == PracticePathway.BY_SUBJECT ||
+                cachedCrossSubjectStats.isEmpty() ||
+                crossStatsKey != cachedCrossSubjectKey
+            ) {
+                if (catalog.pathway == PracticePathway.BY_SUBJECT || cachedCrossSubjectStats.isEmpty()) {
+                    SubjectPracticeLogic.computeCrossExamSubjectStats(
+                        allQuestions = dedupedCrossExam,
+                        allLinks = catalog.links,
+                        examIdFilter = catalog.subjectExamFilter,
+                        alreadyDeduplicated = catalog.dedupedAllQuestions.isNotEmpty(),
+                        includeVirtualShared = true
+                    ).also {
+                        cachedCrossSubjectStats = it
+                        cachedCrossSubjectKey = crossStatsKey
+                    }
+                } else {
+                    cachedCrossSubjectStats
+                }
+            } else {
+                cachedCrossSubjectStats
+            }
+
+            val computedSubjectStats = repository.computeSubjectStats(stageItems)
+            val prelimsAttempted = if (supportsStages) prelimsItems.count { it.attemptsCount > 0 } else 0
+            val mainsAttempted = if (supportsStages) mainsItems.count { it.attemptsCount > 0 } else 0
+
+            DashboardDerivedState(
+                activeExam = activeExam,
+                activeExamSections = catalog.sections,
+                availableProfessions = catalog.professions,
+                availableExams = catalog.exams,
+                examQuestionCounts = catalog.examCounts,
+                topicsById = catalog.topics.associateBy { it.id },
+                questions = items,
+                activeExamSupportsStages = supportsStages,
+                activeExamStage = catalog.activeStage,
+                stageQuestions = stageItems,
+                stageSubjectStats = computedSubjectStats,
+                stageSummary = poolSummary,
+                stageMistakes = stageMistakes,
+                globalIbqCount = globalIbqCount,
+                prelimsQuestionCount = prelimsItems.size,
+                mainsQuestionCount = mainsItems.size,
+                prelimsAttemptedCount = prelimsAttempted,
+                mainsAttemptedCount = mainsAttempted,
+                crossExamQuestions = dedupedCrossExam,
+                crossExamSubjectStats = crossSubjectStats,
+                crossExamLinks = catalog.links,
+                overall = OverallStats(
+                    totalQuestions = poolSummary.totalQuestions,
+                    attemptedUnique = poolSummary.attemptedUnique,
+                    totalAttempts = poolSummary.totalAttempts,
+                    totalCorrect = poolSummary.totalCorrect,
+                    totalWrong = poolSummary.totalWrong,
+                    accuracyPercent = acc,
+                    netPracticeScore = netScore,
+                    bookmarkCount = poolSummary.bookmarkCount,
+                    mistakeCount = poolSummary.latestWrong,
+                    customCount = poolSummary.customCount
+                ),
+                subjectStats = computedSubjectStats,
+                categoryStats = repository.computeCategoryStats(stageItems, activeExam.id),
+                lowestAccuracyQuestions = repository.findLowestAccuracyQuestions(stageItems),
+                flashcards = cards,
+                mockHistory = history,
+                isLoaded = seeded
+            )
+        }.flowOn(Dispatchers.Default).stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = DashboardDerivedState()
         )
-    }.flowOn(Dispatchers.Default).stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = DashboardDerivedState()
-    )
 
     // Phase 0: Offload heavy analytics & SRS summaries off the UI main thread onto Dispatchers.Default
     val srsNotebookSummary: StateFlow<SrsNotebookSummary> = combine(
@@ -989,12 +1081,6 @@ class MainViewModel(
 
     private val _chaptersHighYieldOnly = MutableStateFlow(false)
     val chaptersHighYieldOnly: StateFlow<Boolean> = _chaptersHighYieldOnly.asStateFlow()
-
-    private val _practiceSession = MutableStateFlow<PracticeSessionState?>(null)
-    val practiceSession: StateFlow<PracticeSessionState?> = _practiceSession.asStateFlow()
-
-    private val _cbtSession = MutableStateFlow<CbtSessionState?>(null)
-    val cbtSession: StateFlow<CbtSessionState?> = _cbtSession.asStateFlow()
 
     private val _timedConfig = MutableStateFlow(TimedPracticeConfigState())
     val timedConfig: StateFlow<TimedPracticeConfigState> = _timedConfig.asStateFlow()
@@ -2761,6 +2847,10 @@ class MainViewModel(
         val totalSec = if (actualCountdown) durationMinutes.coerceAtLeast(1) * 60 else 0
         val activeNeg = mainState.value.activeExam?.negativeMarks
             ?: PlatformCatalogDefaults.negativeMarksForExam(activeExamId)
+        _sessionTimerState.value = SessionTimerState(
+            remainingSeconds = totalSec,
+            sectionRemainingSeconds = 0
+        )
         _practiceSession.value = PracticeSessionState(
             title = title,
             questions = gatedItems,
@@ -2784,14 +2874,13 @@ class MainViewModel(
                 delay(1000L)
                 val current = _practiceSession.value ?: break
                 if (!current.timedMode || !current.hasCountdown || current.isSubmittedSummary || current.showTimeoutDialog) break
-                val nextSec = (current.remainingSeconds - 1).coerceAtLeast(0)
+                val nextSec = (_sessionTimerState.value.remainingSeconds - 1).coerceAtLeast(0)
+                _sessionTimerState.value = SessionTimerState(remainingSeconds = nextSec, sectionRemainingSeconds = 0)
                 if (nextSec == 0) {
                     _practiceSession.update {
                         it?.copy(remainingSeconds = 0, showTimeoutDialog = true)
                     }
                     break
-                } else {
-                    _practiceSession.update { it?.copy(remainingSeconds = nextSec) }
                 }
             }
         }
@@ -3245,6 +3334,10 @@ class MainViewModel(
         val activeNeg = negativeMarksOverride
             ?: activeExam?.negativeMarks
             ?: PlatformCatalogDefaults.negativeMarksForExam(settings.activeExamId.value)
+        _sessionTimerState.value = SessionTimerState(
+            remainingSeconds = totalSec,
+            sectionRemainingSeconds = sectionDurationSec
+        )
         _cbtSession.value = CbtSessionState(
             title = title,
             questions = items,
@@ -3274,9 +3367,14 @@ class MainViewModel(
                 val current = _cbtSession.value ?: break
                 if (!current.hasCountdown || current.isSubmitted || current.showTimeoutDialog) break
 
+                val timerSnapshot = _sessionTimerState.value
                 if (current.hasSectionLock) {
-                    val nextSectionSec = (current.sectionRemainingSeconds - 1).coerceAtLeast(0)
-                    val nextTotalSec = (current.remainingSeconds - 1).coerceAtLeast(0)
+                    val nextSectionSec = (timerSnapshot.sectionRemainingSeconds - 1).coerceAtLeast(0)
+                    val nextTotalSec = (timerSnapshot.remainingSeconds - 1).coerceAtLeast(0)
+                    _sessionTimerState.value = SessionTimerState(
+                        remainingSeconds = nextTotalSec,
+                        sectionRemainingSeconds = nextSectionSec
+                    )
                     if (nextSectionSec == 0) {
                         if (!current.isLastSection) {
                             advanceCbtSectionLocked(
@@ -3294,21 +3392,16 @@ class MainViewModel(
                             }
                             break
                         }
-                    } else {
-                        _cbtSession.update {
-                            it?.copy(
-                                remainingSeconds = nextTotalSec,
-                                sectionRemainingSeconds = nextSectionSec
-                            )
-                        }
                     }
                 } else {
-                    val nextSec = (current.remainingSeconds - 1).coerceAtLeast(0)
+                    val nextSec = (timerSnapshot.remainingSeconds - 1).coerceAtLeast(0)
+                    _sessionTimerState.value = SessionTimerState(
+                        remainingSeconds = nextSec,
+                        sectionRemainingSeconds = 0
+                    )
                     if (nextSec == 0) {
                         _cbtSession.update { it?.copy(remainingSeconds = 0, showTimeoutDialog = true) }
                         break
-                    } else {
-                        _cbtSession.update { it?.copy(remainingSeconds = nextSec) }
                     }
                 }
             }
@@ -3336,6 +3429,10 @@ class MainViewModel(
         } else {
             "Section $prevSectionNum locked. Now in Section ${nextSectionIdx + 1} of ${session.totalSections}."
         }
+        _sessionTimerState.value = SessionTimerState(
+            remainingSeconds = syncedTotalRemaining,
+            sectionRemainingSeconds = session.sectionDurationSeconds
+        )
         _cbtSession.value = session.copy(
             currentSectionIndex = nextSectionIdx,
             currentIndex = nextStartIdx,
@@ -3538,7 +3635,8 @@ class MainViewModel(
 
                 val gtId = sess.grandTestId
                 if (!gtId.isNullOrBlank() && grandTestRepo != null) {
-                    val elapsedSec = (sess.totalSeconds - sess.remainingSeconds).coerceAtLeast(0)
+                    val liveRemaining = _sessionTimerState.value.remainingSeconds
+                    val elapsedSec = (sess.totalSeconds - liveRemaining).coerceAtLeast(0)
                     val displayName = settings.profileName.value.ifBlank { signedInAccount.displayName }.ifBlank { "Nursing Aspirant" }
                     grandTestRepo.submitGrandTestEntry(
                         testId = gtId,
@@ -5330,6 +5428,10 @@ class MainViewModel(
         stopActiveTimer()
         _practiceSession.value = null
         val totalSecs = (test.durationMinutes.toInt().coerceIn(5, 240)) * 60
+        _sessionTimerState.value = SessionTimerState(
+            remainingSeconds = totalSecs,
+            sectionRemainingSeconds = 0
+        )
         _cbtSession.value = CbtSessionState(
             title = test.title,
             questions = ordered,

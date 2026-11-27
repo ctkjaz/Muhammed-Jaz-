@@ -97,11 +97,14 @@ import com.example.ui.theme.SemanticCorrectFill
 import com.example.ui.theme.SemanticWarningFill
 import com.example.ui.theme.SemanticWrongFill
 import com.example.ui.theme.editorialColors
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.QuestionItem
 import com.example.data.model.QuestionNote
+import com.example.data.model.SessionTimerState
 import com.example.ui.viewmodel.CbtReviewFilter
 import com.example.ui.viewmodel.PracticeSessionState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
 import java.util.Locale
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -129,6 +132,7 @@ fun PracticeScreen(
     isCurrentInSrs: Boolean = false,
     onQueueToSrs: (String) -> Unit = {},
     onExit: () -> Unit,
+    timerStateFlow: StateFlow<SessionTimerState>? = null,
     modifier: Modifier = Modifier
 ) {
     var showExitConfirm by remember { mutableStateOf(false) }
@@ -249,35 +253,10 @@ fun PracticeScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (session.timedMode && session.hasCountdown) {
-                            val timerBg = when {
-                                session.remainingSeconds <= 60 -> SemanticWrongFill
-                                session.remainingSeconds <= 300 -> SemanticWarningFill
-                                else -> EditorialBannerSurface
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = timerBg,
-                                modifier = Modifier.testTag("practice_timer_badge")
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Filled.Timer,
-                                        contentDescription = "Remaining time",
-                                        tint = PureWhite,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        text = formatTimer(session.remainingSeconds),
-                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                                        color = PureWhite,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
+                            PracticeTimerBadge(
+                                timerStateFlow = timerStateFlow,
+                                fallbackSeconds = session.remainingSeconds
+                            )
                         } else if (!session.timedMode) {
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
@@ -1089,3 +1068,46 @@ private fun TimedPracticeSummaryView(
         }
     }
 }
+
+@Composable
+private fun PracticeTimerBadge(
+    timerStateFlow: StateFlow<SessionTimerState>?,
+    fallbackSeconds: Int
+) {
+    val liveSeconds = if (timerStateFlow != null) {
+        val timerState by timerStateFlow.collectAsStateWithLifecycle()
+        timerState.remainingSeconds
+    } else {
+        fallbackSeconds
+    }
+    val timerBg = when {
+        liveSeconds <= 60 -> SemanticWrongFill
+        liveSeconds <= 300 -> SemanticWarningFill
+        else -> EditorialBannerSurface
+    }
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = timerBg,
+        modifier = Modifier.testTag("practice_timer_badge")
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(
+                Icons.Filled.Timer,
+                contentDescription = "Remaining time",
+                tint = PureWhite,
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = formatTimer(liveSeconds),
+                style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                color = PureWhite,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+

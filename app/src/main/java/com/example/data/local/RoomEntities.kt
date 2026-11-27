@@ -107,7 +107,15 @@ data class TopicEntity(
     val sortOrder: Int
 )
 
-@Entity(tableName = "questions")
+@Entity(
+    tableName = "questions",
+    indices = [
+        Index(value = ["subject"]),
+        Index(value = ["category"]),
+        Index(value = ["sourceType"]),
+        Index(value = ["isCustom", "sortOrder"])
+    ]
+)
 data class QuestionEntity(
     @PrimaryKey val id: String,
     val category: String,
@@ -173,7 +181,13 @@ data class ExamQuestionLinkEntity(
     val examShift: String
 )
 
-@Entity(tableName = "question_progress")
+@Entity(
+    tableName = "question_progress",
+    indices = [
+        Index(value = ["isBookmarked"]),
+        Index(value = ["lastOutcome"])
+    ]
+)
 data class QuestionProgressEntity(
     @PrimaryKey val questionId: String,
     val isBookmarked: Boolean = false,

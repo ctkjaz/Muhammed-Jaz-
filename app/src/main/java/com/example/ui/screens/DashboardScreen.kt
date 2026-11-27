@@ -174,16 +174,17 @@ fun DashboardScreen(
             stagePool.filter { it.question.difficulty == d }
         } ?: stagePool
     }
-    val filteredMistakes = remember(diffFiltered) { diffFiltered.filter { it.lastOutcome == "wrong" } }
+    val filteredMistakes = remember(state.stageMistakes, difficultyFilter) {
+        difficultyFilter.difficulty?.let { d ->
+            state.stageMistakes.filter { it.question.difficulty == d }
+        } ?: state.stageMistakes
+    }
     val filteredLowest = remember(state.lowestAccuracyQuestions, difficultyFilter) {
         difficultyFilter.difficulty?.let { d ->
             state.lowestAccuracyQuestions.filter { it.question.difficulty == d }
         } ?: state.lowestAccuracyQuestions
     }
-    val imageSpotterCount = remember(stagePool, state.crossExamQuestions) {
-        val activeCount = stagePool.count { it.question.isImageBased }
-        if (activeCount > 0) activeCount else state.crossExamQuestions.count { it.question.isImageBased }
-    }
+    val imageSpotterCount = state.globalIbqCount
     val diffLabelSuffix = difficultyFilter.difficulty?.let { " • ${it.label}" } ?: ""
     val activeExam = state.activeExam
     val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExam?.id)
@@ -1400,8 +1401,8 @@ fun DashboardScreen(
             }
 
             // 7. Compact Navigation Shortcuts (Spotters, PYQs & CBT)
-            item {
-                val pyqCount = stagePool.count { it.question.isPyqTagged }
+            item(key = "dashboard_shortcuts") {
+                val pyqCount = state.stageSummary.pyqCount
                 val shortcuts = buildList {
                     add(
                         Triple(

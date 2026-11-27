@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         QuestionProgressEntity::class,
         MockHistoryEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -268,13 +268,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_questions_subject` ON `questions` (`subject`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_questions_category` ON `questions` (`category`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_questions_sourceType` ON `questions` (`sourceType`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_questions_isCustom_sortOrder` ON `questions` (`isCustom`, `sortOrder`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_question_progress_isBookmarked` ON `question_progress` (`isBookmarked`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_question_progress_lastOutcome` ON `question_progress` (`lastOutcome`)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "rrb_nursing_cbt_v1.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                     .also { INSTANCE = it }
             }

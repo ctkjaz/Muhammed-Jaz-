@@ -95,10 +95,7 @@ fun SubjectsHubScreen(
     val editorial = MaterialTheme.editorialColors
     val activeExamId = state.activeExam?.id
     val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExamId)
-    val totalIbqCount = remember(state.stageQuestions, state.crossExamQuestions) {
-        val active = state.stageQuestions.count { it.question.isImageBased }
-        if (active > 0) active else state.crossExamQuestions.count { it.question.isImageBased }
-    }
+    val totalIbqCount = state.globalIbqCount
 
     Column(modifier = modifier.fillMaxSize()) {
         // Primary Pathway Switch: By Exam vs By Subject (Req 16)
@@ -428,7 +425,11 @@ private fun CrossExamSubjectPracticeView(
                     }
                 }
             } else {
-                items(rows.size) { rowIdx ->
+                items(
+                    count = rows.size,
+                    key = { rowIdx -> rows[rowIdx].joinToString("_") { it.first.code } },
+                    contentType = { "subject_row" }
+                ) { rowIdx ->
                     val rowItems = rows[rowIdx]
                     Row(
                         modifier = Modifier.fillMaxWidth(),

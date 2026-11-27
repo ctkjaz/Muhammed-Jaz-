@@ -89,9 +89,12 @@ import com.example.ui.theme.SemanticReviewFill
 import com.example.ui.theme.SemanticWarningFill
 import com.example.ui.theme.SemanticWrongFill
 import com.example.ui.theme.editorialColors
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.model.SessionTimerState
 import com.example.ui.viewmodel.CbtPaletteStatus
 import com.example.ui.viewmodel.CbtReviewFilter
 import com.example.ui.viewmodel.CbtSessionState
+import kotlinx.coroutines.flow.StateFlow
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -112,6 +115,7 @@ fun CbtExamScreen(
     onDismissNextSection: () -> Unit = {},
     onConfirmNextSection: () -> Unit = {},
     onDismissSectionNotice: () -> Unit = {},
+    timerStateFlow: StateFlow<SessionTimerState>? = null,
     modifier: Modifier = Modifier
 ) {
     var paletteSheetOpen by remember { mutableStateOf(false) }
@@ -186,45 +190,13 @@ fun CbtExamScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (session.hasCountdown) {
-                            val activeTimerSec = if (session.hasSectionLock) {
-                                session.sectionRemainingSeconds
-                            } else {
-                                session.remainingSeconds
-                            }
-                            val timerBg = when {
-                                activeTimerSec <= 60 -> SemanticWrongFill
-                                activeTimerSec <= 300 -> SemanticWarningFill
-                                else -> Graphite
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = timerBg,
-                                border = BorderStroke(1.dp, AmoledBorder),
-                                modifier = Modifier.testTag("cbt_timer_badge")
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Filled.Timer,
-                                        contentDescription = "Remaining time",
-                                        tint = if (activeTimerSec > 300) AcidLime else PureWhite,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        text = if (session.hasSectionLock) {
-                                            "S${session.currentSectionIndex + 1} ${formatTimer(activeTimerSec)}"
-                                        } else {
-                                            formatTimer(activeTimerSec)
-                                        },
-                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                                        color = PureWhite,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
+                            CbtTimerBadge(
+                                timerStateFlow = timerStateFlow,
+                                hasSectionLock = session.hasSectionLock,
+                                currentSectionIndex = session.currentSectionIndex,
+                                fallbackTotalSeconds = session.remainingSeconds,
+                                fallbackSectionSeconds = session.sectionRemainingSeconds
+                            )
                         }
 
                         if (!isWide) {
@@ -308,10 +280,11 @@ fun CbtExamScreen(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    text = "Q${session.activeSectionRange.first + 1}–Q${session.activeSectionRange.last + 1} active  ·  Total ${formatTimer(session.remainingSeconds)}",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                CbtSectionTotalTimerSubtitle(
+                                    sectionRangeFirst = session.activeSectionRange.first,
+                                    sectionRangeLast = session.activeSectionRange.last,
+                                    timerStateFlow = timerStateFlow,
+                                    fallbackTotalSeconds = session.remainingSeconds
                                 )
                             }
                         }
@@ -1107,3 +1080,74 @@ private fun CbtResultScreen(
         }
     }
 }
+
+@Composable
+private fun CbtTimerBadge(
+    timerStateFlow: StateFlow<SessionTimerState>?,
+    hasSectionLock: Boolean,
+    currentSectionIndex: Int,
+    fallbackTotalSeconds: Int,
+    fallbackSectionSeconds: Int
+) {
+    val activeTimerSec = if (timerStateFlow != null) {
+        val timerState by timerStateFlow.collectAsStateWithLifecycle()
+        if (hasSectionLock) timerState.sectionRemainingSeconds else timerState.remainingSeconds
+    } else {
+        if (hasSectionLock) fallbackSectionSeconds else fallbackTotalSeconds
+    }
+    val timerBg = when {
+        activeTimerSec <= 60 -> SemanticWrongFill
+        activeTimerSec <= 300 -> SemanticWarningFill
+        else -> Graphite
+    }
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = timerBg,
+        border = BorderStroke(1.dp, AmoledBorder),
+        modifier = Modifier.testTag("cbt_timer_badge")
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(
+                Icons.Filled.Timer,
+                contentDescription = "Remaining time",
+                tint = if (activeTimerSec > 300) AcidLime else PureWhite,
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = if (hasSectionLock) {
+                    "S${currentSectionIndex + 1} ${formatTimer(activeTimerSec)}"
+                } else {
+                    formatTimer(activeTimerSec)
+                },
+                style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                color = PureWhite,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+private fun CbtSectionTotalTimerSubtitle(
+    sectionRangeFirst: Int,
+    sectionRangeLast: Int,
+    timerStateFlow: StateFlow<SessionTimerState>?,
+    fallbackTotalSeconds: Int
+) {
+    val totalSec = if (timerStateFlow != null) {
+        val timerState by timerStateFlow.collectAsStateWithLifecycle()
+        timerState.remainingSeconds
+    } else {
+        fallbackTotalSeconds
+    }
+    Text(
+        text = "Q${sectionRangeFirst + 1}–Q${sectionRangeLast + 1} active  ·  Total ${formatTimer(totalSec)}",
+        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+

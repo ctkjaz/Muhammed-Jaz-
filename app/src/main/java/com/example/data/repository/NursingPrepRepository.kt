@@ -18,80 +18,159 @@ import com.example.data.model.ExamQuestionLink
 import com.example.data.model.ExamSection
 import com.example.data.model.Flashcard
 import com.example.data.model.MockHistory
+import com.example.data.model.PerformanceAggregationEngine
 import com.example.data.model.PlatformCatalogDefaults
 import com.example.data.model.Profession
 import com.example.data.model.Question
 import com.example.data.model.QuestionItem
 import com.example.data.model.QuestionProgress
 import com.example.data.model.QuestionSourceType
+import com.example.data.model.StaticDedupCatalog
 import com.example.data.model.SubjectCatalog
 import com.example.data.model.SubjectStat
 import com.example.data.model.Topic
 import com.example.data.model.composeShiftYear
 import com.example.data.parser.BulkQuestionParser
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 
 class NursingPrepRepository(
     private val context: Context,
-    private val dao: QuestionDao
+    private val dao: QuestionDao,
+    private val repoScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 ) {
     val professions: Flow<List<Profession>> =
-        dao.observeProfessions().map { list -> list.map { it.toDomain() } }
+        dao.observeProfessions().map { list -> list.map { it.toDomain() } }.distinctUntilChanged()
 
     val exams: Flow<List<Exam>> =
-        dao.observeExams().map { list -> list.map { it.toDomain() } }
+        dao.observeExams().map { list -> list.map { it.toDomain() } }.distinctUntilChanged()
 
     val topics: Flow<List<Topic>> =
-        dao.observeTopics().map { list -> list.map { it.toDomain() } }
+        dao.observeTopics().map { list -> list.map { it.toDomain() } }.distinctUntilChanged()
 
-    private val allProgressMap: Flow<Map<String, QuestionProgress>> =
-        dao.observeAllProgress().map { progressList ->
-            val map = HashMap<String, QuestionProgress>(progressList.size * 2 + 1)
-            for (p in progressList) {
-                map[p.questionId] = p.toDomain()
+    /**
+     * Single shared SQLite progress observer across the entire app.
+     * Conflates rapid burst updates so answering fast never queues redundant rebuilds.
+     */
+    private val allProgressMap: SharedFlow<Map<String, QuestionProgress>> =
+        dao.observeAllProgress()
+            .conflate()
+            .map { progressList ->
+                val map = HashMap<String, QuestionProgress>(progressList.size * 2 + 1)
+                for (p in progressList) {
+                    map[p.questionId] = p.toDomain()
+                }
+                map as Map<String, QuestionProgress>
             }
-            map
-        }.flowOn(Dispatchers.Default)
+            .distinctUntilChanged()
+            .flowOn(Dispatchers.Default)
+            .shareIn(
+                scope = repoScope,
+                started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 10_000L),
+                replay = 1
+            )
 
-    private val parsedAllQuestions: Flow<List<Question>> =
+    /** Lightweight O(1) lookup set of bookmarked question IDs for active practice screens. */
+    val bookmarkedQuestionIds: Flow<Set<String>> = allProgressMap
+        .map { progressMap ->
+            val ids = HashSet<String>()
+            for ((id, progress) in progressMap) {
+                if (progress.isBookmarked) ids.add(id)
+            }
+            ids as Set<String>
+        }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
+
+    /**
+     * Single shared parsed static Question catalog.
+     * Parses SQLite rows + optionsJson ONCE on seed/import instead of per-collector.
+     */
+    private val parsedAllQuestions: SharedFlow<List<Question>> =
         dao.observeAllQuestionEntities()
+            .conflate()
             .map { entities -> entities.map { it.toDomainQuestion() } }
+            .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
+            .shareIn(
+                scope = repoScope,
+                started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 10_000L),
+                replay = 1
+            )
 
-    val allQuestions: Flow<List<QuestionItem>> =
+    /**
+     * Static stem-deduplicated catalog built ONCE whenever static questions change.
+     * Eliminates 10,700+ StringBuilder stem normalizations on every single answer tap.
+     */
+    private val staticDedupCatalog: SharedFlow<StaticDedupCatalog> =
+        parsedAllQuestions
+            .map { questions -> PerformanceAggregationEngine.buildStaticDedupCatalog(questions) }
+            .flowOn(Dispatchers.Default)
+            .shareIn(
+                scope = repoScope,
+                started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 10_000L),
+                replay = 1
+            )
+
+    val allQuestions: Flow<List<QuestionItem>> = run {
+        var cachedPrevious: List<QuestionItem>? = null
         combine(parsedAllQuestions, allProgressMap) { questions, progressMap ->
-            questions.map { q ->
-                QuestionItem(
-                    question = q,
-                    progress = progressMap[q.id] ?: QuestionProgress(questionId = q.id)
-                )
-            }
-        }.flowOn(Dispatchers.Default)
+            PerformanceAggregationEngine.overlayProgress(
+                questions = questions,
+                progressMap = progressMap,
+                previousItems = cachedPrevious
+            ).also { cachedPrevious = it }
+        }.conflate().flowOn(Dispatchers.Default)
+    }
 
-    val allExamLinks: Flow<List<ExamQuestionLink>> =
+    /** Deduplicated cross-exam question stream using cached static deduplication + O(1) instance reuse. */
+    val dedupedAllQuestions: Flow<List<QuestionItem>> = run {
+        var cachedPrevious: List<QuestionItem>? = null
+        combine(staticDedupCatalog, allProgressMap) { catalog, progressMap ->
+            PerformanceAggregationEngine.overlayProgress(
+                questions = catalog.canonicalQuestions,
+                progressMap = progressMap,
+                previousItems = cachedPrevious,
+                aliasIdsByCanonicalId = catalog.aliasIdsByCanonicalId
+            ).also { cachedPrevious = it }
+        }.conflate().flowOn(Dispatchers.Default)
+    }
+
+    val allExamLinks: SharedFlow<List<ExamQuestionLink>> =
         dao.observeAllExamLinks()
+            .conflate()
             .map { list -> list.map { it.toDomain() } }
+            .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
+            .shareIn(
+                scope = repoScope,
+                started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 10_000L),
+                replay = 1
+            )
 
     val mockHistory: Flow<List<MockHistory>> =
-        dao.observeMockHistory().map { list -> list.map { it.toDomain() } }
+        dao.observeMockHistory().map { list -> list.map { it.toDomain() } }.distinctUntilChanged()
 
     fun observeExamSections(examId: String): Flow<List<ExamSection>> =
-        dao.observeExamSections(examId).map { list -> list.map { it.toDomain() } }
+        dao.observeExamSections(examId).map { list -> list.map { it.toDomain() } }.distinctUntilChanged()
 
     fun observeQuestionsForExam(examId: String): Flow<List<QuestionItem>> {
-        // Combine explicit exam-linked questions (PYQs, custom imports, OTA packs) with
-        // virtually projected shared non-PYQ core practice & predicted mocks on Dispatchers.Default.
-        // This avoids 29 × 10,000 duplicate SQLite join rows while keeping every exam 100% populated.
+        // Project static questions for this exam ONCE per exam/seed change — never on progress writes.
         val projectedExamQuestions: Flow<List<Question>> = combine(
-            dao.observeQuestionEntitiesForExam(examId),
-            dao.observeExamLinksForExam(examId),
+            dao.observeQuestionEntitiesForExam(examId).conflate(),
+            dao.observeExamLinksForExam(examId).conflate(),
             parsedAllQuestions
         ) { entities, links, allParsed ->
             val linkMap = HashMap<String, ExamQuestionLinkEntity>(links.size * 2 + 1)
@@ -115,17 +194,17 @@ class NursingPrepRepository(
                     result.add(q)
                 }
             }
-            result
-        }.flowOn(Dispatchers.Default)
+            result as List<Question>
+        }.distinctUntilChanged().flowOn(Dispatchers.Default)
 
+        var cachedPrevious: List<QuestionItem>? = null
         return combine(projectedExamQuestions, allProgressMap) { questions, progressMap ->
-            questions.map { q ->
-                QuestionItem(
-                    question = q,
-                    progress = progressMap[q.id] ?: QuestionProgress(questionId = q.id)
-                )
-            }
-        }.flowOn(Dispatchers.Default)
+            PerformanceAggregationEngine.overlayProgress(
+                questions = questions,
+                progressMap = progressMap,
+                previousItems = cachedPrevious
+            ).also { cachedPrevious = it }
+        }.conflate().flowOn(Dispatchers.Default)
     }
 
     private fun projectQuestionForExam(

@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.rrbnursing.kptvmz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 27
-    versionName = "3.4.0"
+    versionCode = 28
+    versionName = "3.5.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
