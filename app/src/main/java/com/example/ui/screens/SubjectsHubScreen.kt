@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -86,10 +87,16 @@ fun SubjectsHubScreen(
     onStartCbtCustom: (List<QuestionItem>, String) -> Unit,
     onOpenImporter: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenIbqHub: () -> Unit = {},
     subscription: SubscriptionUiState = SubscriptionUiState()
 ) {
+    val editorial = MaterialTheme.editorialColors
     val activeExamId = state.activeExam?.id
     val isNorcet = PlatformCatalogDefaults.isNorcetExam(activeExamId)
+    val totalIbqCount = remember(state.stageQuestions, state.crossExamQuestions) {
+        val active = state.stageQuestions.count { it.question.isImageBased }
+        if (active > 0) active else state.crossExamQuestions.count { it.question.isImageBased }
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         // Primary Pathway Switch: By Exam vs By Subject (Req 16)
@@ -121,6 +128,57 @@ fun SubjectsHubScreen(
                     onSelect = onSelectExamStage,
                     testTagOf = { "hub_stage_${it.id}" }
                 )
+            }
+
+            if (totalIbqCount > 0) {
+                Surface(
+                    onClick = onOpenIbqHub,
+                    shape = RoundedCornerShape(14.dp),
+                    color = editorial.cardSurface,
+                    border = BorderStroke(1.dp, editorial.borderSubtle),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("subjects_ibq_hub_banner")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Image,
+                                contentDescription = null,
+                                tint = editorial.acidLime,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Image-Based Questions Hub ($totalIbqCount)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "ECG · Airway/OT · OBG/CTG · CXR · Devices",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Text(
+                            text = "OPEN →",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                            fontWeight = FontWeight.Bold,
+                            color = editorial.acidLime
+                        )
+                    }
+                }
             }
         }
 

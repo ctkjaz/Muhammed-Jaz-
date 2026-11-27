@@ -139,6 +139,7 @@ import com.example.ui.screens.DeviceLockSupportDialog
 import com.example.ui.screens.DoubtBoxScreen
 import com.example.ui.screens.FlashcardDeckScreen
 import com.example.ui.screens.GrandTestScreen
+import com.example.ui.screens.IbqHubScreen
 import com.example.ui.screens.NotificationsInboxScreen
 import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.SubjectChaptersScreen
@@ -346,6 +347,8 @@ fun RrbNursingApp(vm: MainViewModel) {
         val isClinicalToolsOpen by vm.isClinicalToolsOpen.collectAsStateWithLifecycle()
         val clinicalToolsInitialSection by vm.clinicalToolsInitialSection.collectAsStateWithLifecycle()
         val isEcgStudioOpen by vm.isEcgStudioOpen.collectAsStateWithLifecycle()
+        val isIbqHubOpen by vm.isIbqHubOpen.collectAsStateWithLifecycle()
+        val ibqHubInitialCategory by vm.ibqHubInitialCategory.collectAsStateWithLifecycle()
         val isFlashcardStudioOpen by vm.isFlashcardStudioOpen.collectAsStateWithLifecycle()
         val masteredFlashcardIds by vm.masteredFlashcardIds.collectAsStateWithLifecycle()
         val dailyFocusProgress by vm.dailyFocusProgress.collectAsStateWithLifecycle()
@@ -521,7 +524,7 @@ fun RrbNursingApp(vm: MainViewModel) {
 
         val inActiveSession = practiceSession != null || cbtSession != null
         val inSubScreen = isSettingsOpen || isProfileOpen || isPlansOpen || isAdminOpen ||
-            isNotificationsOpen || isDoubtBoxOpen || isClinicalToolsOpen || isEcgStudioOpen || isFlashcardStudioOpen || isGrandTestHubOpen || subjectChaptersNav != null
+            isNotificationsOpen || isDoubtBoxOpen || isClinicalToolsOpen || isEcgStudioOpen || isIbqHubOpen || isFlashcardStudioOpen || isGrandTestHubOpen || subjectChaptersNav != null
         val shouldKeepScreenOn = keepScreenOn && inActiveSession
 
         DisposableEffect(context, shouldKeepScreenOn) {
@@ -1021,6 +1024,22 @@ fun RrbNursingApp(vm: MainViewModel) {
                                     )
                                 }
 
+                                isIbqHubOpen -> {
+                                    val ibqBank = remember(state.stageQuestions, state.questions, state.crossExamQuestions) {
+                                        val primary = state.stageQuestions.ifEmpty { state.questions }
+                                            .filter { it.question.isImageBased }
+                                        val fallback = state.crossExamQuestions.filter { it.question.isImageBased }
+                                        (primary + fallback).distinctBy { it.id }
+                                    }
+                                    IbqHubScreen(
+                                        allIbqQuestions = ibqBank,
+                                        initialCategory = ibqHubInitialCategory,
+                                        onBack = vm::closeIbqHub,
+                                        onStartPractice = { list, title -> vm.startPractice(list, title) },
+                                        onOpenEcgStudio = vm::openEcgStudio
+                                    )
+                                }
+
                                 isFlashcardStudioOpen -> {
                                     FlashcardDeckScreen(
                                         caFlashcards = state.flashcards,
@@ -1260,7 +1279,10 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             onStartRecoveryDayDrill = { subjCode, count ->
                                                 vm.startSmartWeakTopicDrill(subjectCode = subjCode, targetCount = count)
                                             },
-                                            onStartImageSpotterDrill = vm::startImageBasedSpotterDrill,
+                                            onStartImageSpotterDrill = { vm.openIbqHub() },
+                                            onStartGeneralMixedDrill = { pool, count, title ->
+                                                vm.startGeneralMixedDrill(pool, count, title)
+                                            },
                                             onOpenFlashcardStudio = vm::openFlashcardStudio,
                                             masteredFlashcardCount = masteredFlashcardIds.size,
                                             qotdQuestion = vm.todayQuestionOfTheDay,
@@ -1296,6 +1318,7 @@ fun RrbNursingApp(vm: MainViewModel) {
                                             },
                                             onStartCbtCustom = { list, title -> vm.startCbtCustom(list, title) },
                                             onOpenImporter = vm::openImporter,
+                                            onOpenIbqHub = { vm.openIbqHub() },
                                             subscription = subscriptionState
                                         )
 

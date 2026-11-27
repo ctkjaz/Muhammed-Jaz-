@@ -74,12 +74,24 @@ object ClinicalSpotterCatalog {
     const val DIAGRAM_ECG_STEMI = "ecg_stemi"
     const val DIAGRAM_ECG_AVBLOCK3 = "ecg_avblock3"
     const val DIAGRAM_ECG_HYPERKALEMIA = "ecg_hyperkalemia"
+    const val DIAGRAM_ECG_TORSADES = "ecg_torsades"
 
     const val DIAGRAM_IV_CANNULA_18G = "spotter_iv_cannula_18g"
+    const val DIAGRAM_IV_CANNULA_20G = "spotter_iv_cannula_20g"
     const val DIAGRAM_IV_CANNULA_22G = "spotter_iv_cannula_22g"
     const val DIAGRAM_BMW_RED = "spotter_bmw_red"
     const val DIAGRAM_BMW_YELLOW = "spotter_bmw_yellow"
+    const val DIAGRAM_BMW_WHITE = "spotter_bmw_white_sharps"
     const val DIAGRAM_VENTURI_MASK = "spotter_venturi_mask"
+    const val DIAGRAM_NRB_MASK = "spotter_nrb_mask"
+
+    const val DIAGRAM_CTG_LATE_DECEL = "spotter_ctg_late_decel"
+    const val DIAGRAM_CTG_VARIABLE_DECEL = "spotter_ctg_variable_decel"
+    const val DIAGRAM_PARTOGRAPH_ACTION = "spotter_partograph_action_line"
+
+    const val DIAGRAM_CXR_TENSION_PNEUMO = "spotter_cxr_tension_pneumo"
+    const val DIAGRAM_CXR_PLEURAL_EFFUSION = "spotter_cxr_pleural_effusion"
+    const val DIAGRAM_RULE_OF_NINES = "spotter_rule_of_nines"
 
     const val DRAWABLE_LARYNGOSCOPE = "laryngoscope"
     const val DRAWABLE_SURGICAL_TRAY = "surgical_tray"
@@ -89,7 +101,11 @@ object ClinicalSpotterCatalog {
             ref.key.startsWith("ecg_") -> "ECG STRIP · 25 mm/s"
             ref.key.startsWith("spotter_iv_") -> "IV CANNULA SPOTTER"
             ref.key.startsWith("spotter_bmw_") -> "BMW SEGREGATION"
-            ref.key.startsWith("spotter_venturi") -> "OXYGEN DEVICE"
+            ref.key.startsWith("spotter_venturi") || ref.key.startsWith("spotter_nrb") -> "OXYGEN DEVICE"
+            ref.key.startsWith("spotter_ctg_") -> "OBG · CTG TRACE"
+            ref.key.startsWith("spotter_partograph") -> "OBG · WHO PARTOGRAPH"
+            ref.key.startsWith("spotter_cxr_") -> "CHEST RADIOGRAPH"
+            ref.key.startsWith("spotter_rule_of_nines") -> "BURN TBSA CHART"
             else -> "CLINICAL DIAGRAM"
         }
         is ClinicalImageRef.Drawable -> when (ref.key) {
@@ -446,6 +462,236 @@ object ClinicalSpotterCatalog {
             topicId = "msn_respiratory_care",
             sourceType = QuestionSourceType.PRACTICE,
             imageUrl = "diagram://$DIAGRAM_VENTURI_MASK"
+        ),
+        // 16. CTG Late Decelerations (OBG)
+        Question(
+            id = "IBQ_016",
+            category = "nur",
+            shiftYear = "",
+            subject = "OBG",
+            difficulty = QuestionDifficulty.HARD,
+            questionText = "Examine the intrapartum Cardiotocography (CTG) strip above showing gradual fetal heart rate (FHR) drops whose nadir occurs AFTER the peak of each uterine contraction (mirror-image lag). What is the underlying pathophysiology and FIRST nursing action?",
+            options = listOf(
+                "Uteroplacental insufficiency — immediately turn mother to left lateral position, stop oxytocin infusion, start O₂ & IV fluid bolus, and notify obstetrician",
+                "Normal fetal head compression — reassure the mother and continue oxytocin augmentation",
+                "Umbilical cord compression — perform immediate fundal pressure during the next contraction",
+                "Fetal sleep cycle — repeat the CTG after 2 hours without intervention"
+            ),
+            correctIndex = 0,
+            explanation = "Late decelerations begin after the contraction starts and reach their lowest point (nadir) AFTER the contraction peak, returning slowly to baseline. Using VEAL CHOP: Late = Placental insufficiency (uteroplacental hypoxia). Priority intrauterine resuscitation (LION): Left lateral positioning, IV fluid bolus, Oxygen (8–10 L/min via non-rebreather), and Notify/stop Oxytocin immediately.",
+            isCustom = false,
+            sourceStatus = Question.SOURCE_VERIFIED,
+            sourceNote = "ClinEdge Clinical Spotters • AIIMS NORCET OBG & Labor Room",
+            topicId = "obg_intrapartum_fetal_monitoring",
+            sourceType = QuestionSourceType.PRACTICE,
+            imageUrl = "diagram://$DIAGRAM_CTG_LATE_DECEL"
+        ),
+        // 17. CTG Variable Decelerations (OBG)
+        Question(
+            id = "IBQ_017",
+            category = "nur",
+            shiftYear = "",
+            subject = "OBG",
+            difficulty = QuestionDifficulty.MEDIUM,
+            questionText = "Analyze the CTG strip above showing abrupt, steep V- and W-shaped drops in fetal heart rate (>15 bpm drop within <30 seconds) occurring inconsistently relative to uterine contractions. What is the primary cause and immediate priority action?",
+            options = listOf(
+                "Umbilical cord compression — immediately change maternal position (side-to-side or knee-chest) and perform sterile vaginal exam to rule out cord prolapse",
+                "Uteroplacental insufficiency — increase oxytocin drip to shorten labor",
+                "Fetal head compression — no intervention required as it is benign",
+                "Maternal fever — administer oral paracetamol and discharge home"
+            ),
+            correctIndex = 0,
+            explanation = "Variable decelerations are abrupt (<30 s onset to nadir), sharp V/U/W-shaped FHR drops that vary in timing with contractions. Using VEAL CHOP: Variable = Cord compression. The FIRST action is relieving mechanical pressure on the cord by changing maternal position (lateral/Trendelenburg/knee-chest), checking for occult or overt cord prolapse, stopping oxytocin if repetitive, and preparing for amnioinfusion if ordered.",
+            isCustom = false,
+            sourceStatus = Question.SOURCE_VERIFIED,
+            sourceNote = "ClinEdge Clinical Spotters • AIIMS NORCET OBG & Labor Room",
+            topicId = "obg_intrapartum_fetal_monitoring",
+            sourceType = QuestionSourceType.PRACTICE,
+            imageUrl = "diagram://$DIAGRAM_CTG_VARIABLE_DECEL"
+        ),
+        // 18. WHO Modified Partograph Alert & Action Lines (OBG)
+        Question(
+            id = "IBQ_018",
+            category = "nur",
+            shiftYear = "",
+            subject = "OBG",
+            difficulty = QuestionDifficulty.MEDIUM,
+            questionText = "Review the WHO Modified Partograph cervicograph above for a primigravida in active labor. The plotted cervical dilatation (×) has crossed to the RIGHT of the Alert Line and is approaching the Action Line (4 hours to the right). What does crossing the Alert Line signify?",
+            options = listOf(
+                "Prolonged active labor (<1 cm/hour progress) — reassess for cephalopelvic disproportion (CPD), inadequate contractions, or malposition and arrange referral/obstetric review",
+                "Normal precipitous labor — prepare immediately for home delivery",
+                "Latent phase of labor — stop plotting until dilatation reaches 8 cm",
+                "Confirmed complete placental separation — administer prophylactic ergometrine"
+            ),
+            correctIndex = 0,
+            explanation = "On the WHO Modified Partograph (started at active phase ≥4 cm dilatation), the Alert Line represents the minimum expected cervical dilatation rate of 1 cm/hour. Crossing to the RIGHT of the Alert Line warns of slow/prolonged labor requiring close reassessment (4 Ps: Powers, Passage, Passenger) or timely referral; reaching the Action Line (4 hours right of Alert Line) mandates definitive obstetric intervention (e.g., oxytocin augmentation after ruling out obstruction, or Cesarean section).",
+            isCustom = false,
+            sourceStatus = Question.SOURCE_VERIFIED,
+            sourceNote = "ClinEdge Clinical Spotters • WHO Modified Partograph",
+            topicId = "obg_partograph_labor",
+            sourceType = QuestionSourceType.PRACTICE,
+            imageUrl = "diagram://$DIAGRAM_PARTOGRAPH_ACTION"
+        ),
+        // 19. Chest X-Ray Tension Pneumothorax Schematic (MSN / Critical Care)
+        Question(
+            id = "IBQ_019",
+            category = "nur",
+            shiftYear = "",
+            subject = "MSN",
+            difficulty = QuestionDifficulty.HARD,
+            questionText = "A 28-year-old road-traffic trauma patient presents with severe dyspnea, SpO₂ 84%, BP 76/48 mmHg, distended neck veins, and absent right breath sounds. The chest radiograph diagram above shows a dark hyperlucent right hemithorax with absent lung markings, a collapsed right lung margin, and tracheal/mediastinal shift to the LEFT. What is the immediate life-saving procedure?",
+            options = listOf(
+                "Immediate needle thoracostomy decompression (large-bore 14G cannula) followed by chest tube (ICD) insertion with water-seal drainage",
+                "Wait for a formal CT chest before any bedside intervention",
+                "Administer IV Furosemide 40 mg and apply CPAP",
+                "Place the patient flat supine and infuse 3 liters of dextrose 5%"
+            ),
+            correctIndex = 0,
+            explanation = "Classic Tension Pneumothorax triad: absent unilateral breath sounds + severe obstructive shock (hypotension + JVD) + contralateral tracheal/mediastinal shift. It is a clinical emergency — never delay decompression for imaging! Perform immediate needle decompression (14G angiocatheter at 2nd intercostal space midclavicular line or 4th–5th ICS anterior/mid-axillary line per ATLS 10th ed.) followed immediately by formal tube thoracostomy (ICD) connected to underwater-seal drainage.",
+            isCustom = false,
+            sourceStatus = Question.SOURCE_VERIFIED,
+            sourceNote = "ClinEdge Clinical Spotters • Critical Care & Emergency Imaging",
+            topicId = "msn_thoracic_emergencies",
+            sourceType = QuestionSourceType.PRACTICE,
+            imageUrl = "diagram://$DIAGRAM_CXR_TENSION_PNEUMO"
+        ),
+        // 20. Chest X-Ray Pleural Effusion Meniscus Sign (MSN)
+        Question(
+            id = "IBQ_020",
+            category = "nur",
+            shiftYear = "",
+            subject = "MSN",
+            difficulty = QuestionDifficulty.MEDIUM,
+            questionText = "Inspect the erect PA chest radiograph schematic above demonstrating a homogeneous dense opacity at the right lung base with obliteration (blunting) of the right costophrenic angle and a concave upward curving border (meniscus sign). How should the nurse position this patient for diagnostic thoracentesis?",
+            options = listOf(
+                "Sitting upright on the edge of the bed leaning slightly forward with arms resting on a padded overbed table",
+                "Prone flat on the abdomen with head turned to the right",
+                "Trendelenburg (head-down) position at 30 degrees",
+                "Supine with both knees flexed (dorsal recumbent)"
+            ),
+            correctIndex = 0,
+            explanation = "Blunting of the costophrenic angle (>200–300 mL fluid) with a concave upward 'meniscus sign' is the classic radiographic hallmark of Pleural Effusion. For thoracentesis, positioning the patient upright and leaning forward over a pillow-padded bedside table widens the posterior intercostal spaces and allows fluid to gravitate to the base. Instruct the patient NOT to cough or move during needle insertion, and limit initial drainage to ≤1,000–1,500 mL to avoid re-expansion pulmonary edema.",
+            isCustom = false,
+            sourceStatus = Question.SOURCE_VERIFIED,
+            sourceNote = "ClinEdge Clinical Spotters • Respiratory & Chest Imaging",
+            topicId = "msn_respiratory_care",
+            sourceType = QuestionSourceType.PRACTICE,
+            imageUrl = "diagram://$DIAGRAM_CXR_PLEURAL_EFFUSION"
+        ),
+        // 21. Wallace Rule of Nines Burn TBSA Diagram (MSN)
+        Question(
+            id = "IBQ_021",
+            category = "nur",
+            shiftYear = "",
+            subject = "MSN",
+            difficulty = QuestionDifficulty.MEDIUM,
+            questionText = "Using the adult Wallace Rule of Nines diagram shaded above (Anterior Trunk + Entire Right Arm + Anterior Right Leg) for a 70 kg patient with partial- and full-thickness thermal burns, what is the estimated Total Body Surface Area (TBSA) burned and the FIRST 8-hour fluid volume using Parkland formula (4 mL × kg × %TBSA)?",
+            options = listOf(
+                "36% TBSA · 5,040 mL of Ringer's Lactate in the first 8 hours from the time of burn",
+                "27% TBSA · 3,780 mL of Normal Saline in the first 8 hours",
+                "45% TBSA · 6,300 mL of 5% Dextrose in the first 8 hours",
+                "18% TBSA · 2,520 mL of Ringer's Lactate in the first 8 hours"
+            ),
+            correctIndex = 0,
+            explanation = "Adult Rule of Nines breakdown: Anterior trunk = 18%, Entire right arm (front + back) = 9%, Anterior right leg = 9% → Total TBSA = 18 + 9 + 9 = 36%. Parkland formula total 24-hour Ringer's Lactate = 4 mL × 70 kg × 36 = 10,080 mL. Give HALF (5,040 mL) in the FIRST 8 hours calculated from the TIME OF BURN INJURY (not hospital arrival), and the remaining 5,040 mL over the next 16 hours. Titrate to urine output 0.5–1 mL/kg/hr.",
+            isCustom = false,
+            sourceStatus = Question.SOURCE_VERIFIED,
+            sourceNote = "ClinEdge Clinical Spotters • Burns & Trauma Nursing",
+            topicId = "msn_burns_resuscitation",
+            sourceType = QuestionSourceType.PRACTICE,
+            imageUrl = "diagram://$DIAGRAM_RULE_OF_NINES"
+        ),
+        // 22. 20G Pink IV Cannula Spotter (FON)
+        Question(
+            id = "IBQ_022",
+            category = "nur",
+            shiftYear = "",
+            subject = "FON",
+            difficulty = QuestionDifficulty.EASY,
+            questionText = "Identify the ISO color-coded peripheral IV cannula shown above (PINK hub, outer diameter 1.1 mm, flow rate ~60 mL/min). What is its gauge size and standard clinical role?",
+            options = listOf(
+                "20 Gauge — Most widely used standard adult cannula for routine IV fluids, antibiotics, and non-massive blood administration",
+                "16 Gauge — Emergency massive trauma resuscitation",
+                "24 Gauge — Neonatal ICU micro-infusions",
+                "26 Gauge — Premature newborn peripheral access"
+            ),
+            correctIndex = 0,
+            explanation = "The 20G PINK peripheral IV cannula (1.1 mm OD, ~60 mL/min flow) is the universal workhorse for general adult ward admissions, maintenance IV fluids, IV medications, and routine contrast/blood infusions when rapid trauma resuscitation (16G Grey / 18G Green) is not needed.",
+            isCustom = false,
+            sourceStatus = Question.SOURCE_VERIFIED,
+            sourceNote = "ClinEdge Clinical Spotters • ISO IV Cannula Color Code",
+            topicId = "fon_iv_therapy",
+            sourceType = QuestionSourceType.PRACTICE,
+            imageUrl = "diagram://$DIAGRAM_IV_CANNULA_20G"
+        ),
+        // 23. BMW White Translucent Puncture-Proof Container (CHN)
+        Question(
+            id = "IBQ_023",
+            category = "nur",
+            shiftYear = "",
+            subject = "CHN",
+            difficulty = QuestionDifficulty.EASY,
+            questionText = "Under India's Bio-Medical Waste Management Rules (2016), which waste stream MUST be discarded into the highlighted WHITE translucent, puncture-proof, leak-proof container shown above?",
+            options = listOf(
+                "Waste metallic sharps — hypodermic needles, syringes with fixed needles, scalpel blades, and lancets",
+                "Broken glass vials, medicine ampoules, and metallic orthopedic implants",
+                "Used plastic IV tubing, urinary catheters, and rubber gloves",
+                "Blood-soaked surgical sponges and amputated tissue"
+            ),
+            correctIndex = 0,
+            explanation = "The WHITE translucent puncture-proof, tamper-proof container is exclusively for metallic waste sharps (needles, fixed-needle syringes, scalpel blades, lancets) treated by autoclaving/dry heat sterilization followed by shredding or mutilation/encapsulation. Note the classic NORCET trap: Broken glass vials & metallic implants go in BLUE, NOT White!",
+            isCustom = false,
+            sourceStatus = Question.SOURCE_VERIFIED,
+            sourceNote = "ClinEdge Clinical Spotters • India BMW Rules 2016",
+            topicId = "chn_biomedical_waste",
+            sourceType = QuestionSourceType.PRACTICE,
+            imageUrl = "diagram://$DIAGRAM_BMW_WHITE"
+        ),
+        // 24. Non-Rebreather (NRB) Oxygen Mask Spotter (MSN)
+        Question(
+            id = "IBQ_024",
+            category = "nur",
+            shiftYear = "",
+            subject = "MSN",
+            difficulty = QuestionDifficulty.MEDIUM,
+            questionText = "Examine the oxygen delivery mask with an attached reservoir bag and one-way exhalation valves illustrated above. What oxygen flow rate and nursing precaution are MANDATORY when applying a Non-Rebreather (NRB) mask?",
+            options = listOf(
+                "Set O₂ flow at 10–15 L/min (delivers ~85–95% FiO₂) and ALWAYS pre-inflate the reservoir bag completely before placing the mask on the patient's face",
+                "Set O₂ flow at 2–4 L/min to avoid collapsing the reservoir bag",
+                "Keep the reservoir bag completely deflated during inspiration for CO₂ washout",
+                "Use as first-line chronic maintenance therapy in stable COPD patients"
+            ),
+            correctIndex = 0,
+            explanation = "A Non-Rebreather (NRB) mask delivers the highest FiO₂ (~85–95%) among non-invasive masks, ideal for carbon monoxide poisoning, trauma, smoke inhalation, and acute severe hypoxemia. Always run O₂ at 10–15 L/min so the reservoir bag remains at least 2/3 inflated throughout inspiration — a deflated bag risks suffocation and CO₂ rebreathing!",
+            isCustom = false,
+            sourceStatus = Question.SOURCE_VERIFIED,
+            sourceNote = "ClinEdge Clinical Spotters • Respiratory & Critical Care",
+            topicId = "msn_respiratory_care",
+            sourceType = QuestionSourceType.PRACTICE,
+            imageUrl = "diagram://$DIAGRAM_NRB_MASK"
+        ),
+        // 25. Torsades de Pointes Polymorphic VT (ECG)
+        Question(
+            id = "IBQ_025",
+            category = "nur",
+            shiftYear = "",
+            subject = "MSN",
+            difficulty = QuestionDifficulty.HARD,
+            questionText = "Identify the distinctive 'twisting of the points' polymorphic ventricular tachycardia strip above (spindle-like QRS complexes rotating around the isoelectric baseline in a patient with prolonged QT interval). What is the FIRST-LINE IV medication for this rhythm?",
+            options = listOf(
+                "IV Magnesium Sulfate 1–2 g diluted and given slowly over 1–2 minutes (plus immediate defibrillation if pulseless)",
+                "IV Amiodarone loading infusion as sole first-line therapy",
+                "IV Adenosine 6 mg rapid push",
+                "IV Calcium Chloride 1 g rapid bolus"
+            ),
+            correctIndex = 0,
+            explanation = "Torsades de Pointes is a polymorphic VT linked to acquired or congenital QT prolongation (hypomagnesemia, hypokalemia, macrolides, haloperidol, ondansetron, amiodarone). IV Magnesium Sulfate (2 g IV) is the drug of choice even if serum Mg²⁺ is normal! Avoid QT-prolonging drugs like amiodarone; if the patient becomes pulseless or unstable, deliver immediate unsynchronized defibrillation.",
+            isCustom = false,
+            sourceStatus = Question.SOURCE_VERIFIED,
+            sourceNote = "ClinEdge Clinical Spotters • AIIMS NORCET High-Yield ECG",
+            topicId = "msn_cardiac_emergencies",
+            sourceType = QuestionSourceType.PRACTICE,
+            imageUrl = "diagram://$DIAGRAM_ECG_TORSADES"
         )
     )
 }

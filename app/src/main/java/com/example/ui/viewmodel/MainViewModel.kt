@@ -63,6 +63,8 @@ import com.example.data.model.ExamSection
 import com.example.data.model.ExamStage
 import com.example.data.model.Flashcard
 import com.example.data.model.FocusTimerLogic
+import com.example.data.model.IbqCategory
+import com.example.data.model.IbqHubLogic
 import com.example.data.model.FocusTimerPreset
 import com.example.data.model.GamificationLogic
 import com.example.data.model.GamificationState
@@ -558,6 +560,12 @@ class MainViewModel(
 
     private val _isEcgStudioOpen = MutableStateFlow(false)
     val isEcgStudioOpen: StateFlow<Boolean> = _isEcgStudioOpen.asStateFlow()
+
+    private val _isIbqHubOpen = MutableStateFlow(false)
+    val isIbqHubOpen: StateFlow<Boolean> = _isIbqHubOpen.asStateFlow()
+
+    private val _ibqHubInitialCategory = MutableStateFlow(IbqCategory.ALL)
+    val ibqHubInitialCategory: StateFlow<IbqCategory> = _ibqHubInitialCategory.asStateFlow()
 
     private val _isFlashcardStudioOpen = MutableStateFlow(false)
     val isFlashcardStudioOpen: StateFlow<Boolean> = _isFlashcardStudioOpen.asStateFlow()
@@ -1852,6 +1860,7 @@ class MainViewModel(
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
+        _isIbqHubOpen.value = false
         _isFlashcardStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _selectedTab.value = tab
@@ -1866,6 +1875,7 @@ class MainViewModel(
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
+        _isIbqHubOpen.value = false
         _isFlashcardStudioOpen.value = false
         _isGrandTestHubOpen.value = false
         _isSettingsOpen.value = true
@@ -1884,6 +1894,7 @@ class MainViewModel(
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
+        _isIbqHubOpen.value = false
         _isGrandTestHubOpen.value = false
         _isProfileOpen.value = true
     }
@@ -1904,6 +1915,7 @@ class MainViewModel(
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
+        _isIbqHubOpen.value = false
         _isGrandTestHubOpen.value = false
         _isPlansOpen.value = true
     }
@@ -1924,6 +1936,7 @@ class MainViewModel(
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
+        _isIbqHubOpen.value = false
         _isGrandTestHubOpen.value = false
         _isPlansOpen.value = true
     }
@@ -1946,6 +1959,7 @@ class MainViewModel(
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
+        _isIbqHubOpen.value = false
         _isGrandTestHubOpen.value = false
         _isAdminOpen.value = true
         refreshAdminDashboard()
@@ -1966,6 +1980,7 @@ class MainViewModel(
         _isGrandTestHubOpen.value = false
         _isFlashcardStudioOpen.value = false
         _isEcgStudioOpen.value = false
+        _isIbqHubOpen.value = false
         _clinicalToolsInitialSection.value = initialSection.coerceIn(0, 4)
         _isClinicalToolsOpen.value = true
     }
@@ -1985,11 +2000,32 @@ class MainViewModel(
         _isGrandTestHubOpen.value = false
         _isFlashcardStudioOpen.value = false
         _isClinicalToolsOpen.value = false
+        _isIbqHubOpen.value = false
         _isEcgStudioOpen.value = true
     }
 
     fun closeEcgStudio() {
         _isEcgStudioOpen.value = false
+    }
+
+    fun openIbqHub(initialCategory: IbqCategory = IbqCategory.ALL) {
+        _subjectChaptersNav.value = null
+        _isSettingsOpen.value = false
+        _isProfileOpen.value = false
+        _isPlansOpen.value = false
+        _isAdminOpen.value = false
+        _isNotificationsOpen.value = false
+        _isDoubtBoxOpen.value = false
+        _isGrandTestHubOpen.value = false
+        _isFlashcardStudioOpen.value = false
+        _isClinicalToolsOpen.value = false
+        _isEcgStudioOpen.value = false
+        _ibqHubInitialCategory.value = initialCategory
+        _isIbqHubOpen.value = true
+    }
+
+    fun closeIbqHub() {
+        _isIbqHubOpen.value = false
     }
 
     fun recordClinicalModulePracticeAnswer(caseId: String, isCorrect: Boolean) {
@@ -2015,6 +2051,7 @@ class MainViewModel(
         _isGrandTestHubOpen.value = false
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
+        _isIbqHubOpen.value = false
         _isFlashcardStudioOpen.value = true
     }
 
@@ -2144,23 +2181,62 @@ class MainViewModel(
     }
 
     fun startSmartWeakTopicDrill(subjectCode: String? = null, targetCount: Int = 20) {
-        val pool = mainState.value.stageQuestions.ifEmpty { mainState.value.questions }
+        val st = mainState.value
+        val pool = st.stageQuestions.ifEmpty { st.questions }
+        val clampedCount = targetCount.coerceIn(10, 50)
         val selected = SmartWeakTopicPlanner.selectWeightedAutoDrill(
             questions = pool,
             srsCards = settings.srsCards.value,
-            targetCount = targetCount.coerceIn(10, 50),
+            targetCount = clampedCount,
             targetSubjectCode = subjectCode
         )
         if (selected.isEmpty()) {
             showMessage("No questions available yet for your weak-topic drill.")
             return
         }
+        val ibqCandidates = (pool.filter { it.question.isImageBased }
+            .ifEmpty { st.crossExamQuestions.filter { it.question.isImageBased } })
+            .let { list ->
+                if (!subjectCode.isNullOrBlank()) list.filter { it.question.subject == subjectCode } else list
+            }
+        val mixed = IbqHubLogic.mixIbqsIntoGeneralPractice(
+            generalPool = selected,
+            ibqPool = ibqCandidates,
+            targetCount = selected.size,
+            ibqSharePercent = 15,
+            minIbqCount = if (ibqCandidates.isNotEmpty() && selected.size >= 10) 2 else 0,
+            maxIbqCount = 4
+        )
         val title = if (!subjectCode.isNullOrBlank()) {
-            "Recovery Plan • $subjectCode (${selected.size}Q)"
+            "Recovery Plan • $subjectCode (${mixed.size}Q)"
         } else {
-            "Smart Weak-Topic Drill (${selected.size}Q)"
+            "Smart Weak-Topic Drill (${mixed.size}Q)"
         }
-        startPractice(selected, title)
+        startPractice(mixed, title)
+    }
+
+    fun startGeneralMixedDrill(
+        sourcePool: List<QuestionItem>,
+        targetCount: Int,
+        title: String
+    ) {
+        if (sourcePool.isEmpty()) {
+            showMessage("No questions available in this selection yet.")
+            return
+        }
+        val st = mainState.value
+        val ibqPool = sourcePool.filter { it.question.isImageBased }
+            .ifEmpty {
+                st.stageQuestions.filter { it.question.isImageBased }
+                    .ifEmpty { st.crossExamQuestions.filter { it.question.isImageBased } }
+            }
+        val shuffledGeneral = sourcePool.shuffled()
+        val mixed = IbqHubLogic.mixIbqsIntoGeneralPractice(
+            generalPool = shuffledGeneral,
+            ibqPool = ibqPool.shuffled(),
+            targetCount = targetCount.coerceAtLeast(1)
+        )
+        startPractice(mixed, title)
     }
 
     fun startImageBasedSpotterDrill() {
@@ -2174,9 +2250,7 @@ class MainViewModel(
             showMessage("No image-based clinical spotters available yet.")
             return
         }
-        // Unattempted spotters first so students see fresh ECGs & instruments immediately
-        val ordered = (pool.filter { it.attemptsCount == 0 } + pool.filter { it.attemptsCount > 0 })
-            .distinctBy { it.id }
+        val ordered = IbqHubLogic.prioritizeForDrill(pool)
         startPractice(ordered, "Image-Based Spotters (${ordered.size}Q)")
     }
 
@@ -2204,6 +2278,7 @@ class MainViewModel(
         _isAdminOpen.value = false
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
+        _isIbqHubOpen.value = false
         _isGrandTestHubOpen.value = false
         _chaptersHighYieldOnly.value = false
         _subjectChaptersNav.value = SubjectChaptersNavState(
@@ -2587,10 +2662,23 @@ class MainViewModel(
             emptyList()
         }
         val primaryPool = if (focusPool.size >= targetCount) focusPool else all
-        // Prioritize mistakes and fresh unattempted questions first
+        // Prioritize mistakes and fresh unattempted questions first, blending in visual IBQs seamlessly
         val mistakesAndFresh = primaryPool.filter { it.lastOutcome == "wrong" || it.attemptsCount == 0 }.shuffled()
         val remainder = primaryPool.filter { it.lastOutcome != "wrong" && it.attemptsCount > 0 }.shuffled()
-        val picked = (mistakesAndFresh + remainder).take(targetCount)
+        val orderedGeneral = mistakesAndFresh + remainder
+        val ibqCandidates = primaryPool.filter { it.question.isImageBased }
+            .ifEmpty {
+                if (focus.isBlank()) {
+                    mainState.value.crossExamQuestions.filter { it.question.isImageBased }
+                } else {
+                    emptyList()
+                }
+            }
+        val picked = IbqHubLogic.mixIbqsIntoGeneralPractice(
+            generalPool = orderedGeneral,
+            ibqPool = ibqCandidates,
+            targetCount = targetCount
+        )
         val drillTitle = if (remaining > 0) {
             "Daily Goal Drill (${picked.size}Q remaining)"
         } else {
@@ -4433,6 +4521,7 @@ class MainViewModel(
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
+        _isIbqHubOpen.value = false
         _isGrandTestHubOpen.value = false
         _isNotificationsOpen.value = true
         val newestAnnMs = _announcements.value.maxOfOrNull { it.createdAtMs } ?: System.currentTimeMillis()
@@ -4490,6 +4579,7 @@ class MainViewModel(
         _isNotificationsOpen.value = false
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
+        _isIbqHubOpen.value = false
         _isGrandTestHubOpen.value = false
         _highlightedDoubtId.value = highlightDoubtId?.takeIf { it.isNotBlank() }
         _isDoubtBoxOpen.value = true
@@ -5222,6 +5312,7 @@ class MainViewModel(
         _isDoubtBoxOpen.value = false
         _isClinicalToolsOpen.value = false
         _isEcgStudioOpen.value = false
+        _isIbqHubOpen.value = false
         _isGrandTestHubOpen.value = true
         val targetId = _selectedGrandTestId.value
             ?: _publicGrandTests.value.firstOrNull { it.parsedStatus == GrandTestStatus.LIVE }?.effectiveTestId

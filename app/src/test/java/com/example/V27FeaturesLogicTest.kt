@@ -18,8 +18,8 @@ class V27FeaturesLogicTest {
     @Test
     fun builtinSpotterCatalog_contains15ValidMedicallyCompleteImageQuestions() {
         val spotters = ClinicalSpotterCatalog.builtinSpotterQuestions()
-        assertEquals(15, spotters.size)
-        assertEquals(15, spotters.map { it.id }.distinct().size)
+        assertTrue("Expected at least 25 built-in clinical spotters", spotters.size >= 25)
+        assertEquals(spotters.size, spotters.map { it.id }.distinct().size)
 
         spotters.forEach { q ->
             assertTrue("Spotter ${q.id} should be marked image-based", q.isImageBased)

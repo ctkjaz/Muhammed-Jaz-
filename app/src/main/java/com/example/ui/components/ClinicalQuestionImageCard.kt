@@ -22,10 +22,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -59,6 +61,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -117,7 +120,8 @@ fun ImageBasedQuestionBadge(modifier: Modifier = Modifier) {
 @Composable
 fun ClinicalQuestionImageCard(
     imageUrl: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewportHeight: Dp = 210.dp
 ) {
     val ref = remember(imageUrl) { ClinicalImageRef.parse(imageUrl) }
     if (ref is ClinicalImageRef.None) return
@@ -193,7 +197,7 @@ fun ClinicalQuestionImageCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(210.dp)
+                    .height(viewportHeight)
                     .background(Color(0xFF0E1116)),
                 contentAlignment = Alignment.Center
             ) {
@@ -258,6 +262,21 @@ private fun ClinicalImageZoomLightbox(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        IconButton(
+                            onClick = {
+                                val next = (scale - 0.5f).coerceAtLeast(1f)
+                                scale = next
+                                if (next <= 1.02f) offset = Offset.Zero
+                            },
+                            enabled = scale > 1.02f,
+                            modifier = Modifier.testTag("clinical_lightbox_zoom_out_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Remove,
+                                contentDescription = "Zoom out clinical image",
+                                tint = if (scale > 1.02f) PureWhite else PureWhite.copy(alpha = 0.35f)
+                            )
+                        }
                         Surface(
                             shape = RoundedCornerShape(50),
                             color = Color(0xFF1A1D24)
@@ -270,12 +289,26 @@ private fun ClinicalImageZoomLightbox(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             )
                         }
+                        IconButton(
+                            onClick = {
+                                scale = (scale + 0.5f).coerceAtMost(3.5f)
+                            },
+                            enabled = scale < 3.45f,
+                            modifier = Modifier.testTag("clinical_lightbox_zoom_in_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Add,
+                                contentDescription = "Zoom in clinical image",
+                                tint = if (scale < 3.45f) AcidLime else PureWhite.copy(alpha = 0.35f)
+                            )
+                        }
                         if (scale > 1.05f || offset != Offset.Zero) {
                             TextButton(
                                 onClick = {
                                     scale = 1f
                                     offset = Offset.Zero
-                                }
+                                },
+                                modifier = Modifier.testTag("clinical_lightbox_reset_btn")
                             ) {
                                 Icon(
                                     imageVector = Icons.Filled.Refresh,
@@ -467,7 +500,8 @@ private fun ClinicalDiagramRenderer(
         ClinicalSpotterCatalog.DIAGRAM_ECG_AFIB,
         ClinicalSpotterCatalog.DIAGRAM_ECG_STEMI,
         ClinicalSpotterCatalog.DIAGRAM_ECG_AVBLOCK3,
-        ClinicalSpotterCatalog.DIAGRAM_ECG_HYPERKALEMIA -> {
+        ClinicalSpotterCatalog.DIAGRAM_ECG_HYPERKALEMIA,
+        ClinicalSpotterCatalog.DIAGRAM_ECG_TORSADES -> {
             EcgStripCanvas(diagramKey = diagramKey, modifier = modifier)
         }
         ClinicalSpotterCatalog.DIAGRAM_IV_CANNULA_18G -> {
@@ -477,6 +511,16 @@ private fun ClinicalDiagramRenderer(
                 odLabel = "1.3 mm OD",
                 flowLabel = "~90 mL/min",
                 colorName = "ISO GREEN HUB",
+                modifier = modifier
+            )
+        }
+        ClinicalSpotterCatalog.DIAGRAM_IV_CANNULA_20G -> {
+            IvCannulaSpotterCard(
+                hubColor = Color(0xFFD81B60),
+                hubBorderColor = Color(0xFFF48FB1),
+                odLabel = "1.1 mm OD",
+                flowLabel = "~60 mL/min",
+                colorName = "ISO PINK HUB",
                 modifier = modifier
             )
         }
@@ -496,8 +540,32 @@ private fun ClinicalDiagramRenderer(
         ClinicalSpotterCatalog.DIAGRAM_BMW_YELLOW -> {
             BmwBinsSpotterCard(highlightBin = "YELLOW", modifier = modifier)
         }
+        ClinicalSpotterCatalog.DIAGRAM_BMW_WHITE -> {
+            BmwBinsSpotterCard(highlightBin = "WHITE", modifier = modifier)
+        }
         ClinicalSpotterCatalog.DIAGRAM_VENTURI_MASK -> {
             VenturiMaskSpotterCard(modifier = modifier)
+        }
+        ClinicalSpotterCatalog.DIAGRAM_NRB_MASK -> {
+            NonRebreatherMaskSpotterCard(modifier = modifier)
+        }
+        ClinicalSpotterCatalog.DIAGRAM_CTG_LATE_DECEL -> {
+            CtgTraceSpotterCanvas(isLateDecel = true, modifier = modifier)
+        }
+        ClinicalSpotterCatalog.DIAGRAM_CTG_VARIABLE_DECEL -> {
+            CtgTraceSpotterCanvas(isLateDecel = false, modifier = modifier)
+        }
+        ClinicalSpotterCatalog.DIAGRAM_PARTOGRAPH_ACTION -> {
+            PartographSpotterCanvas(modifier = modifier)
+        }
+        ClinicalSpotterCatalog.DIAGRAM_CXR_TENSION_PNEUMO -> {
+            ChestXraySchematicCanvas(isTensionPneumo = true, modifier = modifier)
+        }
+        ClinicalSpotterCatalog.DIAGRAM_CXR_PLEURAL_EFFUSION -> {
+            ChestXraySchematicCanvas(isTensionPneumo = false, modifier = modifier)
+        }
+        ClinicalSpotterCatalog.DIAGRAM_RULE_OF_NINES -> {
+            RuleOfNinesBurnCanvas(modifier = modifier)
         }
         else -> ClinicalVisualFallback(
             message = "Unsupported clinical diagram: $diagramKey",
@@ -678,6 +746,12 @@ private fun DrawScope.drawEcgWaveform(diagramKey: String) {
                     0f
                 }
                 flatP + qWave + rWave + sWave + tentedT
+            }
+            ClinicalSpotterCatalog.DIAGRAM_ECG_TORSADES -> {
+                // Torsades de Pointes: twisting polymorphic VT spindle rotating around isoelectric axis
+                val envelope = 0.25f + 0.75f * kotlin.math.abs(sin(u * 2f * PI.toFloat() * 1.45f))
+                val carrier = sin(u * 2f * PI.toFloat() * 16.5f) + 0.28f * sin(u * 2f * PI.toFloat() * 33f + 0.7f)
+                0.85f * envelope * carrier
             }
             else -> 0f
         }

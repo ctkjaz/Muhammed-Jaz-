@@ -146,6 +146,7 @@ fun DashboardScreen(
     onStartSmartWeakDrill: () -> Unit = {},
     onStartRecoveryDayDrill: (String, Int) -> Unit = { _, _ -> },
     onStartImageSpotterDrill: () -> Unit = {},
+    onStartGeneralMixedDrill: ((List<QuestionItem>, Int, String) -> Unit)? = null,
     onOpenFlashcardStudio: () -> Unit = {},
     masteredFlashcardCount: Int = 0,
     qotdQuestion: DailyFeaturedQuestion? = null,
@@ -1351,10 +1352,12 @@ fun DashboardScreen(
                             }
                             Button(
                                 onClick = {
-                                    onStartDrill(
-                                        diffFiltered.shuffled().take(25),
-                                        "25Q Random Drill$diffLabelSuffix"
-                                    )
+                                    val title = "25Q Mix (+IBQ)$diffLabelSuffix"
+                                    if (onStartGeneralMixedDrill != null) {
+                                        onStartGeneralMixedDrill(diffFiltered, 25, title)
+                                    } else {
+                                        onStartDrill(diffFiltered.shuffled().take(25), title)
+                                    }
                                 },
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(
@@ -1384,7 +1387,7 @@ fun DashboardScreen(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "Spotters ($imageSpotterCount)",
+                                        text = "IBQ Hub ($imageSpotterCount)",
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -1401,8 +1404,8 @@ fun DashboardScreen(
                     if (imageSpotterCount > 0) {
                         add(
                             Triple(
-                                "Image-Based Spotters",
-                                "$imageSpotterCount ECG & Instruments",
+                                "Image-Based Hub",
+                                "$imageSpotterCount ECG, CTG, CXR & OT",
                                 Icons.Filled.Image
                             ) to onStartImageSpotterDrill
                         )
